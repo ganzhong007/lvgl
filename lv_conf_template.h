@@ -938,6 +938,9 @@
 
 #define LV_USE_WIN        1
 
+/** App UI container with pause/resume and thumbnail snapshot (launcher multi-app). Requires LV_USE_SNAPSHOT. */
+#define LV_USE_APPWINDOW  0
+
 #define LV_USE_3DTEXTURE  0
 
 /*==================

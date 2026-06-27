@@ -71,7 +71,8 @@ void lv_3dstack_layout(lv_obj_t * obj)
             lv_obj_t * tile = lv_obj_get_child(obj, idx);
             if(lv_obj_check_type(tile, &lv_3dmesh_class)) {
                 float cx = (float)c - (stack->cols - 1) * 0.5f;
-                float cy = (float)r - (stack->rows - 1) * 0.5f;
+                /* cy: row 0 = near → +Y so after display Y-flip it sits at screen bottom */
+                float cy = (stack->rows - 1) * 0.5f - (float)r;
                 lv_3dmesh_set_position(tile, cx * stack->x_gap, cy * stack->y_gap, stack->row_z[r]);
                 float sc = 1.0f - r * 0.08f;
                 lv_3dmesh_set_scale(tile, sc, sc, sc);
