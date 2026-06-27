@@ -57,6 +57,9 @@
 #if LV_USE_DRAW_OPENGLES
     #include "draw/opengles/lv_draw_opengles.h"
 #endif
+#if LV_USE_DRAW_GPU_COMPOSITE
+    #include "draw/gpu_composite/lv_draw_gpu_composite.h"
+#endif
 #if LV_USE_PPA
     #include "draw/espressif/ppa/lv_draw_ppa.h"
 #endif
@@ -246,6 +249,9 @@ void lv_init(void)
 
 #if LV_USE_DRAW_OPENGLES
     lv_draw_opengles_init();
+#endif
+#if LV_USE_DRAW_GPU_COMPOSITE
+    lv_draw_gpu_composite_init();
 #endif
 
 #if LV_USE_PPA
@@ -478,6 +484,9 @@ void lv_deinit(void)
 
 #if LV_USE_DRAW_OPENGLES
     lv_draw_opengles_deinit();
+#endif
+#if LV_USE_DRAW_GPU_COMPOSITE
+    lv_draw_gpu_composite_deinit();
 #endif
 
 #if LV_USE_DRAW_SW

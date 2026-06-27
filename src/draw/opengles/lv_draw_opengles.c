@@ -615,6 +615,7 @@ static void draw_from_cached_texture(lv_draw_task_t * t)
 
 static void execute_drawing(lv_draw_opengles_unit_t * u)
 {
+    LV_LOG_WARN("[HGZHGZ] OPENGLES execute_drawing() begin"); 
     lv_draw_task_t * t = u->task_act;
     t->draw_unit = (lv_draw_unit_t *)u;
 
@@ -758,6 +759,7 @@ static unsigned int create_texture(int32_t w, int32_t h, const void * data)
 #if LV_USE_3DTEXTURE
 static void lv_draw_opengles_3d(lv_draw_task_t * t, const lv_draw_3d_dsc_t * dsc, const lv_area_t * coords)
 {
+    LV_LOG_WARN("[HGZHGZ] OPENGLES lv_draw_opengles_3d() begin"); 
     LV_PROFILER_DRAW_BEGIN;
     lv_draw_opengles_unit_t * u = (lv_draw_opengles_unit_t *) t->draw_unit;
 

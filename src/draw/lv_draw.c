@@ -655,7 +655,7 @@ static inline size_t get_draw_dsc_size(lv_draw_task_type_t type)
         case LV_DRAW_TASK_TYPE_VECTOR:
             return sizeof(lv_draw_vector_dsc_t);
 #endif
-#if LV_USE_3DTEXTURE
+#if LV_USE_3DTEXTURE || LV_USE_3D
         case LV_DRAW_TASK_TYPE_3D:
             return sizeof(lv_draw_3d_dsc_t);
 #endif

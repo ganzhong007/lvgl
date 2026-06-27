@@ -166,6 +166,14 @@
 #include "themes/lv_theme_simple.h"
 #include "tick/lv_tick.h"
 #include "widgets/lv_3dtexture.h"
+#if LV_USE_3D
+#include "3d/lv_3d.h"
+#include "widgets/lv_3dscene.h"
+#include "widgets/lv_3dcamera.h"
+#include "widgets/lv_3dviewport.h"
+#include "widgets/lv_3dmesh.h"
+#include "widgets/lv_3dstack.h"
+#endif
 #include "widgets/lv_animimage.h"
 #include "widgets/lv_arc.h"
 #include "widgets/lv_arclabel.h"

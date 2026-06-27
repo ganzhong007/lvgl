@@ -413,6 +413,35 @@
     #define LV_DRAW_OPENGLES_TEXTURE_CACHE_COUNT 64
 #endif
 
+/** LVGL 2D/3D mixed GPU compositor (lv_draw_gpu_composite). Requires LV_USE_OPENGLES driver. */
+#define LV_USE_GPU_COMPOSITE 0
+#define LV_USE_DRAW_GPU_COMPOSITE 0
+#if LV_USE_DRAW_GPU_COMPOSITE
+    #if LV_USE_DRAW_OPENGLES
+        #error "LV_USE_DRAW_GPU_COMPOSITE and LV_USE_DRAW_OPENGLES cannot both be enabled"
+    #endif
+    #if LV_USE_DRAW_NANOVG
+        #error "LV_USE_DRAW_GPU_COMPOSITE and LV_USE_DRAW_NANOVG cannot both be enabled"
+    #endif
+#endif
+
+/** Built-in 3D scene graph + widgets (lv_3dscene, lv_3dmesh, …). Requires LV_USE_DRAW_GPU_COMPOSITE. */
+#define LV_USE_3D 0
+#if LV_USE_3D
+    #define LV_USE_3D_WIDGETS 1
+    #define LV_USE_3D_OBJ_PROPERTIES 0
+    #define LV_USE_3DSTACK 1
+    #define LV_USE_3D_SEGMENT_POOL 1
+    #define LV_GPU_COMPOSITE_AR_PASSTHROUGH 1
+    #define LV_GPU_COMPOSITE_GLES_API 2
+    #define LV_GPU_COMPOSITE_ALLOW_GLES3 0
+    #define LV_GPU_COMPOSITE_DEPTH_BITS 16
+    #define LV_GPU_COMPOSITE_USE_ETC1 1
+    #define LV_GPU_COMPOSITE_LOG_CAPS 1
+    /** 0=RGBA8888, 1=RGB565+A8, 2=RGBA4444, 3=RGBA5551 */
+    #define LV_GPU_COMPOSITE_COLOR_FORMAT 0
+#endif
+
 /** Draw using espressif PPA accelerator */
 #define LV_USE_PPA  0
 #if LV_USE_PPA

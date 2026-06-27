@@ -17,6 +17,10 @@
 #include "lv_opengles_texture_private.h"
 #include "../../display/lv_display_private.h"
 
+#if LV_USE_DRAW_GPU_COMPOSITE
+#include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
+#endif
+
 #include <stdlib.h>
 
 /*********************
@@ -92,7 +96,8 @@ lv_result_t lv_opengles_texture_reshape(lv_opengles_texture_t * texture, lv_disp
         return LV_RESULT_INVALID;
     }
 
-#if LV_USE_DRAW_OPENGLES
+#if LV_USE_OPENGLES_DIRECT_DISPLAY
+    LV_UNUSED(texture);
     static size_t LV_ATTRIBUTE_MEM_ALIGN dummy_buf;
     lv_display_set_buffers(display, &dummy_buf, NULL, width * height * 4, LV_DISPLAY_RENDER_MODE_DIRECT);
 #else
@@ -132,7 +137,7 @@ static lv_result_t lv_opengles_texture_create_draw_buffers(lv_opengles_texture_t
     int32_t w = lv_display_get_horizontal_resolution(display);
     int32_t h = lv_display_get_vertical_resolution(display);
 
-#if LV_USE_DRAW_OPENGLES
+#if LV_USE_OPENGLES_DIRECT_DISPLAY
     LV_UNUSED(texture);
     static size_t LV_ATTRIBUTE_MEM_ALIGN dummy_buf;
     lv_display_set_buffers(display, &dummy_buf, NULL, w * h * 4, LV_DISPLAY_RENDER_MODE_DIRECT);
@@ -144,6 +149,7 @@ static lv_result_t lv_opengles_texture_create_draw_buffers(lv_opengles_texture_t
     if(!texture->fb1) {
         return LV_RESULT_INVALID;
     }
+    lv_memzero(texture->fb1, buf_size);
     lv_display_set_buffers(display, texture->fb1, NULL, buf_size, LV_DISPLAY_RENDER_MODE_DIRECT);
 #endif
     return LV_RESULT_OK;
@@ -151,7 +157,7 @@ static lv_result_t lv_opengles_texture_create_draw_buffers(lv_opengles_texture_t
 
 void lv_opengles_texture_deinit(lv_opengles_texture_t * texture)
 {
-#if !LV_USE_DRAW_OPENGLES
+#if !LV_USE_OPENGLES_DIRECT_DISPLAY
     lv_free(texture->fb1);
 #endif /*!LV_USE_DRAW_OPENGLES*/
 
@@ -191,6 +197,10 @@ static lv_display_t * lv_opengles_texture_create_common(int32_t w, int32_t h)
         LV_LOG_ERROR("Failed to create display");
         return NULL;
     }
+#if LV_USE_DRAW_GPU_COMPOSITE
+    /* Real alpha in CPU fb so 2D overlay does not wipe 3D with XRGB padding byte 0xFF. */
+    lv_display_set_color_format(disp, LV_COLOR_FORMAT_ARGB8888);
+#endif
     lv_opengles_texture_t * texture = lv_malloc_zeroed(sizeof(lv_opengles_texture_t));
     LV_ASSERT_MALLOC(texture);
     if(!texture) {
@@ -258,10 +268,20 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_m
     LV_UNUSED(area);
     LV_UNUSED(px_map);
 
-#if !LV_USE_DRAW_OPENGLES
+#if !LV_USE_OPENGLES_DIRECT_DISPLAY
     if(lv_display_flush_is_last(disp)) {
 
         lv_opengles_texture_t * texture = lv_display_get_driver_data(disp);
+
+#if LV_USE_DRAW_GPU_COMPOSITE
+#if LV_USE_GLFW
+        /* Composite runs once after lv_refr_now in lv_opengles_glfw.c */
+#else
+        lv_gpu_composite_flush_3d(disp);
+        lv_gpu_composite_notify_frame_ready(disp);
+        lv_gpu_composite_overlay_2d_fb(disp);
+#endif
+#else
         lv_color_format_t cf = lv_display_get_color_format(disp);
         uint32_t stride = lv_draw_buf_width_to_stride(lv_display_get_horizontal_resolution(disp), cf);
 
@@ -269,7 +289,6 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_m
 
         GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
         GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, stride / lv_color_format_get_size(cf)));
-        /*Color depth: 16 (RGB565), 32 (XRGB8888)*/
 #if LV_COLOR_DEPTH == 16
         GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB565, disp->hor_res, disp->ver_res, 0, GL_RGB, GL_UNSIGNED_SHORT_5_6_5,
                              texture->fb1));
@@ -279,8 +298,9 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_m
 #else
 #error("Unsupported color format")
 #endif
+#endif
     }
-#endif /* !LV_USE_DRAW_OPENGLES */
+#endif /* !LV_USE_OPENGLES_DIRECT_DISPLAY */
 
     lv_display_flush_ready(disp);
 }

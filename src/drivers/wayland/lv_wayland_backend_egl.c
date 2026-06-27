@@ -14,6 +14,9 @@
 #include "../opengles/lv_opengles_texture_private.h"
 #include "../opengles/lv_opengles_egl_private.h"
 #include "../opengles/lv_opengles_debug.h"
+#if LV_USE_DRAW_GPU_COMPOSITE
+#include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
+#endif
 
 #include <wayland-egl.h>
 
@@ -171,7 +174,7 @@ static void flush_wait_cb(lv_display_t * disp)
     }
 }
 
-#if LV_USE_DRAW_OPENGLES || LV_USE_DRAW_NANOVG
+#if LV_USE_DRAW_OPENGLES || LV_USE_DRAW_NANOVG || LV_USE_DRAW_GPU_COMPOSITE
 
 static void egl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
 {
@@ -197,7 +200,15 @@ static void egl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * 
     lv_opengles_viewport(0, 0, lv_display_get_original_horizontal_resolution(disp),
                          lv_display_get_original_vertical_resolution(disp));
     lv_opengles_render_display_texture(disp, false, true);
-#endif /*LV_USE_DRAW_OPENGLES*/
+#elif LV_USE_DRAW_GPU_COMPOSITE
+    lv_opengles_viewport(0, 0, lv_display_get_original_horizontal_resolution(disp),
+                         lv_display_get_original_vertical_resolution(disp));
+    lv_gpu_composite_flush_3d(disp);
+    lv_gpu_composite_notify_frame_ready(disp);
+    lv_gpu_composite_overlay_2d_fb(disp);
+    lv_opengles_render_params_t params = { .h_flip = false, .v_flip = false, .rb_swap = true };
+    lv_opengles_render_display(disp, &params);
+#endif
 
     /* Swap buffers through EGL */
     lv_opengles_egl_update(ddata->egl_ctx);

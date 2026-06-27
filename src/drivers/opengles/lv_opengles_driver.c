@@ -15,6 +15,9 @@
 
 #include "../../display/lv_display_private.h"
 #include "../../draw/nanovg/lv_draw_nanovg.h"
+#if LV_USE_DRAW_GPU_COMPOSITE
+#include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
+#endif
 #include "../../misc/lv_area_private.h"
 #include "opengl_shader/lv_opengl_shader_internal.h"
 #include "assets/lv_opengles_shader.h"
@@ -128,6 +131,10 @@ void lv_opengles_init(void)
 #if LV_USE_DRAW_NANOVG
     lv_draw_nanovg_init();
 #endif /*LV_USE_DRAW_NANOVG*/
+
+#if LV_USE_DRAW_GPU_COMPOSITE
+    lv_gpu_composite_caps_probe_on_context();
+#endif
 
     is_init = true;
 }
