@@ -23,6 +23,7 @@ typedef struct {
     float w, h, d;
     bool wireframe;
     lv_3d_material_t material;
+    lv_3d_snapshot_id_t snapshot_id;
     lv_3d_transform_t transform;
     lv_obj_t * obj;
 } lv_3d_draw_item_t;
@@ -34,6 +35,12 @@ void lv_3d_mat4_scale(float m[16], float sx, float sy, float sz);
 void lv_3d_mat4_rotate_y(float m[16], float rad);
 void lv_3d_mat4_perspective(float m[16], float fov_deg, float aspect, float near_z, float far_z);
 void lv_3d_mat4_look_at(float m[16], lv_vec3_t eye, lv_vec3_t target, lv_vec3_t up);
+bool lv_3d_mat4_invert(float out[16], const float m[16]);
+void lv_3d_mat4_transform_point(const float m[16], lv_vec3_t in, lv_vec3_t * out);
+void lv_3d_mat4_transform_dir(const float m[16], lv_vec3_t in, lv_vec3_t * out);
+void lv_3d_ray_from_screen(int32_t x, int32_t y, int32_t w, int32_t h,
+                           const float view[16], const float proj[16],
+                           lv_vec3_t * origin, lv_vec3_t * dir);
 
 void lv_3d_transform_init(lv_3d_transform_t * t);
 void lv_3d_transform_set_local_trs(lv_3d_transform_t * t, float tx, float ty, float tz,
@@ -47,6 +54,8 @@ lv_3d_draw_item_t * lv_3d_mesh_get_draw_item_mut(lv_3d_mesh_id_t id);
 void lv_3d_camera_get_view_proj(lv_obj_t * cam, int32_t vp_w, int32_t vp_h, float view[16], float proj[16]);
 
 uint32_t lv_3d_scene_collect(lv_obj_t * scene, lv_3d_draw_item_t * out, uint32_t max_out);
+
+lv_obj_t * lv_3d_pick_scene(lv_obj_t * scene, lv_vec3_t origin, lv_vec3_t dir);
 
 #endif /*LV_USE_3D*/
 

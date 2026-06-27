@@ -16,6 +16,7 @@ typedef struct {
     lv_obj_t obj;
     lv_3d_mesh_id_t mesh_id;
     lv_3d_material_t material;
+    lv_3d_snapshot_id_t snapshot_id;
     float pos[3];
     float rot[3];
     float scale[3];

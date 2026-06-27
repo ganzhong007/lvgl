@@ -8,6 +8,7 @@
 
 #include "../../drivers/opengles/lv_opengles_debug.h"
 #include "../../drivers/opengles/lv_opengles_private.h"
+#include "../../include/lvgl/3d/lv_3d_plane_bake.h"
 #include "../../misc/lv_color.h"
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,11 @@
 static unsigned int prog;
 static int loc_mvp;
 static int loc_color;
+
+static unsigned int prog_tex;
+static int loc_tex_mvp;
+static int loc_tex_sampler;
+static int loc_tex_opa;
 
 #if LV_USE_EGL
 static const char * vs_src =
@@ -37,6 +43,39 @@ static const char * fs_src =
     "#version 120\n"
     "uniform vec4 u_color;\n"
     "void main() { gl_FragColor = u_color; }\n";
+#endif
+
+#if LV_USE_SNAPSHOT
+#if LV_USE_EGL
+static const char * vs_tex_src =
+    "attribute vec3 a_pos;\n"
+    "attribute vec2 a_uv;\n"
+    "varying vec2 v_uv;\n"
+    "uniform mat4 u_mvp;\n"
+    "void main() { v_uv = a_uv; gl_Position = u_mvp * vec4(a_pos, 1.0); }\n";
+
+static const char * fs_tex_src =
+    "precision mediump float;\n"
+    "varying vec2 v_uv;\n"
+    "uniform sampler2D u_tex;\n"
+    "uniform float u_opa;\n"
+    "void main() { vec4 c = texture2D(u_tex, v_uv); gl_FragColor = vec4(c.rgb, c.a * u_opa); }\n";
+#else
+static const char * vs_tex_src =
+    "#version 120\n"
+    "attribute vec3 a_pos;\n"
+    "attribute vec2 a_uv;\n"
+    "varying vec2 v_uv;\n"
+    "uniform mat4 u_mvp;\n"
+    "void main() { v_uv = a_uv; gl_Position = u_mvp * vec4(a_pos, 1.0); }\n";
+
+static const char * fs_tex_src =
+    "#version 120\n"
+    "varying vec2 v_uv;\n"
+    "uniform sampler2D u_tex;\n"
+    "uniform float u_opa;\n"
+    "void main() { vec4 c = texture2D(u_tex, v_uv); gl_FragColor = vec4(c.rgb, c.a * u_opa); }\n";
+#endif
 #endif
 
 static bool shader_ok(unsigned int sh)
@@ -94,6 +133,39 @@ static unsigned int link_program(const char * vs, const char * fs)
     return p;
 }
 
+#if LV_USE_SNAPSHOT
+static unsigned int link_program_tex(const char * vs, const char * fs)
+{
+    unsigned int v = compile_shader(GL_VERTEX_SHADER, vs);
+    unsigned int f = compile_shader(GL_FRAGMENT_SHADER, fs);
+    if(!v || !f) {
+        if(v) GL_CALL(glDeleteShader(v));
+        if(f) GL_CALL(glDeleteShader(f));
+        return 0;
+    }
+    unsigned int p = glCreateProgram();
+    GL_CALL(glAttachShader(p, v));
+    GL_CALL(glAttachShader(p, f));
+    GL_CALL(glBindAttribLocation(p, 0, "a_pos"));
+    GL_CALL(glBindAttribLocation(p, 1, "a_uv"));
+    GL_CALL(glLinkProgram(p));
+    GL_CALL(glDeleteShader(v));
+    GL_CALL(glDeleteShader(f));
+
+    int ok = 0;
+    GL_CALL(glGetProgramiv(p, GL_LINK_STATUS, &ok));
+    if(!ok) {
+        char log[512];
+        log[0] = '\0';
+        glGetProgramInfoLog(p, sizeof(log), NULL, log);
+        LV_LOG_ERROR("LVGL tex shader link failed: %s", log);
+        GL_CALL(glDeleteProgram(p));
+        return 0;
+    }
+    return p;
+}
+#endif
+
 void lv_gpu_composite_gles2_3d_init(void)
 {
     if(prog) return;
@@ -101,6 +173,15 @@ void lv_gpu_composite_gles2_3d_init(void)
     if(!prog) return;
     loc_mvp = glGetUniformLocation(prog, "u_mvp");
     loc_color = glGetUniformLocation(prog, "u_color");
+
+#if LV_USE_SNAPSHOT
+    prog_tex = link_program_tex(vs_tex_src, fs_tex_src);
+    if(prog_tex) {
+        loc_tex_mvp = glGetUniformLocation(prog_tex, "u_mvp");
+        loc_tex_sampler = glGetUniformLocation(prog_tex, "u_tex");
+        loc_tex_opa = glGetUniformLocation(prog_tex, "u_opa");
+    }
+#endif
 }
 
 void lv_gpu_composite_gles2_3d_deinit(void)
@@ -109,6 +190,12 @@ void lv_gpu_composite_gles2_3d_deinit(void)
         GL_CALL(glDeleteProgram(prog));
         prog = 0;
     }
+#if LV_USE_SNAPSHOT
+    if(prog_tex) {
+        GL_CALL(glDeleteProgram(prog_tex));
+        prog_tex = 0;
+    }
+#endif
 }
 
 static void box_wire_verts(float w, float h, float d, float * out24)
@@ -146,11 +233,63 @@ static void box_solid_verts(float w, float h, float d, float * out108)
     }
 }
 
-static void draw_item(const lv_3d_draw_item_t * it, const float view[16], const float proj[16])
+static void draw_plane_snapshot(const lv_3d_draw_item_t * it, const float view[16], const float proj[16])
 {
+#if LV_USE_SNAPSHOT
+    if(!prog_tex) return;
+    if(it->material.opa <= LV_OPA_MIN) return;
+
+    unsigned int tex = lv_3d_plane_get_gl_texture(it->snapshot_id);
+    if(tex == 0) return;
+
     float mvp[16], mv[16];
     lv_3d_mat4_mul(mv, view, it->transform.world);
     lv_3d_mat4_mul(mvp, proj, mv);
+
+    float hx = it->w * 0.5f, hy = it->h * 0.5f, hz = it->d * 0.5f;
+    const float pos[] = {
+        -hx, -hy, hz,   hx, -hy, hz,   hx, hy, hz,
+        -hx, -hy, hz,   hx, hy, hz,   -hx, hy, hz,
+    };
+    const float uv[] = {
+        0.0f, 0.0f,   1.0f, 0.0f,   1.0f, 1.0f,
+        0.0f, 0.0f,   1.0f, 1.0f,   0.0f, 1.0f,
+    };
+
+    GL_CALL(glUseProgram(prog_tex));
+    GL_CALL(glUniformMatrix4fv(loc_tex_mvp, 1, GL_FALSE, mvp));
+    GL_CALL(glUniform1f(loc_tex_opa, (float)it->material.opa / 255.0f));
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+    GL_CALL(glUniform1i(loc_tex_sampler, 0));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glEnableVertexAttribArray(1));
+    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, pos));
+    GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, uv));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
+    GL_CALL(glDisableVertexAttribArray(1));
+    GL_CALL(glDisableVertexAttribArray(0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+#else
+    LV_UNUSED(it);
+    LV_UNUSED(view);
+    LV_UNUSED(proj);
+#endif
+}
+
+static void draw_item(const lv_3d_draw_item_t * it, const float view[16], const float proj[16])
+{
+    if(it->material.opa <= LV_OPA_MIN) return;
+
+    if(it->material.kind == LV_3D_MAT_PLANE_SNAPSHOT && it->snapshot_id != LV_3D_SNAPSHOT_ID_NONE) {
+        draw_plane_snapshot(it, view, proj);
+        return;
+    }
+
+    float mvp[16], mv[16];
+    lv_3d_mat4_mul(mv, view, it->transform.world);
+    lv_3d_mat4_mul(mvp, proj, mv);
+    GL_CALL(glUseProgram(prog));
     GL_CALL(glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp));
 
     lv_color32_t c32 = lv_color_to_32(it->material.color, it->material.opa);

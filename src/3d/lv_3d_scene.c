@@ -24,6 +24,7 @@ static void collect_obj(lv_obj_t * obj, const float parent_world[16], lv_3d_draw
                                               mesh->scale[0], mesh->scale[1], mesh->scale[2]);
                 lv_3d_transform_update_world(&item->transform, parent_world);
                 item->material = mesh->material;
+                item->snapshot_id = mesh->snapshot_id;
                 item->wireframe = (mesh->material.kind == LV_3D_MAT_WIREFRAME);
                 item->obj = child;
                 lv_memcpy(&out[*count], item, sizeof(*item));

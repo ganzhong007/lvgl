@@ -168,6 +168,13 @@
 #include "widgets/lv_3dtexture.h"
 #if LV_USE_3D
 #include "3d/lv_3d.h"
+#if LV_USE_3D_SEGMENT_POOL
+#include "3d/lv_3d_segment_pool.h"
+#endif
+#if LV_USE_SNAPSHOT
+#include "3d/lv_3d_plane_bake.h"
+#endif
+#include "3d/lv_3d_anim.h"
 #include "widgets/lv_3dscene.h"
 #include "widgets/lv_3dcamera.h"
 #include "widgets/lv_3dviewport.h"

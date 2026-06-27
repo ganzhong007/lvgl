@@ -14,6 +14,7 @@ typedef struct {
     lv_obj_t obj;
     lv_obj_t * camera;
     lv_obj_t * scene;
+    bool pickable;
 } lv_3dviewport_t;
 
 extern const lv_obj_class_t lv_3dviewport_class;

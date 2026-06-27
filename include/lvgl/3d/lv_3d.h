@@ -24,6 +24,7 @@ typedef enum {
     LV_3D_MAT_OPAQUE = 0,
     LV_3D_MAT_ALPHA,
     LV_3D_MAT_WIREFRAME,
+    LV_3D_MAT_PLANE_SNAPSHOT,     /* baked 2D subtree texture on 3D quad */
 } lv_3d_material_kind_t;
 
 typedef struct {
@@ -32,11 +33,16 @@ typedef struct {
     lv_opa_t opa;
 } lv_3d_material_t;
 
+typedef uint32_t lv_3d_snapshot_id_t;
+#define LV_3D_SNAPSHOT_ID_NONE 0U
+
 typedef struct {
     float x;
     float y;
     float z;
 } lv_vec3_t;
+
+typedef lv_vec3_t lv_point3d_t;
 
 void lv_3d_material_init(lv_3d_material_t * mat, lv_3d_material_kind_t kind, lv_color_t color, lv_opa_t opa);
 

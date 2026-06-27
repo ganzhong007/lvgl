@@ -45,10 +45,19 @@ typedef struct {
     uint32_t last_flush_items;       /**< meshes rendered in last 3D flush */
     uint32_t last_flush_viewports;   /**< viewports in last 3D flush */
     uint32_t flush_serial;           /**< incremented on each successful 3D flush */
+    /** M0 path observability (last completed frame) */
+    uint32_t gpu_2d_tasks;
+    uint32_t gpu_3d_draws;
+    uint32_t sw_overlay_uploads;
+    uint32_t sw_2d_raster_tasks;
+    char gl_renderer[128];
 } lv_gpu_composite_verify_stats_t;
 
 /** Corner alpha + center-region content sampling for LVGL_VERIFY. */
 bool lv_gpu_composite_verify_stats(lv_display_t * disp, lv_gpu_composite_verify_stats_t * stats);
+
+/** Debug: dump composite texture in LVGL row order (header: uint32 w, h, then RGBA rows). */
+bool lv_gpu_composite_dump_frame_lvgl(lv_display_t * disp, const char * path);
 
 typedef void (*lv_gpu_composite_frame_cb_t)(lv_display_t * disp);
 void lv_gpu_composite_set_frame_ready_cb(lv_gpu_composite_frame_cb_t cb);

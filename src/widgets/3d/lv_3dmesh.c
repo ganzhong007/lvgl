@@ -24,6 +24,19 @@ const lv_obj_class_t lv_3dmesh_class = {
     .name = "3dmesh",
 };
 
+#ifndef M_PI
+    #define M_PI 3.14159265358979323846
+#endif
+
+static const float rad_to_deg = (float)(180.0 / M_PI);
+static const float deg_to_rad = (float)(M_PI / 180.0);
+
+static void sync_draw_material(lv_3dmesh_t * mesh)
+{
+    lv_3d_draw_item_t * item = lv_3d_mesh_get_draw_item_mut(mesh->mesh_id);
+    if(item) item->material = mesh->material;
+}
+
 static void sync_transform(lv_3dmesh_t * mesh)
 {
     lv_3d_draw_item_t * item = lv_3d_mesh_get_draw_item_mut(mesh->mesh_id);
@@ -79,6 +92,16 @@ void lv_3dmesh_set_material(lv_obj_t * obj, const lv_3d_material_t * mat)
     lv_obj_invalidate(obj);
 }
 
+void lv_3dmesh_set_plane_snapshot(lv_obj_t * obj, lv_3d_snapshot_id_t snapshot_id)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    mesh->snapshot_id = snapshot_id;
+    mesh->material.kind = LV_3D_MAT_PLANE_SNAPSHOT;
+    mesh->material.opa = LV_OPA_COVER;
+    lv_obj_invalidate(obj);
+}
+
 void lv_3dmesh_set_position(lv_obj_t * obj, float x, float y, float z)
 {
     LV_ASSERT_OBJ(obj, MY_CLASS);
@@ -90,9 +113,16 @@ void lv_3dmesh_set_position(lv_obj_t * obj, float x, float y, float z)
 
 void lv_3dmesh_set_rotation_y(lv_obj_t * obj, float yaw_deg)
 {
+    lv_3dmesh_set_rotation(obj, 0.0f, yaw_deg, 0.0f);
+}
+
+void lv_3dmesh_set_rotation(lv_obj_t * obj, float pitch_deg, float yaw_deg, float roll_deg)
+{
     LV_ASSERT_OBJ(obj, MY_CLASS);
     lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
-    mesh->rot[1] = yaw_deg * (float)(3.14159265 / 180.0);
+    mesh->rot[0] = pitch_deg * deg_to_rad;
+    mesh->rot[1] = yaw_deg * deg_to_rad;
+    mesh->rot[2] = roll_deg * deg_to_rad;
     sync_transform(mesh);
     lv_obj_invalidate(obj);
 }
@@ -106,12 +136,56 @@ void lv_3dmesh_set_scale(lv_obj_t * obj, float sx, float sy, float sz)
     lv_obj_invalidate(obj);
 }
 
+void lv_3dmesh_set_opa(lv_obj_t * obj, lv_opa_t opa)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    mesh->material.opa = opa;
+    sync_draw_material(mesh);
+    lv_obj_invalidate(obj);
+}
+
+void lv_3dmesh_get_position(lv_obj_t * obj, float * x, float * y, float * z)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    if(x) *x = mesh->pos[0];
+    if(y) *y = mesh->pos[1];
+    if(z) *z = mesh->pos[2];
+}
+
+void lv_3dmesh_get_rotation(lv_obj_t * obj, float * pitch_deg, float * yaw_deg, float * roll_deg)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    if(pitch_deg) *pitch_deg = mesh->rot[0] * rad_to_deg;
+    if(yaw_deg) *yaw_deg = mesh->rot[1] * rad_to_deg;
+    if(roll_deg) *roll_deg = mesh->rot[2] * rad_to_deg;
+}
+
+void lv_3dmesh_get_scale(lv_obj_t * obj, float * sx, float * sy, float * sz)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    if(sx) *sx = mesh->scale[0];
+    if(sy) *sy = mesh->scale[1];
+    if(sz) *sz = mesh->scale[2];
+}
+
+lv_opa_t lv_3dmesh_get_opa(lv_obj_t * obj)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    return mesh->material.opa;
+}
+
 static void lv_3dmesh_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
 {
     LV_UNUSED(class_p);
     lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
     mesh->mesh_id = lv_3d_mesh_alloc_box(100, 100, 100, true);
     mesh->scale[0] = mesh->scale[1] = mesh->scale[2] = 1.0f;
+    mesh->snapshot_id = LV_3D_SNAPSHOT_ID_NONE;
     lv_3d_material_init(&mesh->material, LV_3D_MAT_WIREFRAME, lv_color_hex(0x00FFAA), LV_OPA_COVER);
     sync_transform(mesh);
 }

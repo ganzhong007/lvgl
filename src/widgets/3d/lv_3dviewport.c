@@ -9,12 +9,15 @@
 #include "../../core/lv_obj_class_private.h"
 #include "../../include/lvgl/draw/lv_draw_3d.h"
 #include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
+#include "../../3d/lv_3d_internal.h"
 
 #define MY_CLASS (&lv_3dviewport_class)
 
 static void lv_3dviewport_event(const lv_obj_class_t * class_p, lv_event_t * e);
+static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
 
 const lv_obj_class_t lv_3dviewport_class = {
+    .constructor_cb = lv_3dviewport_constructor,
     .event_cb = lv_3dviewport_event,
     .width_def = LV_PCT(100),
     .height_def = LV_PCT(100),
@@ -44,6 +47,55 @@ void lv_3dviewport_set_scene(lv_obj_t * obj, lv_obj_t * scene)
     lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
     vp->scene = scene;
     lv_obj_invalidate(obj);
+}
+
+void lv_3dviewport_set_pickable(lv_obj_t * obj, bool en)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
+    vp->pickable = en;
+}
+
+lv_obj_t * lv_3dviewport_pick_obj(lv_obj_t * obj, lv_point3d_t ray_origin, lv_vec3_t ray_dir)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
+    if(!vp->pickable || !vp->scene) return NULL;
+    return lv_3d_pick_scene(vp->scene, ray_origin, ray_dir);
+}
+
+lv_obj_t * lv_3dviewport_pick_at(lv_obj_t * obj, int32_t x, int32_t y)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
+    if(!vp->pickable || !vp->scene || !vp->camera) return NULL;
+
+    int32_t w = lv_obj_get_width(obj);
+    int32_t h = lv_obj_get_height(obj);
+    if(w < 1 || h < 1) return NULL;
+
+    lv_area_t coords;
+    lv_obj_get_coords(obj, &coords);
+    x -= coords.x1;
+    y -= coords.y1;
+    if(x < 0 || y < 0 || x >= w || y >= h) return NULL;
+
+    /* Match GLES viewport placement (vy = dh - y2 - 1) used during 3D flush. */
+    y = h - 1 - y;
+
+    float view[16], proj[16];
+    lv_3d_camera_get_view_proj(vp->camera, w, h, view, proj);
+
+    lv_vec3_t origin, dir;
+    lv_3d_ray_from_screen(x, y, w, h, view, proj, &origin, &dir);
+    return lv_3d_pick_scene(vp->scene, origin, dir);
+}
+
+static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
+{
+    LV_UNUSED(class_p);
+    lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
+    vp->pickable = true;
 }
 
 static void lv_3dviewport_event(const lv_obj_class_t * class_p, lv_event_t * e)
