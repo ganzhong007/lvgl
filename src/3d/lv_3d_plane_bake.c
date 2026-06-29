@@ -76,6 +76,18 @@ static bool slot_refresh(lv_3d_snapshot_slot_t * slot)
     return true;
 }
 
+static void bgra8888_row_to_rgba8888(uint8_t * dst, const uint8_t * src, int32_t w)
+{
+    for(int32_t x = 0; x < w; x++) {
+        dst[0] = src[2];
+        dst[1] = src[1];
+        dst[2] = src[0];
+        dst[3] = src[3];
+        src += 4;
+        dst += 4;
+    }
+}
+
 static void slot_upload_gl(lv_3d_snapshot_slot_t * slot)
 {
     if(!slot || !slot->buf || slot->tex_uploaded) return;
@@ -89,16 +101,25 @@ static void slot_upload_gl(lv_3d_snapshot_slot_t * slot)
     }
 
     const uint32_t stride = slot->buf->header.stride;
+    const size_t rgba_bytes = (size_t)w * (size_t)h * 4u;
+    uint8_t * rgba = lv_malloc(rgba_bytes);
+    if(!rgba) return;
+
+    for(int32_t y = 0; y < h; y++) {
+        bgra8888_row_to_rgba8888(rgba + (size_t)y * (size_t)w * 4u,
+                                 slot->buf->data + (uint32_t)y * stride, w);
+    }
+
     GL_CALL(glBindTexture(GL_TEXTURE_2D, slot->tex_id));
-    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
     GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-    GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, stride / 4));
-    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, slot->buf->data));
+    /* LVGL ARGB8888 draw buf is lv_color32_t (B,G,R,A); upload as canonical GL RGBA. */
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba));
+    lv_free(rgba);
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
-    GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, 0));
     slot->tex_uploaded = true;
 }
 

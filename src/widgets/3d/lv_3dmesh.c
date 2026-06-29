@@ -89,6 +89,11 @@ void lv_3dmesh_set_material(lv_obj_t * obj, const lv_3d_material_t * mat)
     LV_ASSERT_OBJ(obj, MY_CLASS);
     lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
     mesh->material = *mat;
+    sync_draw_material(mesh);
+    if(mesh->mesh_id) {
+        lv_3d_draw_item_t * item = lv_3d_mesh_get_draw_item_mut(mesh->mesh_id);
+        if(item) item->wireframe = (mat->kind == LV_3D_MAT_WIREFRAME);
+    }
     lv_obj_invalidate(obj);
 }
 

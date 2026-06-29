@@ -13,6 +13,7 @@
 
 #include "lv_opengles_debug.h"
 #include "lv_opengles_private.h"
+#include "lv_opengles_texture_private.h"
 #include "lv_opengles_driver.h"
 #if LV_USE_DRAW_GPU_COMPOSITE
 #include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
@@ -224,6 +225,12 @@ lv_opengles_window_texture_t * lv_opengles_window_add_texture(lv_opengles_window
     texture->disp = lv_opengles_texture_get_from_texture_id(texture_id);
     lv_area_set(&texture->area, 0, 0, w - 1, h - 1);
     texture->opa = LV_OPA_COVER;
+
+    /* Viewport uses window->hor_res/ver_res; keep in sync with LVGL texture size. */
+    if(texture->area.x1 == 0 && texture->area.y1 == 0) {
+        window->hor_res = w;
+        window->ver_res = h;
+    }
 
     if(window->use_indev && texture->disp) {
         lv_indev_t * indev = lv_indev_create();
@@ -677,9 +684,24 @@ static void indev_read_cb(lv_indev_t * indev, lv_indev_data_t * data)
 
 static void framebuffer_size_callback(GLFWwindow * window, int width, int height)
 {
+    if(width < 1 || height < 1) return;
+
     lv_opengles_window_t * lv_window = lv_glfw_get_lv_window_from_window(window);
     lv_window->hor_res = width;
     lv_window->ver_res = height;
+
+    lv_opengles_window_texture_t * texture;
+    LV_LL_READ(&lv_window->textures, texture) {
+        if(!texture->disp) continue;
+        lv_area_set(&texture->area, 0, 0, width - 1, height - 1);
+        lv_display_set_resolution(texture->disp, (int32_t)width, (int32_t)height);
+#if LV_USE_DRAW_GPU_COMPOSITE
+        lv_opengles_texture_t * ogl_tex = lv_display_get_driver_data(texture->disp);
+        if(ogl_tex) {
+            lv_opengles_texture_reshape(ogl_tex, texture->disp, (int32_t)width, (int32_t)height);
+        }
+#endif
+    }
 }
 
 static uint32_t lv_glfw_tick_count_callback(void)

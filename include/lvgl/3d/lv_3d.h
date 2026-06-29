@@ -25,11 +25,13 @@ typedef enum {
     LV_3D_MAT_ALPHA,
     LV_3D_MAT_WIREFRAME,
     LV_3D_MAT_PLANE_SNAPSHOT,     /* baked 2D subtree texture on 3D quad */
+    LV_3D_MAT_SHADED_BOX,         /* opaque box: color = sides, top_color = roof */
 } lv_3d_material_kind_t;
 
 typedef struct {
     lv_3d_material_kind_t kind;
     lv_color_t color;
+    lv_color_t top_color;
     lv_opa_t opa;
 } lv_3d_material_t;
 

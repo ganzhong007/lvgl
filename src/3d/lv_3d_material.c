@@ -10,6 +10,7 @@ void lv_3d_material_init(lv_3d_material_t * mat, lv_3d_material_kind_t kind, lv_
 {
     mat->kind = kind;
     mat->color = color;
+    mat->top_color = color;
     mat->opa = opa;
 }
 

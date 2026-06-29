@@ -13,6 +13,95 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef LV_GPU_COMPOSITE_MSAA_SAMPLES
+    #define LV_GPU_COMPOSITE_MSAA_SAMPLES 0
+#endif
+
+#if !LV_USE_EGL
+static unsigned int g_msaa_fbo;
+static unsigned int g_msaa_color_rb;
+static int32_t g_msaa_w;
+static int32_t g_msaa_h;
+static int g_msaa_cached_samples;
+#endif
+
+static int msaa_samples_effective(void)
+{
+    static int cached = -1;
+    if(cached >= 0) return cached;
+
+    int s = LV_GPU_COMPOSITE_MSAA_SAMPLES;
+    const char * env = getenv("LVGL_MSAA_SAMPLES");
+    if(env && env[0]) s = atoi(env);
+    if(s < 0) s = 0;
+    if(s > 8) s = 8;
+    if(s == 1) s = 0;
+    cached = s;
+    return cached;
+}
+
+#if !LV_USE_EGL
+static void msaa_fbo_release(void)
+{
+    if(g_msaa_color_rb) {
+        GL_CALL(glDeleteRenderbuffers(1, &g_msaa_color_rb));
+        g_msaa_color_rb = 0;
+    }
+    if(g_msaa_fbo) {
+        GL_CALL(glDeleteFramebuffers(1, &g_msaa_fbo));
+        g_msaa_fbo = 0;
+    }
+    g_msaa_w = 0;
+    g_msaa_h = 0;
+    g_msaa_cached_samples = 0;
+}
+
+static bool msaa_fbo_ensure(int32_t w, int32_t h, int samples)
+{
+    if(samples < 2 || w < 1 || h < 1) return false;
+
+    if(g_msaa_fbo && g_msaa_color_rb && g_msaa_w == w && g_msaa_h == h && g_msaa_cached_samples == samples) {
+        return true;
+    }
+
+    msaa_fbo_release();
+
+    GL_CALL(glGenFramebuffers(1, &g_msaa_fbo));
+    GL_CALL(glGenRenderbuffers(1, &g_msaa_color_rb));
+    GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, g_msaa_color_rb));
+    GL_CALL(glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, w, h));
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_msaa_fbo));
+    GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, g_msaa_color_rb));
+
+    const bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+
+    if(!ok) {
+        LV_LOG_WARN("LVGL MSAA FBO incomplete (samples=%d)", samples);
+        msaa_fbo_release();
+        return false;
+    }
+
+    g_msaa_w = w;
+    g_msaa_h = h;
+    g_msaa_cached_samples = samples;
+    return true;
+}
+
+static void msaa_resolve_to_texture(unsigned int color_tex, int32_t dst_x, int32_t dst_y, int32_t w, int32_t h)
+{
+    unsigned int resolve_fbo = 0;
+    GL_CALL(glGenFramebuffers(1, &resolve_fbo));
+    GL_CALL(glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolve_fbo));
+    GL_CALL(glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_tex, 0));
+    GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER, g_msaa_fbo));
+    GL_CALL(glBlitFramebuffer(0, 0, w, h, dst_x, dst_y, dst_x + w, dst_y + h, GL_COLOR_BUFFER_BIT, GL_NEAREST));
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    GL_CALL(glDeleteFramebuffers(1, &resolve_fbo));
+}
+#endif
+
 static unsigned int prog;
 static int loc_mvp;
 static int loc_color;
@@ -182,6 +271,11 @@ void lv_gpu_composite_gles2_3d_init(void)
         loc_tex_opa = glGetUniformLocation(prog_tex, "u_opa");
     }
 #endif
+
+    const int msaa = msaa_samples_effective();
+    if(msaa > 1) {
+        LV_LOG_USER("LVGL 3D MSAA enabled: %d samples (LVGL_MSAA_SAMPLES overrides)", msaa);
+    }
 }
 
 void lv_gpu_composite_gles2_3d_deinit(void)
@@ -195,6 +289,9 @@ void lv_gpu_composite_gles2_3d_deinit(void)
         GL_CALL(glDeleteProgram(prog_tex));
         prog_tex = 0;
     }
+#endif
+#if !LV_USE_EGL
+    msaa_fbo_release();
 #endif
 }
 
@@ -277,6 +374,80 @@ static void draw_plane_snapshot(const lv_3d_draw_item_t * it, const float view[1
 #endif
 }
 
+static void draw_box_triangles(const float verts[108], int vert_offset, int vert_count,
+                               const float mvp[16], lv_color_t color, lv_opa_t opa)
+{
+    lv_color32_t c32 = lv_color_to_32(color, opa);
+    GL_CALL(glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp));
+    GL_CALL(glUniform4f(loc_color, c32.red / 255.0f, c32.green / 255.0f, c32.blue / 255.0f,
+                        c32.alpha / 255.0f));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, &verts[vert_offset * 3]));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, vert_count));
+    GL_CALL(glDisableVertexAttribArray(0));
+}
+
+static float face_avg_ndc_y(const float verts[108], int face_idx, const float mvp[16])
+{
+    float sum = 0.0f;
+    int count = 0;
+    for(int v = 0; v < 6; v++) {
+        const int o = (face_idx * 6 + v) * 3;
+        const float x = verts[o + 0];
+        const float y = verts[o + 1];
+        const float z = verts[o + 2];
+        const float cx = mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12];
+        const float cy = mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13];
+        const float cw = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
+        if(fabsf(cw) > 1e-6f) {
+            sum += cy / cw;
+            count++;
+        }
+    }
+    return count > 0 ? (sum / (float)count) : 0.0f;
+}
+
+static void draw_shaded_box(const lv_3d_draw_item_t * it, const float mvp[16])
+{
+    float verts[108];
+    box_solid_verts(it->w, it->h, it->d, verts);
+
+    /* FBO y grows upward, but the window composite flips texture V; pick the cap that
+     * lands on screen-top after that flip (smaller NDC y in the 3D pass). */
+    int top_face = 5;
+    float top_ndc_y = 1e30f;
+    for(int f = 4; f <= 5; f++) {
+        const float ay = face_avg_ndc_y(verts, f, mvp);
+        if(ay < top_ndc_y) {
+            top_ndc_y = ay;
+            top_face = f;
+        }
+    }
+
+    for(int f = 0; f < 4; f++) {
+        draw_box_triangles(verts, f * 6, 6, mvp, it->material.color, it->material.opa);
+    }
+    for(int f = 4; f <= 5; f++) {
+        const lv_color_t c = (f == top_face) ? it->material.top_color : it->material.color;
+        draw_box_triangles(verts, f * 6, 6, mvp, c, it->material.opa);
+    }
+}
+
+static bool draw_item_is_transparent(const lv_3d_draw_item_t * it)
+{
+    if(it->wireframe || it->material.kind == LV_3D_MAT_WIREFRAME) return true;
+    if(it->material.kind == LV_3D_MAT_ALPHA) return true;
+    if(it->material.kind == LV_3D_MAT_PLANE_SNAPSHOT && it->snapshot_id != LV_3D_SNAPSHOT_ID_NONE) return true;
+    return false;
+}
+
+static float draw_item_view_depth(const lv_3d_draw_item_t * it, const float view[16])
+{
+    float mv[16];
+    lv_3d_mat4_mul(mv, view, it->transform.world);
+    return mv[2] * 0.0f + mv[6] * 0.0f + mv[10] * 0.0f + mv[14] * 1.0f;
+}
+
 static void draw_item(const lv_3d_draw_item_t * it, const float view[16], const float proj[16])
 {
     if(it->material.opa <= LV_OPA_MIN) return;
@@ -290,9 +461,14 @@ static void draw_item(const lv_3d_draw_item_t * it, const float view[16], const 
     lv_3d_mat4_mul(mv, view, it->transform.world);
     lv_3d_mat4_mul(mvp, proj, mv);
     GL_CALL(glUseProgram(prog));
-    GL_CALL(glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp));
+
+    if(it->material.kind == LV_3D_MAT_SHADED_BOX) {
+        draw_shaded_box(it, mvp);
+        return;
+    }
 
     lv_color32_t c32 = lv_color_to_32(it->material.color, it->material.opa);
+    GL_CALL(glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp));
     GL_CALL(glUniform4f(loc_color, c32.red / 255.0f, c32.green / 255.0f, c32.blue / 255.0f,
                         c32.alpha / 255.0f));
 
@@ -308,7 +484,14 @@ static void draw_item(const lv_3d_draw_item_t * it, const float view[16], const 
                             c32.alpha / 255.0f));
         GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, verts));
         GL_CALL(glLineWidth(2.0f));
+#if !LV_USE_EGL
+        GL_CALL(glEnable(GL_LINE_SMOOTH));
+        GL_CALL(glHint(GL_LINE_SMOOTH_HINT, GL_NICEST));
+#endif
         GL_CALL(glDrawArrays(GL_LINES, 0, 24));
+#if !LV_USE_EGL
+        GL_CALL(glDisable(GL_LINE_SMOOTH));
+#endif
         GL_CALL(glDisableVertexAttribArray(0));
     }
     else {
@@ -320,25 +503,112 @@ static void draw_item(const lv_3d_draw_item_t * it, const float view[16], const 
     }
 }
 
+static void render_viewport_draw(unsigned int fbo, int32_t vp_x, int32_t vp_y, int32_t w, int32_t h,
+                                 const float view[16], const float proj[16],
+                                 const lv_3d_draw_item_t * items, uint32_t item_count,
+                                 bool ar_passthrough)
+{
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
+    GL_CALL(glViewport(vp_x, vp_y, w, h));
+    GL_CALL(glEnable(GL_SCISSOR_TEST));
+    GL_CALL(glScissor(vp_x, vp_y, w, h));
+
+    if(ar_passthrough) {
+        GL_CALL(glClearColor(0, 0, 0, 0));
+    }
+    else {
+        GL_CALL(glClearColor(0, 0, 0, 1));
+    }
+    GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+    GL_CALL(glDisable(GL_DEPTH_TEST));
+    GL_CALL(glEnable(GL_BLEND));
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+#if !LV_USE_EGL
+    if(msaa_samples_effective() > 1) {
+        GL_CALL(glEnable(GL_MULTISAMPLE));
+    }
+#endif
+
+    uint32_t opaque_order[LV_3D_MAX_DRAW_ITEMS];
+    uint32_t opaque_count = 0;
+    for(uint32_t i = 0; i < item_count; i++) {
+        if(draw_item_is_transparent(&items[i])) continue;
+        opaque_order[opaque_count++] = i;
+    }
+    for(uint32_t a = 1; a < opaque_count; a++) {
+        uint32_t key = opaque_order[a];
+        float key_z = draw_item_view_depth(&items[key], view);
+        uint32_t b = a;
+        while(b > 0) {
+            uint32_t prev = opaque_order[b - 1];
+            if(draw_item_view_depth(&items[prev], view) <= key_z) break;
+            opaque_order[b] = prev;
+            b--;
+        }
+        opaque_order[b] = key;
+    }
+
+    GL_CALL(glUseProgram(prog));
+    for(uint32_t o = 0; o < opaque_count; o++) {
+        draw_item(&items[opaque_order[o]], view, proj);
+    }
+    for(uint32_t i = 0; i < item_count; i++) {
+        if(!draw_item_is_transparent(&items[i])) continue;
+        draw_item(&items[i], view, proj);
+    }
+    GL_CALL(glDisable(GL_SCISSOR_TEST));
+}
+
+static void render_viewport_probe_alpha(unsigned int fbo, int32_t x, int32_t y, int32_t w, int32_t h,
+                                        uint8_t * max_alpha_out)
+{
+    if(!max_alpha_out) return;
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
+    uint8_t probe[4];
+    static const int ppts[9][2] = {{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+                                 {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
+    for(int pi = 0; pi < 9; pi++) {
+        int px = x + w / 2 + ppts[pi][0] * (w / 8);
+        int py = y + h / 2 + ppts[pi][1] * (h / 8);
+        GL_CALL(glReadPixels(px, py, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, probe));
+        if(probe[3] > *max_alpha_out) *max_alpha_out = probe[3];
+    }
+}
+
 void lv_gpu_composite_gles2_render_viewport(unsigned int color_tex, unsigned int depth_rb,
                                             int32_t x, int32_t y, int32_t w, int32_t h,
                                             const float view[16], const float proj[16],
                                             const lv_3d_draw_item_t * items, uint32_t item_count,
                                             bool ar_passthrough, uint8_t * max_alpha_out)
 {
+    LV_UNUSED(depth_rb);
     if(max_alpha_out) *max_alpha_out = 0;
     if(!prog) lv_gpu_composite_gles2_3d_init();
     if(!prog) return;
 
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
 
+    const int msaa = msaa_samples_effective();
+#if !LV_USE_EGL
+    if(msaa > 1 && msaa_fbo_ensure(w, h, msaa)) {
+        render_viewport_draw(g_msaa_fbo, 0, 0, w, h, view, proj, items, item_count, ar_passthrough);
+        msaa_resolve_to_texture(color_tex, x, y, w, h);
+
+        unsigned int probe_fbo = 0;
+        GL_CALL(glGenFramebuffers(1, &probe_fbo));
+        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, probe_fbo));
+        GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_tex, 0));
+        render_viewport_probe_alpha(probe_fbo, x, y, w, h, max_alpha_out);
+        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+        GL_CALL(glDeleteFramebuffers(1, &probe_fbo));
+        return;
+    }
+#endif
+
     unsigned int fbo = 0;
     GL_CALL(glGenFramebuffers(1, &fbo));
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
     GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_tex, 0));
-    if(depth_rb) {
-        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb));
-    }
 
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         LV_LOG_ERROR("LVGL FBO incomplete");
@@ -355,40 +625,9 @@ void lv_gpu_composite_gles2_render_viewport(unsigned int color_tex, unsigned int
     }
 #endif
 
-    GL_CALL(glViewport(x, y, w, h));
-    GL_CALL(glEnable(GL_SCISSOR_TEST));
-    GL_CALL(glScissor(x, y, w, h));
+    render_viewport_draw(fbo, x, y, w, h, view, proj, items, item_count, ar_passthrough);
+    render_viewport_probe_alpha(fbo, x, y, w, h, max_alpha_out);
 
-    if(ar_passthrough) {
-        GL_CALL(glClearColor(0, 0, 0, 0));
-    }
-    else {
-        GL_CALL(glClearColor(0, 0, 0, 1));
-    }
-    GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
-    GL_CALL(glDisable(GL_DEPTH_TEST));
-    GL_CALL(glEnable(GL_BLEND));
-    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
-
-    GL_CALL(glUseProgram(prog));
-
-    for(uint32_t i = 0; i < item_count; i++) {
-        draw_item(&items[i], view, proj);
-    }
-
-    if(max_alpha_out) {
-        uint8_t probe[4];
-        static const int ppts[9][2] = {{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1},
-                                       {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
-        for(int pi = 0; pi < 9; pi++) {
-            int px = x + w / 2 + ppts[pi][0] * (w / 8);
-            int py = y + h / 2 + ppts[pi][1] * (h / 8);
-            GL_CALL(glReadPixels(px, py, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, probe));
-            if(probe[3] > *max_alpha_out) *max_alpha_out = probe[3];
-        }
-    }
-
-    GL_CALL(glDisable(GL_SCISSOR_TEST));
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     GL_CALL(glDeleteFramebuffers(1, &fbo));
 }

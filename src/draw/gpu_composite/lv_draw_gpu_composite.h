@@ -56,6 +56,20 @@ typedef struct {
 /** Corner alpha + center-region content sampling for LVGL_VERIFY. */
 bool lv_gpu_composite_verify_stats(lv_display_t * disp, lv_gpu_composite_verify_stats_t * stats);
 
+/** Per-frame GPU path counters only (no glReadPixels — safe for live HUD). */
+typedef struct {
+    uint32_t gpu_2d_tasks;
+    uint32_t gpu_3d_draws;
+    uint32_t sw_overlay_uploads;
+    uint32_t sw_2d_raster_tasks;
+    uint32_t last_flush_items;
+    uint32_t last_flush_viewports;
+    uint32_t flush_serial;
+    char gl_renderer[128];
+} lv_gpu_composite_path_stats_t;
+
+void lv_gpu_composite_get_path_stats(lv_gpu_composite_path_stats_t * stats);
+
 /** Debug: dump composite texture in LVGL row order (header: uint32 w, h, then RGBA rows). */
 bool lv_gpu_composite_dump_frame_lvgl(lv_display_t * disp, const char * path);
 

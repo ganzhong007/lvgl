@@ -222,11 +222,8 @@ static void gpu_composite_flush_internal(unsigned int tex_id, int32_t dw, int32_
 #endif
 
     unsigned int depth_rb = 0;
+    LV_UNUSED(depth_rb);
     if(count > 0) {
-        GL_CALL(glGenRenderbuffers(1, &depth_rb));
-        GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, depth_rb));
-        GL_CALL(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, dw, dh));
-
         for(uint32_t v = 0; v < count; v++) {
             lv_gpu_composite_vp_t * vp = &vp_persist[v];
             lv_3d_draw_item_t items[LV_3D_MAX_DRAW_ITEMS];
@@ -241,14 +238,12 @@ static void gpu_composite_flush_internal(unsigned int tex_id, int32_t dw, int32_
             int32_t vh = lv_area_get_height(&vp->area);
 
             uint8_t vp_max_a = 0;
-            lv_gpu_composite_gles2_render_viewport(tex_id, depth_rb, vx, vy, vw, vh,
+            lv_gpu_composite_gles2_render_viewport(tex_id, 0, vx, vy, vw, vh,
                                                    view, proj, items, n,
                                                    LV_GPU_COMPOSITE_AR_PASSTHROUGH, &vp_max_a);
             if(vp_max_a > g_last_frame_max_alpha) g_last_frame_max_alpha = vp_max_a;
             g_last_flush_item_count += n;
         }
-
-        GL_CALL(glDeleteRenderbuffers(1, &depth_rb));
     }
     vp_queue_count = 0;
 
@@ -549,6 +544,20 @@ bool lv_gpu_composite_verify_stats(lv_display_t * disp, lv_gpu_composite_verify_
         stats->region_max_alpha = stats->flush_max_alpha;
     }
     return true;
+}
+
+void lv_gpu_composite_get_path_stats(lv_gpu_composite_path_stats_t * stats)
+{
+    if(!stats) return;
+    stats->gpu_2d_tasks = g_path_stats.gpu_2d_tasks;
+    stats->gpu_3d_draws = g_path_stats.gpu_3d_draws;
+    stats->sw_overlay_uploads = g_path_stats.sw_overlay_uploads;
+    stats->sw_2d_raster_tasks = g_path_stats.sw_2d_raster_tasks;
+    stats->last_flush_items = g_last_flush_item_count;
+    stats->last_flush_viewports = g_last_flush_vp_count;
+    stats->flush_serial = g_flush_serial;
+    lv_strncpy(stats->gl_renderer, g_path_stats.gl_renderer, sizeof(stats->gl_renderer) - 1);
+    stats->gl_renderer[sizeof(stats->gl_renderer) - 1] = '\0';
 }
 
 bool lv_gpu_composite_dump_frame_lvgl(lv_display_t * disp, const char * path)

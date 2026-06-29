@@ -438,6 +438,8 @@
     #define LV_GPU_COMPOSITE_DEPTH_BITS 16
     #define LV_GPU_COMPOSITE_USE_ETC1 1
     #define LV_GPU_COMPOSITE_LOG_CAPS 1
+    /** MSAA samples for 3D viewport FBO only (not GLFW window). Override: LVGL_MSAA_SAMPLES */
+    #define LV_GPU_COMPOSITE_MSAA_SAMPLES 0
     /** 0=RGBA8888, 1=RGB565+A8, 2=RGBA4444, 3=RGBA5551 */
     #define LV_GPU_COMPOSITE_COLOR_FORMAT 0
 #endif
