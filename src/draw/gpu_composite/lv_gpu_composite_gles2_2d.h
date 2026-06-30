@@ -24,6 +24,8 @@ void lv_gpu_composite_gles2_2d_deinit(void);
 
 void lv_gpu_composite_gles2_2d_queue_reset(void);
 uint32_t lv_gpu_composite_gles2_2d_queue_count(void);
+/** Shader buckets (fill vs textured) in the current queue — for framegraph batch stats. */
+uint32_t lv_gpu_composite_gles2_2d_count_shader_batches(void);
 bool lv_gpu_composite_gles2_2d_is_raster_nest(void);
 
 bool lv_gpu_composite_gles2_2d_queue_fill(const lv_area_t * area, const lv_area_t * clip,

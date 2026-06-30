@@ -423,12 +423,15 @@
     #if LV_USE_DRAW_NANOVG
         #error "LV_USE_DRAW_GPU_COMPOSITE and LV_USE_DRAW_NANOVG cannot both be enabled"
     #endif
+    /** Deferred glFlush every N framegraph batches (analogous to LV_VG_LITE_FLUSH_MAX_COUNT). */
+    #define LV_GPU_COMPOSITE_FLUSH_MAX_BATCHES 8
 #endif
 
 /** Built-in 3D scene graph + widgets (lv_3dscene, lv_3dmesh, …). Requires LV_USE_DRAW_GPU_COMPOSITE. */
 #define LV_USE_3D 0
 #if LV_USE_3D
     #define LV_USE_3D_WIDGETS 1
+    #define LV_USE_3DBUTTON 1
     #define LV_USE_3D_OBJ_PROPERTIES 0
     #define LV_USE_3DSTACK 1
     #define LV_USE_3D_SEGMENT_POOL 1

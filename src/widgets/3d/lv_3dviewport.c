@@ -7,6 +7,8 @@
 #if LV_USE_3D && LV_USE_3D_WIDGETS
 
 #include "../../core/lv_obj_class_private.h"
+#include "../../core/lv_obj_event_private.h"
+#include "../../indev/lv_indev.h"
 #include "../../include/lvgl/draw/lv_draw_3d.h"
 #include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
 #include "../../3d/lv_3d_internal.h"
@@ -15,6 +17,7 @@
 
 static void lv_3dviewport_event(const lv_obj_class_t * class_p, lv_event_t * e);
 static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
+static void route_input_event(lv_obj_t * vp, lv_event_t * e);
 
 const lv_obj_class_t lv_3dviewport_class = {
     .constructor_cb = lv_3dviewport_constructor,
@@ -54,6 +57,15 @@ void lv_3dviewport_set_pickable(lv_obj_t * obj, bool en)
     LV_ASSERT_OBJ(obj, MY_CLASS);
     lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
     vp->pickable = en;
+}
+
+void lv_3dviewport_set_input_routing(lv_obj_t * obj, bool en)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
+    vp->input_route = en;
+    if(en) lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    else lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
 }
 
 lv_obj_t * lv_3dviewport_pick_obj(lv_obj_t * obj, lv_point3d_t ray_origin, lv_vec3_t ray_dir)
@@ -96,6 +108,61 @@ static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     LV_UNUSED(class_p);
     lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
     vp->pickable = true;
+    vp->input_route = false;
+    vp->pressed_obj = NULL;
+}
+
+static void route_input_event(lv_obj_t * obj, lv_event_t * e)
+{
+    lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
+    if(!vp->input_route || !vp->pickable) return;
+
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code != LV_EVENT_PRESSED && code != LV_EVENT_PRESSING && code != LV_EVENT_RELEASED &&
+       code != LV_EVENT_PRESS_LOST && code != LV_EVENT_CLICKED) {
+        return;
+    }
+
+    lv_indev_t * indev = lv_event_get_indev(e);
+    if(!indev) indev = lv_indev_active();
+    if(!indev) return;
+
+    lv_point_t pt;
+    lv_indev_get_point(indev, &pt);
+    lv_obj_t * hit = lv_3dviewport_pick_at(obj, pt.x, pt.y);
+
+    if(code == LV_EVENT_PRESSED) {
+        vp->pressed_obj = hit;
+        if(hit && lv_obj_has_flag(hit, LV_OBJ_FLAG_CLICKABLE)) {
+            lv_obj_send_event(hit, LV_EVENT_PRESSED, indev);
+        }
+    }
+    else if(code == LV_EVENT_PRESSING) {
+        if(vp->pressed_obj && lv_obj_has_flag(vp->pressed_obj, LV_OBJ_FLAG_CLICKABLE)) {
+            lv_obj_send_event(vp->pressed_obj, LV_EVENT_PRESSING, indev);
+        }
+    }
+    else if(code == LV_EVENT_RELEASED) {
+        lv_obj_t * was = vp->pressed_obj;
+        vp->pressed_obj = NULL;
+        if(was && lv_obj_has_flag(was, LV_OBJ_FLAG_CLICKABLE)) {
+            lv_obj_send_event(was, LV_EVENT_RELEASED, indev);
+            if(hit == was) {
+                lv_obj_send_event(was, LV_EVENT_CLICKED, indev);
+            }
+        }
+    }
+    else if(code == LV_EVENT_PRESS_LOST) {
+        lv_obj_t * was = vp->pressed_obj;
+        vp->pressed_obj = NULL;
+        if(was && lv_obj_has_flag(was, LV_OBJ_FLAG_CLICKABLE)) {
+            lv_obj_send_event(was, LV_EVENT_PRESS_LOST, indev);
+        }
+    }
+    else if(code == LV_EVENT_CLICKED) {
+        /* Routed on RELEASED when still over target; swallow duplicate vp CLICKED. */
+        lv_event_stop_processing(e);
+    }
 }
 
 static void lv_3dviewport_event(const lv_obj_class_t * class_p, lv_event_t * e)
@@ -119,6 +186,11 @@ static void lv_3dviewport_event(const lv_obj_class_t * class_p, lv_event_t * e)
         dsc.camera = vp->camera;
         dsc.viewport_area = coords;
         lv_draw_3d(layer, &dsc, &coords);
+    }
+    else if(code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED ||
+            code == LV_EVENT_PRESS_LOST || code == LV_EVENT_CLICKED) {
+        route_input_event(obj, e);
+        lv_obj_event_base(MY_CLASS, e);
     }
     else {
         lv_obj_event_base(MY_CLASS, e);

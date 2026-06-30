@@ -100,7 +100,7 @@ static void start_anim(void * ctx, lv_anim_exec_xcb_t exec_cb, uint32_t ms)
 
 void lv_anim_3d_position(lv_obj_t * obj, float x, float y, float z, uint32_t ms)
 {
-    LV_ASSERT_OBJ(obj, &lv_3dmesh_class);
+    if(!lv_obj_has_class(obj, &lv_3dmesh_class)) return;
     lv_anim_3d_pos_ctx_t * ctx = lv_malloc(sizeof(*ctx));
     if(!ctx) return;
     ctx->mesh = obj;
@@ -113,7 +113,7 @@ void lv_anim_3d_position(lv_obj_t * obj, float x, float y, float z, uint32_t ms)
 
 void lv_anim_3d_rotation(lv_obj_t * obj, float pitch, float yaw, float roll, uint32_t ms)
 {
-    LV_ASSERT_OBJ(obj, &lv_3dmesh_class);
+    if(!lv_obj_has_class(obj, &lv_3dmesh_class)) return;
     lv_anim_3d_rot_ctx_t * ctx = lv_malloc(sizeof(*ctx));
     if(!ctx) return;
     ctx->mesh = obj;
@@ -126,7 +126,7 @@ void lv_anim_3d_rotation(lv_obj_t * obj, float pitch, float yaw, float roll, uin
 
 void lv_anim_3d_scale(lv_obj_t * obj, float sx, float sy, float sz, uint32_t ms)
 {
-    LV_ASSERT_OBJ(obj, &lv_3dmesh_class);
+    if(!lv_obj_has_class(obj, &lv_3dmesh_class)) return;
     lv_anim_3d_scale_ctx_t * ctx = lv_malloc(sizeof(*ctx));
     if(!ctx) return;
     ctx->mesh = obj;
@@ -139,7 +139,7 @@ void lv_anim_3d_scale(lv_obj_t * obj, float sx, float sy, float sz, uint32_t ms)
 
 void lv_anim_3d_opa(lv_obj_t * obj, lv_opa_t opa, uint32_t ms)
 {
-    LV_ASSERT_OBJ(obj, &lv_3dmesh_class);
+    if(!lv_obj_has_class(obj, &lv_3dmesh_class)) return;
     lv_anim_3d_opa_ctx_t * ctx = lv_malloc(sizeof(*ctx));
     if(!ctx) return;
     ctx->mesh = obj;

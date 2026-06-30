@@ -219,6 +219,25 @@ uint32_t lv_gpu_composite_gles2_2d_queue_count(void)
     return g_queue_count;
 }
 
+static bool gpu2d_cmd_uses_fill_shader(lv_gpu2d_cmd_type_t type)
+{
+    return type == LV_GPU2D_CMD_FILL || type == LV_GPU2D_CMD_BORDER;
+}
+
+uint32_t lv_gpu_composite_gles2_2d_count_shader_batches(void)
+{
+    if(g_queue_count == 0) return 0;
+
+    uint32_t batches = 0;
+    bool last_fill = true;
+    for(uint32_t i = 0; i < g_queue_count; i++) {
+        bool fill = gpu2d_cmd_uses_fill_shader(g_queue[i].type);
+        if(i == 0 || fill != last_fill) batches++;
+        last_fill = fill;
+    }
+    return batches > 0 ? batches : 1;
+}
+
 bool lv_gpu_composite_gles2_2d_is_raster_nest(void)
 {
     return g_raster_nest > 0;
@@ -298,6 +317,12 @@ bool lv_gpu_composite_gles2_2d_queue_image(const lv_area_t * area, const lv_area
     return queue_push(&cmd);
 }
 
+static void gpu_comp_uniform_rgba(int loc, lv_color32_t c32)
+{
+    GL_CALL(glUniform4f(loc, c32.blue / 255.0f, c32.green / 255.0f, c32.red / 255.0f,
+                        c32.alpha / 255.0f));
+}
+
 static void apply_scissor(const lv_area_t * clip, int32_t dh)
 {
     int32_t w = clip->x2 - clip->x1 + 1;
@@ -330,8 +355,7 @@ static void draw_fill_quad(const lv_area_t * area, int32_t dw, int32_t dh,
 
     GL_CALL(glUseProgram(prog_fill));
     GL_CALL(glUniform2f(loc_fill_disp, (float)dw, (float)dh));
-    GL_CALL(glUniform4f(loc_fill_color, c32.red / 255.0f, c32.green / 255.0f, c32.blue / 255.0f,
-                        c32.alpha / 255.0f));
+    gpu_comp_uniform_rgba(loc_fill_color, c32);
     GL_CALL(glUniform4f(loc_fill_rect, x1, y1, rw, rh));
     GL_CALL(glUniform1f(loc_fill_radius, rad));
     GL_CALL(glEnableVertexAttribArray(0));

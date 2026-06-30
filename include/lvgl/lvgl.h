@@ -179,6 +179,9 @@
 #include "widgets/lv_3dcamera.h"
 #include "widgets/lv_3dviewport.h"
 #include "widgets/lv_3dmesh.h"
+#if LV_USE_3DBUTTON
+#include "widgets/lv_3dbutton.h"
+#endif
 #include "widgets/lv_3dstack.h"
 #endif
 #include "widgets/lv_animimage.h"

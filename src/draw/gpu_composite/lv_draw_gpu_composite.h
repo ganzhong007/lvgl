@@ -15,6 +15,13 @@ extern "C" {
 
 #include "../../display/lv_display.h"
 
+#define LV_GPU_COMPOSITE_UI_GENERIC         0
+#define LV_GPU_COMPOSITE_UI_AR_LAUNCHER     1
+#define LV_GPU_COMPOSITE_UI_NAV_AR          2
+#define LV_GPU_COMPOSITE_UI_APP_FULLSCREEN  3
+
+void lv_gpu_composite_set_ui_mode(int mode);
+
 void lv_draw_gpu_composite_init(void);
 void lv_draw_gpu_composite_deinit(void);
 
@@ -38,6 +45,8 @@ typedef struct {
     uint32_t region_visible_count;   /**< alpha >= 32 */
     uint32_t region_opaque_count;    /**< alpha >= 128 */
     uint32_t region_greenish_count;  /**< visible && g > r+8 && g > b+8 */
+    uint32_t region_bluish_count;    /**< visible && b > r+8 && b > g+4 */
+    uint32_t region_grayish_count;   /**< visible && channels within 20 && avg < 180 */
     uint32_t region_colorful_count;  /**< opaque && (r+g+b) >= 64 */
     uint8_t center_rgba[4];          /**< RGBA at screen center (GL readback order) */
     uint8_t region_max_alpha;        /**< max alpha in sampled region */
@@ -50,6 +59,10 @@ typedef struct {
     uint32_t gpu_3d_draws;
     uint32_t sw_overlay_uploads;
     uint32_t sw_2d_raster_tasks;
+    uint32_t fg_pass_count;
+    uint32_t fg_batch_count;
+    uint32_t fg_material_batches;
+    uint32_t fg_gl_finish_count;
     char gl_renderer[128];
 } lv_gpu_composite_verify_stats_t;
 
@@ -65,6 +78,10 @@ typedef struct {
     uint32_t last_flush_items;
     uint32_t last_flush_viewports;
     uint32_t flush_serial;
+    uint32_t fg_pass_count;
+    uint32_t fg_batch_count;
+    uint32_t fg_material_batches;
+    uint32_t fg_gl_finish_count;
     char gl_renderer[128];
 } lv_gpu_composite_path_stats_t;
 

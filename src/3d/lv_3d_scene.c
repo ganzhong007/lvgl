@@ -13,7 +13,7 @@ static void collect_obj(lv_obj_t * obj, const float parent_world[16], lv_3d_draw
     uint32_t i;
     for(i = 0; i < lv_obj_get_child_count(obj); i++) {
         lv_obj_t * child = lv_obj_get_child(obj, i);
-        if(lv_obj_check_type(child, &lv_3dmesh_class)) {
+        if(lv_obj_has_class(child, &lv_3dmesh_class)) {
             if(*count >= max_out) return;
             lv_3dmesh_t * mesh = (lv_3dmesh_t *)child;
             lv_3d_draw_item_t * item = lv_3d_mesh_get_draw_item_mut(mesh->mesh_id);

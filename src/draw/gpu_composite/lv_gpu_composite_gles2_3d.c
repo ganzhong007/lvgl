@@ -374,13 +374,19 @@ static void draw_plane_snapshot(const lv_3d_draw_item_t * it, const float view[1
 #endif
 }
 
+static void gpu_comp_uniform_rgba(int loc, lv_color32_t c32)
+{
+    /* window_display_texture is presented with rb_swap; match SW overlay channel order */
+    GL_CALL(glUniform4f(loc, c32.blue / 255.0f, c32.green / 255.0f, c32.red / 255.0f,
+                        c32.alpha / 255.0f));
+}
+
 static void draw_box_triangles(const float verts[108], int vert_offset, int vert_count,
                                const float mvp[16], lv_color_t color, lv_opa_t opa)
 {
     lv_color32_t c32 = lv_color_to_32(color, opa);
     GL_CALL(glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp));
-    GL_CALL(glUniform4f(loc_color, c32.red / 255.0f, c32.green / 255.0f, c32.blue / 255.0f,
-                        c32.alpha / 255.0f));
+    gpu_comp_uniform_rgba(loc_color, c32);
     GL_CALL(glEnableVertexAttribArray(0));
     GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, &verts[vert_offset * 3]));
     GL_CALL(glDrawArrays(GL_TRIANGLES, 0, vert_count));
@@ -469,19 +475,19 @@ static void draw_item(const lv_3d_draw_item_t * it, const float view[16], const 
 
     lv_color32_t c32 = lv_color_to_32(it->material.color, it->material.opa);
     GL_CALL(glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp));
-    GL_CALL(glUniform4f(loc_color, c32.red / 255.0f, c32.green / 255.0f, c32.blue / 255.0f,
-                        c32.alpha / 255.0f));
+    gpu_comp_uniform_rgba(loc_color, c32);
 
     float verts[108];
     if(it->wireframe || it->material.kind == LV_3D_MAT_WIREFRAME) {
         box_solid_verts(it->w, it->h, it->d, verts);
         GL_CALL(glEnableVertexAttribArray(0));
         GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, verts));
-        GL_CALL(glUniform4f(loc_color, c32.red / 255.0f, c32.green / 255.0f, c32.blue / 255.0f, 0.08f));
+        lv_color32_t dim = c32;
+        dim.alpha = (uint8_t)(255.0f * 0.08f);
+        gpu_comp_uniform_rgba(loc_color, dim);
         GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 36));
         box_wire_verts(it->w, it->h, it->d, verts);
-        GL_CALL(glUniform4f(loc_color, c32.red / 255.0f, c32.green / 255.0f, c32.blue / 255.0f,
-                            c32.alpha / 255.0f));
+        gpu_comp_uniform_rgba(loc_color, c32);
         GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, verts));
         GL_CALL(glLineWidth(2.0f));
 #if !LV_USE_EGL
