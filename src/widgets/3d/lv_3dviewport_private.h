@@ -17,6 +17,7 @@ typedef struct {
     bool pickable;
     bool input_route;
     lv_obj_t * pressed_obj;
+    lv_obj_t * hovered_obj;
 } lv_3dviewport_t;
 
 extern const lv_obj_class_t lv_3dviewport_class;

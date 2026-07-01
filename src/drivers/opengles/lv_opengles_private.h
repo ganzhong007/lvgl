@@ -20,7 +20,7 @@ extern "C" {
 
 #if LV_USE_DRAW_OPENGLES
 #define LV_USE_OPENGLES_DIRECT_DISPLAY 1
-#elif LV_USE_DRAW_GPU_COMPOSITE
+#elif LV_USE_DRAW_GPU_RENDERER
 #define LV_USE_OPENGLES_DIRECT_DISPLAY 0
 #else
 #define LV_USE_OPENGLES_DIRECT_DISPLAY 0
@@ -163,6 +163,9 @@ void lv_opengles_render(const lv_opengles_render_params_t * params);
 void lv_opengles_render_texture_rbswap(unsigned int texture, const lv_area_t * texture_area, lv_opa_t opa,
                                        int32_t disp_w, int32_t disp_h, const lv_area_t * texture_clip_area,
                                        bool h_flip, bool v_flip);
+void lv_opengles_render_texture_rbswap_blend(unsigned int texture, const lv_area_t * texture_area, lv_opa_t opa,
+                                              int32_t disp_w, int32_t disp_h, const lv_area_t * texture_clip_area,
+                                              bool h_flip, bool v_flip, bool blend_opt);
 
 /**
  * Set the OpenGL viewport, with vertical co-ordinate conversion

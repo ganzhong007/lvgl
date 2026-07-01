@@ -11,6 +11,7 @@
 #if LV_USE_DRAW_GPU_RENDERER
 
 #include "lv_gpu_renderer_framegraph.h"
+#include "lv_draw_gpu_renderer.h"
 
 #include "lv_gpu_renderer_batch_3d.h"
 #include "lv_gpu_renderer_gles2_2d.h"
@@ -339,6 +340,11 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
 
     GL_CALL(glFinish());
     g_fg_stats.gl_finish_count = 1;
+
+#if !LV_USE_EGL
+    /* 2D batch leaves draw/read buffers on COLOR_ATTACHMENT0; restore for window blit. */
+    lv_gpu_renderer_restore_default_framebuffer();
+#endif
 
     g_vp_count = 0;
     g_fg_stats.gpu_2d_recorded = 0;

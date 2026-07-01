@@ -588,6 +588,7 @@ uint32_t lv_gpu_renderer_gles2_2d_render_batch(unsigned int color_tex, int32_t d
     }
 
     GL_CALL(glDisable(GL_SCISSOR_TEST));
+    GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0));
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     GL_CALL(glDeleteFramebuffers(1, &fbo));
 

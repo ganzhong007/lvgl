@@ -14,8 +14,8 @@ static void build_3dbutton_scene(void)
     lv_obj_t * cam = lv_3dcamera_create(scr);
     lv_3dcamera_set_perspective(cam, 38.0f, 10.0f, 5000.0f);
     lv_3dcamera_look_at(cam,
-                        (lv_vec3_t) { 260.0f, 160.0f, 760.0f },
-                        (lv_vec3_t) { 0.0f, -8.0f, -300.0f },
+                        (lv_vec3_t) { 0.0f, 180.0f, 320.0f },
+                        (lv_vec3_t) { 0.0f, 0.0f, -280.0f },
                         (lv_vec3_t) { 0.0f, 1.0f, 0.0f });
 
     lv_obj_t * scene = lv_3dscene_create(scr);
@@ -25,10 +25,13 @@ static void build_3dbutton_scene(void)
     lv_3dviewport_set_scene(vp, scene);
 
     lv_obj_t * btn = lv_3dbutton_create(scene);
-    lv_3dbutton_set_box_size(btn, 220.0f, 116.0f, 224.0f);
+    lv_3dbutton_set_box_size(btn, 300.0f, 18.0f, 72.0f);
+    lv_3dbutton_set_corner_radius(btn, 16.0f);
     lv_3dbutton_set_colors(btn, lv_color_hex(0x1E88E5), lv_color_hex(0x0D47A1));
-    lv_3dbutton_set_tilt(btn, -5.0f, 8.0f);
-    lv_3dmesh_set_position(btn, 0.0f, 0.0f, -300.0f);
+    lv_3dbutton_set_hover_lift(btn, 12.0f, 1.035f);
+    lv_3dbutton_set_press_depth(btn, -16.0f, 0.96f);
+    lv_3dbutton_set_tilt(btn, 0.0f, 0.0f);
+    lv_3dbutton_place(btn, 0.0f, 0.0f, -280.0f);
 }
 #endif
 

@@ -16,7 +16,8 @@
 
 static void lv_3dbutton_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
 static void lv_3dbutton_event(const lv_obj_class_t * class_p, lv_event_t * e);
-static void apply_visual(lv_3dbutton_t * btn, bool pressed);
+static void apply_visual_state(lv_3dbutton_t * btn, lv_3dbutton_vis_t vis);
+static void sync_transform(lv_3dbutton_t * btn);
 static lv_3dbutton_t * btn_from_obj(lv_obj_t * obj);
 
 const lv_obj_class_t lv_3dbutton_class = {
@@ -47,34 +48,61 @@ static void sync_mesh_material(lv_3dbutton_t * btn)
     if(item) item->material = btn->material;
 }
 
-static void apply_visual(lv_3dbutton_t * btn, bool pressed)
+static void sync_transform(lv_3dbutton_t * btn)
 {
-    if(btn->is_pressed == pressed) return;
-    btn->is_pressed = pressed;
+    lv_3d_draw_item_t * item = lv_3d_mesh_get_draw_item_mut(btn->mesh_id);
+    if(!item) return;
+    lv_3d_transform_set_local_trs(&item->transform,
+                                  btn->pos[0], btn->pos[1], btn->pos[2],
+                                  btn->rot[0], btn->rot[1], btn->rot[2],
+                                  btn->scale[0], btn->scale[1], btn->scale[2]);
+}
 
-    if(pressed) {
-        btn->material.color = btn->side_pressed;
-        btn->material.top_color = btn->top_pressed;
-        float m = btn->press_scale_mul;
-        btn->scale[0] = m;
-        btn->scale[1] = m;
-        btn->scale[2] = m;
+static void apply_visual_state(lv_3dbutton_t * btn, lv_3dbutton_vis_t vis)
+{
+    if(btn->vis == vis) return;
+    btn->vis = vis;
+
+    float y_off = 0.0f;
+    float sc = 1.0f;
+    lv_color_t side = btn->side_released;
+    lv_color_t top = btn->top_released;
+
+    switch(vis) {
+        case LV_3DBUTTON_VIS_PRESSED:
+            y_off = btn->hover_lift_z + btn->press_sink_z;
+            sc = btn->press_scale_mul;
+            side = btn->side_pressed;
+            top = btn->top_pressed;
+            break;
+        case LV_3DBUTTON_VIS_HOVER:
+            y_off = btn->hover_lift_z;
+            sc = btn->hover_scale_mul;
+            side = btn->side_hover;
+            top = btn->top_hover;
+            break;
+        default:
+            break;
     }
-    else {
-        btn->material.color = btn->side_released;
-        btn->material.top_color = btn->top_released;
-        btn->scale[0] = btn->scale[1] = btn->scale[2] = 1.0f;
-    }
+
+    btn->material.color = side;
+    btn->material.top_color = top;
+    btn->scale[0] = btn->scale[1] = btn->scale[2] = sc;
+    btn->pos[0] = btn->base_pos[0];
+    btn->pos[1] = btn->base_pos[1] + y_off;
+    btn->pos[2] = btn->base_pos[2];
 
     sync_mesh_material(btn);
-    lv_3d_draw_item_t * item = lv_3d_mesh_get_draw_item_mut(btn->mesh_id);
-    if(item) {
-        lv_3d_transform_set_local_trs(&item->transform,
-                                      btn->pos[0], btn->pos[1], btn->pos[2],
-                                      btn->rot[0], btn->rot[1], btn->rot[2],
-                                      btn->scale[0], btn->scale[1], btn->scale[2]);
-    }
+    sync_transform(btn);
     lv_obj_invalidate((lv_obj_t *)btn);
+}
+
+static void refresh_visual(lv_3dbutton_t * btn)
+{
+    lv_3dbutton_vis_t vis = LV_3DBUTTON_VIS_NORMAL;
+    if(btn->is_pressed) vis = LV_3DBUTTON_VIS_PRESSED;
+    else if(btn->hovered) vis = LV_3DBUTTON_VIS_HOVER;
+    apply_visual_state(btn, vis);
 }
 
 lv_obj_t * lv_3dbutton_create(lv_obj_t * parent)
@@ -89,7 +117,18 @@ void lv_3dbutton_set_box_size(lv_obj_t * obj, float w, float h, float depth)
     lv_3dbutton_t * btn = btn_from_obj(obj);
     lv_3dmesh_set_box(obj, w, h, depth);
     btn->material.kind = LV_3D_MAT_SHADED_BOX;
+    btn->material.corner_radius = btn->corner_radius;
     sync_mesh_material(btn);
+}
+
+void lv_3dbutton_set_corner_radius(lv_obj_t * obj, float radius)
+{
+    lv_3dbutton_t * btn = btn_from_obj(obj);
+    if(radius < 0.0f) radius = 0.0f;
+    btn->corner_radius = radius;
+    btn->material.corner_radius = radius;
+    sync_mesh_material(btn);
+    lv_obj_invalidate(obj);
 }
 
 void lv_3dbutton_set_tilt(lv_obj_t * obj, float pitch_deg, float yaw_deg)
@@ -104,21 +143,45 @@ void lv_3dbutton_set_colors(lv_obj_t * obj, lv_color_t released, lv_color_t pres
     btn->color_pressed = pressed;
     btn->side_released = lv_color_darken(released, 36);
     btn->side_pressed = lv_color_darken(pressed, 28);
+    btn->side_hover = lv_color_darken(released, 18);
     btn->top_released = shade_color(released, 56);
     btn->top_pressed = shade_color(pressed, 40);
-    btn->material.color = btn->is_pressed ? btn->side_pressed : btn->side_released;
-    btn->material.top_color = btn->is_pressed ? btn->top_pressed : btn->top_released;
-    sync_mesh_material(btn);
-    lv_obj_invalidate(obj);
+    btn->top_hover = shade_color(released, 72);
+    refresh_visual(btn);
+}
+
+void lv_3dbutton_set_hover_lift(lv_obj_t * obj, float lift_z, float hover_scale)
+{
+    lv_3dbutton_t * btn = btn_from_obj(obj);
+    btn->hover_lift_z = lift_z;
+    if(hover_scale < 1.0f) hover_scale = 1.0f;
+    if(hover_scale > 1.12f) hover_scale = 1.12f;
+    btn->hover_scale_mul = hover_scale;
+    refresh_visual(btn);
+}
+
+void lv_3dbutton_set_press_depth(lv_obj_t * obj, float sink_z, float press_scale)
+{
+    lv_3dbutton_t * btn = btn_from_obj(obj);
+    btn->press_sink_z = sink_z;
+    if(press_scale < 0.5f) press_scale = 0.5f;
+    if(press_scale > 1.0f) press_scale = 1.0f;
+    btn->press_scale_mul = press_scale;
+    refresh_visual(btn);
 }
 
 void lv_3dbutton_set_press_scale(lv_obj_t * obj, float scale_mul)
 {
+    lv_3dbutton_set_press_depth(obj, btn_from_obj(obj)->press_sink_z, scale_mul);
+}
+
+void lv_3dbutton_place(lv_obj_t * obj, float x, float y, float z)
+{
     lv_3dbutton_t * btn = btn_from_obj(obj);
-    if(scale_mul < 0.5f) scale_mul = 0.5f;
-    if(scale_mul > 1.0f) scale_mul = 1.0f;
-    btn->press_scale_mul = scale_mul;
-    if(btn->is_pressed) apply_visual(btn, true);
+    btn->base_pos[0] = x;
+    btn->base_pos[1] = y;
+    btn->base_pos[2] = z;
+    refresh_visual(btn);
 }
 
 bool lv_3dbutton_is_pressed(const lv_obj_t * obj)
@@ -142,21 +205,33 @@ static void lv_3dbutton_constructor(const lv_obj_class_t * class_p, lv_obj_t * o
     btn->color_pressed = lv_color_hex(0x1565C0);
     btn->side_released = lv_color_darken(btn->color_released, 36);
     btn->side_pressed = lv_color_darken(btn->color_pressed, 28);
+    btn->side_hover = lv_color_darken(btn->color_released, 18);
     btn->top_released = shade_color(btn->color_released, 56);
     btn->top_pressed = shade_color(btn->color_pressed, 40);
-    btn->press_scale_mul = 0.96f;
+    btn->top_hover = shade_color(btn->color_released, 72);
+    btn->corner_radius = 12.0f;
+    btn->hover_lift_z = 10.0f;
+    btn->press_sink_z = -14.0f;
+    btn->hover_scale_mul = 1.03f;
+    btn->press_scale_mul = 0.97f;
+    btn->vis = LV_3DBUTTON_VIS_NORMAL;
+    btn->hovered = false;
     btn->is_pressed = false;
 
     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_3dmesh_set_box(obj, 200.0f, 56.0f, 48.0f);
-    lv_3dmesh_set_rotation(obj, -18.0f, 24.0f, 0.0f);
+    lv_3dmesh_set_box(obj, 200.0f, 16.0f, 56.0f);
+    lv_3dmesh_set_rotation(obj, 0.0f, 0.0f, 0.0f);
     lv_3dmesh_set_wireframe(obj, false);
 
     btn->material.kind = LV_3D_MAT_SHADED_BOX;
+    btn->material.corner_radius = btn->corner_radius;
     btn->material.color = btn->side_released;
     btn->material.top_color = btn->top_released;
     btn->material.opa = LV_OPA_COVER;
+    btn->base_pos[0] = btn->pos[0];
+    btn->base_pos[1] = btn->pos[1];
+    btn->base_pos[2] = btn->pos[2];
     sync_mesh_material(btn);
 }
 
@@ -167,11 +242,21 @@ static void lv_3dbutton_event(const lv_obj_class_t * class_p, lv_event_t * e)
     lv_obj_t * obj = lv_event_get_current_target(e);
     lv_3dbutton_t * btn = btn_from_obj(obj);
 
-    if(code == LV_EVENT_PRESSED) {
-        apply_visual(btn, true);
+    if(code == LV_EVENT_HOVER_OVER) {
+        btn->hovered = true;
+        if(!btn->is_pressed) refresh_visual(btn);
+    }
+    else if(code == LV_EVENT_HOVER_LEAVE) {
+        btn->hovered = false;
+        if(!btn->is_pressed) refresh_visual(btn);
+    }
+    else if(code == LV_EVENT_PRESSED) {
+        btn->is_pressed = true;
+        refresh_visual(btn);
     }
     else if(code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
-        apply_visual(btn, false);
+        btn->is_pressed = false;
+        refresh_visual(btn);
     }
 
     lv_obj_event_base(MY_CLASS, e);

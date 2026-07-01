@@ -15,12 +15,14 @@
 #include "lv_opengles_private.h"
 #include "lv_opengles_texture_private.h"
 #include "lv_opengles_driver.h"
-#if LV_USE_DRAW_GPU_COMPOSITE
-#include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
-#endif
 #include "../../misc/lv_area_private.h"
 
+#include <stdio.h>
 #include <stdlib.h>
+
+#if LV_USE_DRAW_GPU_RENDERER
+#include "../../draw/gpu_renderer/lv_draw_gpu_renderer.h"
+#endif
 
 /*********************
  *      DEFINES
@@ -79,6 +81,12 @@ static void indev_read_cb(lv_indev_t * indev, lv_indev_data_t * data);
 static void framebuffer_size_callback(GLFWwindow * window, int width, int height);
 static void window_display_delete_cb(lv_event_t * e);
 static void window_display_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map);
+#if LV_USE_DRAW_GPU_RENDERER
+static void gpu_present_to_window(unsigned int tex_id, lv_opengles_window_texture_t * texture,
+                                  lv_opengles_window_t * window);
+static void gpu_invalidate_display(lv_display_t * disp);
+static unsigned int gpu_display_tex_id(lv_opengles_window_texture_t * texture);
+#endif
 #if !LV_USE_OPENGLES_DIRECT_DISPLAY
 static void ensure_init_window_display_texture(void);
 static void ensure_window_display_texture_sized(int32_t w, int32_t h);
@@ -457,6 +465,51 @@ static void lv_glfw_window_quit(void)
     exit(0);
 }
 
+#if LV_USE_DRAW_GPU_RENDERER
+static unsigned int gpu_display_tex_id(lv_opengles_window_texture_t * texture)
+{
+    if(!texture) return 0;
+    if(texture->disp) {
+        unsigned int id = lv_opengles_texture_get_texture_id(texture->disp);
+        if(id) {
+            texture->texture_id = id;
+            return id;
+        }
+    }
+    return texture->texture_id;
+}
+
+static void gpu_present_to_window(unsigned int tex_id, lv_opengles_window_texture_t * texture,
+                                  lv_opengles_window_t * window)
+{
+    const unsigned int live_tex = gpu_display_tex_id(texture);
+    if(live_tex) tex_id = live_tex;
+
+    const int32_t tw = lv_area_get_width(&texture->area);
+    const int32_t th = lv_area_get_height(&texture->area);
+
+    if(lv_gpu_renderer_present_tex_to_window(tex_id, tw, th)) {
+        return;
+    }
+
+    if(lv_gpu_renderer_present_tex_readback(tex_id, tw, th)) {
+        return;
+    }
+
+    lv_gpu_renderer_restore_default_framebuffer();
+    lv_opengles_reinit_state();
+    GL_CALL(glDisable(GL_SCISSOR_TEST));
+    lv_opengles_render_texture_rbswap_blend(tex_id, &texture->area, texture->opa, window->hor_res, window->ver_res,
+                                            &texture->area, window->h_flip, window->v_flip, true);
+}
+
+static void gpu_invalidate_display(lv_display_t * disp)
+{
+    lv_obj_t * scr = lv_display_get_screen_active(disp);
+    if(scr) lv_obj_invalidate(scr);
+}
+#endif
+
 static void window_update_handler(lv_timer_t * t)
 {
     LV_UNUSED(t);
@@ -513,20 +566,32 @@ static void window_update_handler(lv_timer_t * t)
 
                 lv_display_t * default_save = lv_display_get_default();
                 lv_display_set_default(texture->disp);
+#if LV_USE_DRAW_GPU_RENDERER
+                gpu_invalidate_display(texture->disp);
+#endif
                 lv_display_refr_timer(NULL);
                 lv_display_set_default(default_save);
 
-#if LV_USE_DRAW_GPU_COMPOSITE
+#if LV_USE_DRAW_GPU_RENDERER
                 {
                     int32_t tw = lv_area_get_width(&texture->area);
                     int32_t th = lv_area_get_height(&texture->area);
                     ensure_window_display_texture_sized(tw, th);
-                    lv_gpu_composite_flush_3d_to_tex(texture->disp, window_display_texture, tw, th);
-                    lv_gpu_composite_notify_frame_ready(texture->disp);
-                    lv_gpu_composite_overlay_2d_to_tex(texture->disp, window_display_texture, tw, th);
+                    lv_gpu_renderer_flush_3d_to_tex(texture->disp, window_display_texture, tw, th);
+                    lv_gpu_renderer_overlay_2d_to_tex(texture->disp, window_display_texture, tw, th);
+                    lv_gpu_renderer_notify_frame_ready(texture->disp);
                 }
-                lv_opengles_render_texture_rbswap(window_display_texture, &texture->area, texture->opa, window->hor_res,
-                                                  window->ver_res, &texture->area, window->h_flip, window->v_flip);
+                gpu_present_to_window(window_display_texture, texture, window);
+                {
+                    const char * dump_dir = getenv("LVGL_VERIFY_DUMP_WIN");
+                    if(dump_dir && dump_dir[0]) {
+                        char win_path[512];
+                        lv_snprintf(win_path, sizeof(win_path), "%s/frame_window.rgba", dump_dir);
+                        if(lv_gpu_renderer_dump_screen_lvgl(window->hor_res, window->ver_res, win_path)) {
+                            printf("LVGL_VERIFY: dump window -> %s\n", win_path);
+                        }
+                    }
+                }
 #elif !LV_USE_OPENGLES_DIRECT_DISPLAY
                 ensure_init_window_display_texture();
 
@@ -566,19 +631,25 @@ static void window_update_handler(lv_timer_t * t)
 #if LV_USE_OPENGLES_DIRECT_DISPLAY
                     lv_display_t * default_save = lv_display_get_default();
                     lv_display_set_default(texture->disp);
+#if LV_USE_DRAW_GPU_RENDERER
+                    gpu_invalidate_display(texture->disp);
+#endif
                     lv_display_refr_timer(NULL);
                     lv_display_set_default(default_save);
 #else
+#if LV_USE_DRAW_GPU_RENDERER
+                    gpu_invalidate_display(texture->disp);
+#endif
                     lv_refr_now(texture->disp);
 #endif
                 }
 
-#if LV_USE_DRAW_GPU_COMPOSITE
+#if LV_USE_DRAW_GPU_RENDERER
                 if(texture->disp != NULL) {
                     int32_t tw = lv_area_get_width(&texture->area);
                     int32_t th = lv_area_get_height(&texture->area);
-                    lv_gpu_composite_flush_3d(texture->disp);
-                    lv_gpu_composite_notify_frame_ready(texture->disp);
+                    lv_gpu_renderer_flush_3d(texture->disp);
+                    lv_gpu_renderer_notify_frame_ready(texture->disp);
                 }
 #endif
 
@@ -587,13 +658,31 @@ static void window_update_handler(lv_timer_t * t)
                                                   &texture->area, window->h_flip, texture->disp == NULL ? window->v_flip : !window->v_flip);
 #else
                 lv_opengles_reinit_state();
+#if LV_USE_DRAW_GPU_RENDERER
+                if(texture->disp != NULL) {
+                    gpu_present_to_window(0, texture, window);
+                }
+                else {
+                    lv_opengles_render_texture_rbswap(texture->texture_id, &texture->area, texture->opa, window->hor_res, window->ver_res,
+                                                      &texture->area, window->h_flip, window->v_flip);
+                }
+#else
                 lv_opengles_render_texture_rbswap(texture->texture_id, &texture->area, texture->opa, window->hor_res, window->ver_res,
                                                   &texture->area, window->h_flip, window->v_flip);
-#if LV_USE_DRAW_GPU_COMPOSITE
+#endif
+#if LV_USE_DRAW_GPU_RENDERER
                 if(texture->disp != NULL) {
                     int32_t tw = lv_area_get_width(&texture->area);
                     int32_t th = lv_area_get_height(&texture->area);
-                    lv_gpu_composite_overlay_2d_screen(texture->disp, tw, th);
+                    lv_gpu_renderer_overlay_2d_screen(texture->disp, tw, th);
+                    {
+                        const char * dump_dir = getenv("LVGL_VERIFY_DUMP_WIN");
+                        if(dump_dir && dump_dir[0]) {
+                            char win_path[512];
+                            lv_snprintf(win_path, sizeof(win_path), "%s/frame_window.rgba", dump_dir);
+                            lv_gpu_renderer_dump_screen_lvgl(window->hor_res, window->ver_res, win_path);
+                        }
+                    }
                 }
 #endif
 #endif
@@ -695,10 +784,11 @@ static void framebuffer_size_callback(GLFWwindow * window, int width, int height
         if(!texture->disp) continue;
         lv_area_set(&texture->area, 0, 0, width - 1, height - 1);
         lv_display_set_resolution(texture->disp, (int32_t)width, (int32_t)height);
-#if LV_USE_DRAW_GPU_COMPOSITE
+#if LV_USE_DRAW_GPU_RENDERER
         lv_opengles_texture_t * ogl_tex = lv_display_get_driver_data(texture->disp);
         if(ogl_tex) {
             lv_opengles_texture_reshape(ogl_tex, texture->disp, (int32_t)width, (int32_t)height);
+            texture->texture_id = lv_opengles_texture_get_texture_id(texture->disp);
         }
 #endif
     }

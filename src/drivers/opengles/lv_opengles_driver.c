@@ -15,8 +15,8 @@
 
 #include "../../display/lv_display_private.h"
 #include "../../draw/nanovg/lv_draw_nanovg.h"
-#if LV_USE_DRAW_GPU_COMPOSITE
-#include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
+#if LV_USE_DRAW_GPU_RENDERER
+#include "../../draw/gpu_renderer/lv_draw_gpu_renderer.h"
 #endif
 #include "../../misc/lv_area_private.h"
 #include "opengl_shader/lv_opengl_shader_internal.h"
@@ -132,8 +132,8 @@ void lv_opengles_init(void)
     lv_draw_nanovg_init();
 #endif /*LV_USE_DRAW_NANOVG*/
 
-#if LV_USE_DRAW_GPU_COMPOSITE
-    lv_gpu_composite_caps_probe_on_context();
+#if LV_USE_DRAW_GPU_RENDERER
+    lv_gpu_renderer_caps_probe_on_context();
 #endif
 
     is_init = true;
@@ -179,6 +179,14 @@ void lv_opengles_render_texture_rbswap(unsigned int texture, const lv_area_t * t
                                        int32_t disp_w,
                                        int32_t disp_h, const lv_area_t * texture_clip_area, bool h_flip, bool v_flip)
 {
+    lv_opengles_render_texture_rbswap_blend(texture, texture_area, opa, disp_w, disp_h, texture_clip_area, h_flip,
+                                            v_flip, false);
+}
+
+void lv_opengles_render_texture_rbswap_blend(unsigned int texture, const lv_area_t * texture_area, lv_opa_t opa,
+                                              int32_t disp_w, int32_t disp_h, const lv_area_t * texture_clip_area,
+                                              bool h_flip, bool v_flip, bool blend_opt)
+{
     LV_PROFILER_DRAW_BEGIN;
     lv_opengles_render_params_t params;
     lv_opengles_render_params_init(&params);
@@ -191,6 +199,7 @@ void lv_opengles_render_texture_rbswap(unsigned int texture, const lv_area_t * t
     params.h_flip = h_flip;
     params.v_flip = v_flip;
     params.rb_swap = true;
+    params.blend_opt = blend_opt;
     lv_opengles_render(&params);
     LV_PROFILER_DRAW_END;
 }

@@ -17,8 +17,8 @@
 #include "lv_opengles_texture_private.h"
 #include "../../display/lv_display_private.h"
 
-#if LV_USE_DRAW_GPU_COMPOSITE
-#include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
+#if LV_USE_DRAW_GPU_RENDERER
+#include "../../draw/gpu_renderer/lv_draw_gpu_renderer.h"
 #endif
 
 #include <stdlib.h>
@@ -111,6 +111,7 @@ lv_result_t lv_opengles_texture_reshape(lv_opengles_texture_t * texture, lv_disp
         return LV_RESULT_INVALID;
     }
     texture->fb1 = buffer;
+    lv_memzero(texture->fb1, buf_size);
 
     lv_display_set_buffers(display, texture->fb1, NULL, buf_size, lv_display_get_render_mode(display));
 #endif /*LV_USE_DRAW_OPENGLES*/
@@ -120,6 +121,13 @@ lv_result_t lv_opengles_texture_reshape(lv_opengles_texture_t * texture, lv_disp
     }
     texture->texture_id = new_texture;
     lv_opengles_texture_attach_to_display(texture, display);
+
+#if LV_USE_DRAW_GPU_RENDERER
+    /* Reshape allocates an empty GL texture; force a full redraw (static 3D scenes otherwise stay black). */
+    lv_obj_t * scr = lv_display_get_screen_active(display);
+    if(scr) lv_obj_invalidate(scr);
+#endif
+
     return LV_RESULT_OK;
 }
 
@@ -197,7 +205,7 @@ static lv_display_t * lv_opengles_texture_create_common(int32_t w, int32_t h)
         LV_LOG_ERROR("Failed to create display");
         return NULL;
     }
-#if LV_USE_DRAW_GPU_COMPOSITE
+#if LV_USE_DRAW_GPU_RENDERER
     /* Real alpha in CPU fb so 2D overlay does not wipe 3D with XRGB padding byte 0xFF. */
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_ARGB8888);
 #endif
@@ -273,13 +281,13 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_m
 
         lv_opengles_texture_t * texture = lv_display_get_driver_data(disp);
 
-#if LV_USE_DRAW_GPU_COMPOSITE
+#if LV_USE_DRAW_GPU_RENDERER
 #if LV_USE_GLFW
         /* Composite runs once after lv_refr_now in lv_opengles_glfw.c */
 #else
-        lv_gpu_composite_flush_3d(disp);
-        lv_gpu_composite_notify_frame_ready(disp);
-        lv_gpu_composite_overlay_2d_fb(disp);
+        lv_gpu_renderer_flush_3d(disp);
+        lv_gpu_renderer_notify_frame_ready(disp);
+        lv_gpu_renderer_overlay_2d_fb(disp);
 #endif
 #else
         lv_color_format_t cf = lv_display_get_color_format(disp);

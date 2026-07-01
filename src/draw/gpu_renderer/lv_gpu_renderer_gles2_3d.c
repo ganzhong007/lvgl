@@ -11,6 +11,7 @@
 #if LV_USE_DRAW_GPU_RENDERER && LV_USE_3D
 
 #include "lv_gpu_renderer_gles2_3d.h"
+#include "lv_gpu_renderer_framegraph.h"
 
 #include "../../drivers/opengles/lv_opengles_debug.h"
 #include "../../drivers/opengles/lv_opengles_private.h"
@@ -400,50 +401,100 @@ static void draw_box_triangles(const float verts[108], int vert_offset, int vert
     GL_CALL(glDisableVertexAttribArray(0));
 }
 
-static float face_avg_ndc_y(const float verts[108], int face_idx, const float mvp[16])
-{
-    float sum = 0.0f;
-    int count = 0;
-    for(int v = 0; v < 6; v++) {
-        const int o = (face_idx * 6 + v) * 3;
-        const float x = verts[o + 0];
-        const float y = verts[o + 1];
-        const float z = verts[o + 2];
-        const float cx = mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12];
-        const float cy = mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13];
-        const float cw = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
-        if(fabsf(cw) > 1e-6f) {
-            sum += cy / cw;
-            count++;
-        }
-    }
-    return count > 0 ? (sum / (float)count) : 0.0f;
-}
-
-static void draw_shaded_box(const lv_3d_draw_item_t * it, const float mvp[16])
+static void draw_shaded_box_sharp(const lv_3d_draw_item_t * it, const float mvp[16])
 {
     float verts[108];
     box_solid_verts(it->w, it->h, it->d, verts);
 
-    /* FBO y grows upward, but the window composite flips texture V; pick the cap that
-     * lands on screen-top after that flip (smaller NDC y in the 3D pass). */
-    int top_face = 5;
-    float top_ndc_y = 1e30f;
-    for(int f = 4; f <= 5; f++) {
-        const float ay = face_avg_ndc_y(verts, f, mvp);
-        if(ay < top_ndc_y) {
-            top_ndc_y = ay;
-            top_face = f;
-        }
-    }
-
+    /* SHADED_BOX: top cap at local +Y (face 4), bottom at -Y (face 5). */
     for(int f = 0; f < 4; f++) {
         draw_box_triangles(verts, f * 6, 6, mvp, it->material.color, it->material.opa);
     }
-    for(int f = 4; f <= 5; f++) {
-        const lv_color_t c = (f == top_face) ? it->material.top_color : it->material.color;
-        draw_box_triangles(verts, f * 6, 6, mvp, c, it->material.opa);
+    draw_box_triangles(verts, 4 * 6, 6, mvp, it->material.top_color, it->material.opa);
+    draw_box_triangles(verts, 5 * 6, 6, mvp, it->material.color, it->material.opa);
+}
+
+static void draw_shaded_box(const lv_3d_draw_item_t * it, const float mvp[16]);
+
+#define RBOX_SEG 8
+#define RBOX_MAX_VERT (4 * RBOX_SEG + 4)
+
+/* Rounded cap in XZ plane at y (SHADED_BOX top face, normal +Y). */
+static int rounded_cap_perimeter_xz(float hx, float hz, float r, float y, float * out_xyz, int max_out)
+{
+    if(r < 0.5f) r = 0.5f;
+    if(r > hx - 0.5f) r = hx - 0.5f;
+    if(r > hz - 0.5f) r = hz - 0.5f;
+
+    int n = 0;
+    const float cx[4] = { hx - r,  hx - r, -(hx - r), -(hx - r) };
+    const float cz[4] = { -(hz - r), hz - r,  hz - r,  -(hz - r) };
+    const float a0[4] = { (float)(-M_PI * 0.5), 0.0f, (float)(M_PI * 0.5), (float)M_PI };
+
+    for(int c = 0; c < 4; c++) {
+        for(int s = 0; s <= RBOX_SEG; s++) {
+            if(c > 0 && s == 0) continue;
+            if(n >= max_out) return n;
+            float t = (float)s / (float)RBOX_SEG;
+            float ang = a0[c] + t * ((float)M_PI * 0.5f);
+            out_xyz[n * 3 + 0] = cx[c] + cosf(ang) * r;
+            out_xyz[n * 3 + 1] = y;
+            out_xyz[n * 3 + 2] = cz[c] + sinf(ang) * r;
+            n++;
+        }
     }
+    return n;
+}
+
+static void draw_shaded_rounded_box(const lv_3d_draw_item_t * it, const float mvp[16])
+{
+    const float hx = it->w * 0.5f;
+    const float hy = it->h * 0.5f;
+    const float hz = it->d * 0.5f;
+    float r = it->material.corner_radius;
+
+    float top[RBOX_MAX_VERT * 3];
+    int n = rounded_cap_perimeter_xz(hx, hz, r, hy, top, RBOX_MAX_VERT);
+    if(n < 3) {
+        draw_shaded_box_sharp(it, mvp);
+        return;
+    }
+
+    const float cy = hy;
+    for(int i = 0; i < n; i++) {
+        int j = (i + 1) % n;
+        float tri[9] = {
+            0.0f, cy, 0.0f,
+            top[i * 3 + 0], top[i * 3 + 1], top[i * 3 + 2],
+            top[j * 3 + 0], top[j * 3 + 1], top[j * 3 + 2],
+        };
+        draw_box_triangles(tri, 0, 3, mvp, it->material.top_color, it->material.opa);
+    }
+
+    const float by = -hy;
+    for(int i = 0; i < n; i++) {
+        int j = (i + 1) % n;
+        float side[18] = {
+            top[i * 3 + 0], hy, top[i * 3 + 2],
+            top[j * 3 + 0], hy, top[j * 3 + 2],
+            top[j * 3 + 0], by, top[j * 3 + 2],
+            top[i * 3 + 0], hy, top[i * 3 + 2],
+            top[j * 3 + 0], by, top[j * 3 + 2],
+            top[i * 3 + 0], by, top[i * 3 + 2],
+        };
+        draw_box_triangles(side, 0, 3, mvp, it->material.color, it->material.opa);
+        draw_box_triangles(side, 3, 3, mvp, it->material.color, it->material.opa);
+    }
+}
+
+static void draw_shaded_box(const lv_3d_draw_item_t * it, const float mvp[16])
+{
+    if(it->material.corner_radius > 0.5f) {
+        draw_shaded_rounded_box(it, mvp);
+        return;
+    }
+
+    draw_shaded_box_sharp(it, mvp);
 }
 
 static bool draw_item_is_transparent(const lv_3d_draw_item_t * it)
@@ -527,12 +578,19 @@ static void render_viewport_draw(unsigned int fbo, int32_t vp_x, int32_t vp_y, i
     GL_CALL(glScissor(vp_x, vp_y, w, h));
 
     if(ar_passthrough) {
-        GL_CALL(glClearColor(0, 0, 0, 0));
+        /* GENERIC demos: opaque backdrop (transparent + black GLFW clear = black screen). */
+        if(lv_gpu_renderer_fg_get_ui_mode() == LV_GPU_UI_MODE_GENERIC) {
+            GL_CALL(glClearColor(0.14f, 0.14f, 0.16f, 1.0f));
+        }
+        else {
+            GL_CALL(glClearColor(0, 0, 0, 0));
+        }
     }
     else {
         GL_CALL(glClearColor(0, 0, 0, 1));
     }
     GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+
     GL_CALL(glDisable(GL_DEPTH_TEST));
     GL_CALL(glEnable(GL_BLEND));
     GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));

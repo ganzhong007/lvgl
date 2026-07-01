@@ -413,21 +413,21 @@
     #define LV_DRAW_OPENGLES_TEXTURE_CACHE_COUNT 64
 #endif
 
-/** LVGL 2D/3D mixed GPU compositor (lv_draw_gpu_composite). Requires LV_USE_OPENGLES driver. */
-#define LV_USE_GPU_COMPOSITE 0
-#define LV_USE_DRAW_GPU_COMPOSITE 0
-#if LV_USE_DRAW_GPU_COMPOSITE
+/** LVGL 2D/3D mixed GPU compositor (lv_draw_gpu_renderer). Requires LV_USE_OPENGLES driver. */
+#define LV_USE_GPU_RENDERER 0
+#define LV_USE_DRAW_GPU_RENDERER 0
+#if LV_USE_DRAW_GPU_RENDERER
     #if LV_USE_DRAW_OPENGLES
-        #error "LV_USE_DRAW_GPU_COMPOSITE and LV_USE_DRAW_OPENGLES cannot both be enabled"
+        #error "LV_USE_DRAW_GPU_RENDERER and LV_USE_DRAW_OPENGLES cannot both be enabled"
     #endif
     #if LV_USE_DRAW_NANOVG
-        #error "LV_USE_DRAW_GPU_COMPOSITE and LV_USE_DRAW_NANOVG cannot both be enabled"
+        #error "LV_USE_DRAW_GPU_RENDERER and LV_USE_DRAW_NANOVG cannot both be enabled"
     #endif
     /** Deferred glFlush every N framegraph batches (analogous to LV_VG_LITE_FLUSH_MAX_COUNT). */
-    #define LV_GPU_COMPOSITE_FLUSH_MAX_BATCHES 8
+    #define LV_GPU_RENDERER_FLUSH_MAX_BATCHES 8
 #endif
 
-/** Built-in 3D scene graph + widgets (lv_3dscene, lv_3dmesh, …). Requires LV_USE_DRAW_GPU_COMPOSITE. */
+/** Built-in 3D scene graph + widgets (lv_3dscene, lv_3dmesh, …). Requires LV_USE_DRAW_GPU_RENDERER. */
 #define LV_USE_3D 0
 #if LV_USE_3D
     #define LV_USE_3D_WIDGETS 1
@@ -435,16 +435,16 @@
     #define LV_USE_3D_OBJ_PROPERTIES 0
     #define LV_USE_3DSTACK 1
     #define LV_USE_3D_SEGMENT_POOL 1
-    #define LV_GPU_COMPOSITE_AR_PASSTHROUGH 1
-    #define LV_GPU_COMPOSITE_GLES_API 2
-    #define LV_GPU_COMPOSITE_ALLOW_GLES3 0
-    #define LV_GPU_COMPOSITE_DEPTH_BITS 16
-    #define LV_GPU_COMPOSITE_USE_ETC1 1
-    #define LV_GPU_COMPOSITE_LOG_CAPS 1
+    #define LV_GPU_RENDERER_AR_PASSTHROUGH 1
+    #define LV_GPU_RENDERER_GLES_API 2
+    #define LV_GPU_RENDERER_ALLOW_GLES3 0
+    #define LV_GPU_RENDERER_DEPTH_BITS 16
+    #define LV_GPU_RENDERER_USE_ETC1 1
+    #define LV_GPU_RENDERER_LOG_CAPS 1
     /** MSAA samples for 3D viewport FBO only (not GLFW window). Override: LVGL_MSAA_SAMPLES */
-    #define LV_GPU_COMPOSITE_MSAA_SAMPLES 0
+    #define LV_GPU_RENDERER_MSAA_SAMPLES 0
     /** 0=RGBA8888, 1=RGB565+A8, 2=RGBA4444, 3=RGBA5551 */
-    #define LV_GPU_COMPOSITE_COLOR_FORMAT 0
+    #define LV_GPU_RENDERER_COLOR_FORMAT 0
 #endif
 
 /** Draw using espressif PPA accelerator */

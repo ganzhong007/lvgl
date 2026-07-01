@@ -33,6 +33,7 @@ typedef struct {
     lv_color_t color;
     lv_color_t top_color;
     lv_opa_t opa;
+    float corner_radius;          /* SHADED_BOX top cap corner radius (0 = sharp box) */
 } lv_3d_material_t;
 
 typedef uint32_t lv_3d_snapshot_id_t;

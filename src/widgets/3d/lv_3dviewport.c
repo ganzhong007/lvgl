@@ -10,7 +10,7 @@
 #include "../../core/lv_obj_event_private.h"
 #include "../../indev/lv_indev.h"
 #include "../../include/lvgl/draw/lv_draw_3d.h"
-#include "../../draw/gpu_composite/lv_draw_gpu_composite.h"
+#include "../../draw/gpu_renderer/lv_draw_gpu_renderer.h"
 #include "../../3d/lv_3d_internal.h"
 
 #define MY_CLASS (&lv_3dviewport_class)
@@ -110,6 +110,36 @@ static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     vp->pickable = true;
     vp->input_route = false;
     vp->pressed_obj = NULL;
+    vp->hovered_obj = NULL;
+}
+
+static void route_hover_event(lv_obj_t * obj, lv_event_t * e)
+{
+    lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
+    if(!vp->input_route || !vp->pickable) return;
+
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code != LV_EVENT_HOVER_OVER && code != LV_EVENT_HOVER_LEAVE) return;
+
+    lv_indev_t * indev = lv_event_get_indev(e);
+    if(!indev) indev = lv_indev_active();
+    if(!indev) return;
+
+    lv_point_t pt;
+    lv_indev_get_point(indev, &pt);
+    lv_obj_t * hit = (code == LV_EVENT_HOVER_OVER) ? lv_3dviewport_pick_at(obj, pt.x, pt.y) : NULL;
+
+    if(vp->hovered_obj && vp->hovered_obj != hit) {
+        if(lv_obj_has_flag(vp->hovered_obj, LV_OBJ_FLAG_CLICKABLE)) {
+            lv_obj_send_event(vp->hovered_obj, LV_EVENT_HOVER_LEAVE, indev);
+        }
+        vp->hovered_obj = NULL;
+    }
+
+    if(hit && hit != vp->hovered_obj && lv_obj_has_flag(hit, LV_OBJ_FLAG_CLICKABLE)) {
+        vp->hovered_obj = hit;
+        lv_obj_send_event(hit, LV_EVENT_HOVER_OVER, indev);
+    }
 }
 
 static void route_input_event(lv_obj_t * obj, lv_event_t * e)
@@ -190,6 +220,10 @@ static void lv_3dviewport_event(const lv_obj_class_t * class_p, lv_event_t * e)
     else if(code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED ||
             code == LV_EVENT_PRESS_LOST || code == LV_EVENT_CLICKED) {
         route_input_event(obj, e);
+        lv_obj_event_base(MY_CLASS, e);
+    }
+    else if(code == LV_EVENT_HOVER_OVER || code == LV_EVENT_HOVER_LEAVE) {
+        route_hover_event(obj, e);
         lv_obj_event_base(MY_CLASS, e);
     }
     else {
