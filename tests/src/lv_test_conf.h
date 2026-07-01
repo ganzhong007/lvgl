@@ -88,6 +88,23 @@ typedef void * lv_user_data_t;
 #define  LV_USE_SDL         1
 #define  LV_USE_NUTTX       1
 #include "lv_test_conf_full.h"
+#elif LV_TEST_OPTION == 8
+#define  LV_COLOR_DEPTH     32
+#define  LV_DPI_DEF         160
+#define  LV_DRAW_BUF_ALIGN  64
+#ifdef _MSC_VER
+#define  LV_ATTRIBUTE_MEM_ALIGN __declspec(align(LV_DRAW_BUF_ALIGN))
+#else
+#define  LV_ATTRIBUTE_MEM_ALIGN __attribute__((aligned(LV_DRAW_BUF_ALIGN)))
+#endif
+#include "lv_test_conf_gpu_renderer.h"
+#include "lv_test_conf_full.h"
+#undef LV_USE_WAYLAND
+#define LV_USE_WAYLAND 0
+#undef LV_USE_LINUX_DRM
+#define LV_USE_LINUX_DRM 0
+#undef LV_USE_EGL
+#define LV_USE_EGL 0
 #elif LV_TEST_OPTION == 4
 #define  LV_COLOR_DEPTH     24
 #define  LV_DPI_DEF         120

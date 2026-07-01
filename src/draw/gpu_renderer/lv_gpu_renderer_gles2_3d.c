@@ -1,10 +1,16 @@
 /**
- * @file lv_gpu_composite_gles2_3d.c — GLES2 wireframe box renderer [GL2]
+ * @file lv_gpu_renderer_gles2_3d.c — GLES2 wireframe box renderer [GL2]
  */
 
-#include "lv_gpu_composite_gles2_3d.h"
+#ifdef LV_CONF_PATH
+#include LV_CONF_PATH
+#else
+#include "../../lv_conf_internal.h"
+#endif
 
-#if LV_USE_DRAW_GPU_COMPOSITE && LV_USE_3D
+#if LV_USE_DRAW_GPU_RENDERER && LV_USE_3D
+
+#include "lv_gpu_renderer_gles2_3d.h"
 
 #include "../../drivers/opengles/lv_opengles_debug.h"
 #include "../../drivers/opengles/lv_opengles_private.h"
@@ -12,9 +18,10 @@
 #include "../../misc/lv_color.h"
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
-#ifndef LV_GPU_COMPOSITE_MSAA_SAMPLES
-    #define LV_GPU_COMPOSITE_MSAA_SAMPLES 0
+#ifndef LV_GPU_RENDERER_MSAA_SAMPLES
+    #define LV_GPU_RENDERER_MSAA_SAMPLES 0
 #endif
 
 #if !LV_USE_EGL
@@ -30,7 +37,7 @@ static int msaa_samples_effective(void)
     static int cached = -1;
     if(cached >= 0) return cached;
 
-    int s = LV_GPU_COMPOSITE_MSAA_SAMPLES;
+    int s = LV_GPU_RENDERER_MSAA_SAMPLES;
     const char * env = getenv("LVGL_MSAA_SAMPLES");
     if(env && env[0]) s = atoi(env);
     if(s < 0) s = 0;
@@ -255,7 +262,7 @@ static unsigned int link_program_tex(const char * vs, const char * fs)
 }
 #endif
 
-void lv_gpu_composite_gles2_3d_init(void)
+void lv_gpu_renderer_gles2_3d_init(void)
 {
     if(prog) return;
     prog = link_program(vs_src, fs_src);
@@ -278,7 +285,7 @@ void lv_gpu_composite_gles2_3d_init(void)
     }
 }
 
-void lv_gpu_composite_gles2_3d_deinit(void)
+void lv_gpu_renderer_gles2_3d_deinit(void)
 {
     if(prog) {
         GL_CALL(glDeleteProgram(prog));
@@ -581,7 +588,7 @@ static void render_viewport_probe_alpha(unsigned int fbo, int32_t x, int32_t y, 
     }
 }
 
-void lv_gpu_composite_gles2_render_viewport(unsigned int color_tex, unsigned int depth_rb,
+void lv_gpu_renderer_gles2_render_viewport(unsigned int color_tex, unsigned int depth_rb,
                                             int32_t x, int32_t y, int32_t w, int32_t h,
                                             const float view[16], const float proj[16],
                                             const lv_3d_draw_item_t * items, uint32_t item_count,
@@ -589,7 +596,7 @@ void lv_gpu_composite_gles2_render_viewport(unsigned int color_tex, unsigned int
 {
     LV_UNUSED(depth_rb);
     if(max_alpha_out) *max_alpha_out = 0;
-    if(!prog) lv_gpu_composite_gles2_3d_init();
+    if(!prog) lv_gpu_renderer_gles2_3d_init();
     if(!prog) return;
 
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
@@ -638,4 +645,4 @@ void lv_gpu_composite_gles2_render_viewport(unsigned int color_tex, unsigned int
     GL_CALL(glDeleteFramebuffers(1, &fbo));
 }
 
-#endif /*LV_USE_DRAW_GPU_COMPOSITE && LV_USE_3D*/
+#endif /*LV_USE_DRAW_GPU_RENDERER && LV_USE_3D*/

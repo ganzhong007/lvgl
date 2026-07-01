@@ -1,19 +1,26 @@
 /**
- * @file lv_gpu_composite_batch_3d.c
+ * @file lv_gpu_renderer_batch_3d.c
  */
 
-#include "lv_gpu_composite_batch_3d.h"
+#ifdef LV_CONF_PATH
+#include LV_CONF_PATH
+#else
+#include "../../lv_conf_internal.h"
+#endif
 
-#if LV_USE_DRAW_GPU_COMPOSITE && LV_USE_3D
+#if LV_USE_DRAW_GPU_RENDERER && LV_USE_3D
+
+#include "lv_gpu_renderer_batch_3d.h"
 
 static uint32_t material_kind_key(const lv_3d_draw_item_t * it)
 {
     return (uint32_t)it->material.kind;
 }
 
-void lv_gpu_composite_batch_3d_sort_opaque(const lv_3d_draw_item_t * items, uint32_t item_count,
+void lv_gpu_renderer_batch_3d_sort_opaque(const lv_3d_draw_item_t * items, uint32_t item_count,
                                            uint32_t * opaque_order, uint32_t opaque_count)
 {
+    LV_UNUSED(item_count);
     if(opaque_count <= 1) return;
 
     for(uint32_t a = 1; a < opaque_count; a++) {
@@ -30,7 +37,7 @@ void lv_gpu_composite_batch_3d_sort_opaque(const lv_3d_draw_item_t * items, uint
     }
 }
 
-uint32_t lv_gpu_composite_batch_3d_count_material_runs(const lv_3d_draw_item_t * items,
+uint32_t lv_gpu_renderer_batch_3d_count_material_runs(const lv_3d_draw_item_t * items,
                                                        const uint32_t * opaque_order,
                                                        uint32_t opaque_count)
 {
@@ -48,4 +55,4 @@ uint32_t lv_gpu_composite_batch_3d_count_material_runs(const lv_3d_draw_item_t *
     return runs;
 }
 
-#endif /*LV_USE_DRAW_GPU_COMPOSITE && LV_USE_3D*/
+#endif /*LV_USE_DRAW_GPU_RENDERER && LV_USE_3D*/

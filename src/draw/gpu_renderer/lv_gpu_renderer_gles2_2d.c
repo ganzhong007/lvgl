@@ -1,10 +1,16 @@
 /**
- * @file lv_gpu_composite_gles2_2d.c — GLES2 2D overlay batch [GL2]
+ * @file lv_gpu_renderer_gles2_2d.c — GLES2 2D overlay batch [GL2]
  */
 
-#include "lv_gpu_composite_gles2_2d.h"
+#ifdef LV_CONF_PATH
+#include LV_CONF_PATH
+#else
+#include "../../lv_conf_internal.h"
+#endif
 
-#if LV_USE_DRAW_GPU_COMPOSITE
+#if LV_USE_DRAW_GPU_RENDERER
+
+#include "lv_gpu_renderer_gles2_2d.h"
 
 #include "../../draw/sw/lv_draw_sw.h"
 #include "../lv_draw_private.h"
@@ -181,7 +187,7 @@ static const char * fs_tex =
     "void main(){ gl_FragColor=texture2D(u_tex,v_uv);}\n";
 #endif
 
-void lv_gpu_composite_gles2_2d_init(void)
+void lv_gpu_renderer_gles2_2d_init(void)
 {
     if(prog_fill) return;
     prog_fill = link_program(vs_fill, fs_fill);
@@ -199,7 +205,7 @@ void lv_gpu_composite_gles2_2d_init(void)
     lv_draw_buf_init(&g_raster_buf, 0, 0, LV_COLOR_FORMAT_ARGB8888, LV_STRIDE_AUTO, NULL, 0);
 }
 
-void lv_gpu_composite_gles2_2d_deinit(void)
+void lv_gpu_renderer_gles2_2d_deinit(void)
 {
     if(prog_fill) GL_CALL(glDeleteProgram(prog_fill));
     if(prog_tex) GL_CALL(glDeleteProgram(prog_tex));
@@ -209,12 +215,12 @@ void lv_gpu_composite_gles2_2d_deinit(void)
     g_queue_count = 0;
 }
 
-void lv_gpu_composite_gles2_2d_queue_reset(void)
+void lv_gpu_renderer_gles2_2d_queue_reset(void)
 {
     g_queue_count = 0;
 }
 
-uint32_t lv_gpu_composite_gles2_2d_queue_count(void)
+uint32_t lv_gpu_renderer_gles2_2d_queue_count(void)
 {
     return g_queue_count;
 }
@@ -224,7 +230,7 @@ static bool gpu2d_cmd_uses_fill_shader(lv_gpu2d_cmd_type_t type)
     return type == LV_GPU2D_CMD_FILL || type == LV_GPU2D_CMD_BORDER;
 }
 
-uint32_t lv_gpu_composite_gles2_2d_count_shader_batches(void)
+uint32_t lv_gpu_renderer_gles2_2d_count_shader_batches(void)
 {
     if(g_queue_count == 0) return 0;
 
@@ -238,7 +244,7 @@ uint32_t lv_gpu_composite_gles2_2d_count_shader_batches(void)
     return batches > 0 ? batches : 1;
 }
 
-bool lv_gpu_composite_gles2_2d_is_raster_nest(void)
+bool lv_gpu_renderer_gles2_2d_is_raster_nest(void)
 {
     return g_raster_nest > 0;
 }
@@ -250,7 +256,7 @@ static bool queue_push(const lv_gpu2d_cmd_t * cmd)
     return true;
 }
 
-bool lv_gpu_composite_gles2_2d_queue_fill(const lv_area_t * area, const lv_area_t * clip,
+bool lv_gpu_renderer_gles2_2d_queue_fill(const lv_area_t * area, const lv_area_t * clip,
                                           lv_color_t color, lv_opa_t opa, int32_t radius)
 {
     lv_gpu2d_cmd_t cmd;
@@ -264,7 +270,7 @@ bool lv_gpu_composite_gles2_2d_queue_fill(const lv_area_t * area, const lv_area_
     return queue_push(&cmd);
 }
 
-bool lv_gpu_composite_gles2_2d_queue_border(const lv_area_t * area, const lv_area_t * clip,
+bool lv_gpu_renderer_gles2_2d_queue_border(const lv_area_t * area, const lv_area_t * clip,
                                             lv_color_t color, lv_opa_t opa, int32_t width,
                                             int32_t radius, lv_border_side_t side)
 {
@@ -281,7 +287,7 @@ bool lv_gpu_composite_gles2_2d_queue_border(const lv_area_t * area, const lv_are
     return queue_push(&cmd);
 }
 
-bool lv_gpu_composite_gles2_2d_queue_label(const lv_area_t * area, const lv_area_t * clip,
+bool lv_gpu_renderer_gles2_2d_queue_label(const lv_area_t * area, const lv_area_t * clip,
                                              const lv_draw_label_dsc_t * dsc)
 {
     lv_gpu2d_cmd_t cmd;
@@ -293,7 +299,7 @@ bool lv_gpu_composite_gles2_2d_queue_label(const lv_area_t * area, const lv_area
     return queue_push(&cmd);
 }
 
-bool lv_gpu_composite_gles2_2d_queue_letter(const lv_area_t * area, const lv_area_t * clip,
+bool lv_gpu_renderer_gles2_2d_queue_letter(const lv_area_t * area, const lv_area_t * clip,
                                               const lv_draw_letter_dsc_t * dsc)
 {
     lv_gpu2d_cmd_t cmd;
@@ -305,7 +311,7 @@ bool lv_gpu_composite_gles2_2d_queue_letter(const lv_area_t * area, const lv_are
     return queue_push(&cmd);
 }
 
-bool lv_gpu_composite_gles2_2d_queue_image(const lv_area_t * area, const lv_area_t * clip,
+bool lv_gpu_renderer_gles2_2d_queue_image(const lv_area_t * area, const lv_area_t * clip,
                                            const lv_draw_image_dsc_t * dsc)
 {
     lv_gpu2d_cmd_t cmd;
@@ -502,12 +508,12 @@ static void draw_textured_quad(const lv_area_t * area, int32_t dw, int32_t dh, u
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
 }
 
-uint32_t lv_gpu_composite_gles2_2d_render_batch(unsigned int color_tex, int32_t dw, int32_t dh,
+uint32_t lv_gpu_renderer_gles2_2d_render_batch(unsigned int color_tex, int32_t dw, int32_t dh,
                                                 uint32_t * sw_raster_out)
 {
     if(sw_raster_out) *sw_raster_out = 0;
     if(g_queue_count == 0 || color_tex == 0 || dw < 1 || dh < 1) return 0;
-    if(!prog_fill && !prog_tex) lv_gpu_composite_gles2_2d_init();
+    if(!prog_fill && !prog_tex) lv_gpu_renderer_gles2_2d_init();
 
     unsigned int fbo = 0;
     GL_CALL(glGenFramebuffers(1, &fbo));
@@ -589,4 +595,4 @@ uint32_t lv_gpu_composite_gles2_2d_render_batch(unsigned int color_tex, int32_t 
     return rendered;
 }
 
-#endif /*LV_USE_DRAW_GPU_COMPOSITE*/
+#endif /*LV_USE_DRAW_GPU_RENDERER*/

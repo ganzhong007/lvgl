@@ -1,19 +1,25 @@
 /**
- * @file lv_draw_gpu_composite.c — LVGL draw unit + frame composite
+ * @file lv_draw_gpu_renderer.c — LVGL draw unit + frame composite
  */
 
-#include "lv_draw_gpu_composite.h"
-
-#if LV_USE_DRAW_GPU_COMPOSITE
-
-#if LV_USE_DRAW_OPENGLES || LV_USE_DRAW_NANOVG
-    #error "LV_USE_DRAW_GPU_COMPOSITE cannot be combined with OPENGLES or NANOVG draw units"
+#ifdef LV_CONF_PATH
+#include LV_CONF_PATH
+#else
+#include "../../lv_conf_internal.h"
 #endif
 
-#include "lv_gpu_composite_caps.h"
-#include "lv_gpu_composite_framegraph.h"
-#include "lv_gpu_composite_gles2_3d.h"
-#include "lv_gpu_composite_gles2_2d.h"
+#if LV_USE_DRAW_GPU_RENDERER
+
+#include "lv_draw_gpu_renderer.h"
+
+#if LV_USE_DRAW_OPENGLES || LV_USE_DRAW_NANOVG
+    #error "LV_USE_DRAW_GPU_RENDERER cannot be combined with OPENGLES or NANOVG draw units"
+#endif
+
+#include "lv_gpu_renderer_caps.h"
+#include "lv_gpu_renderer_framegraph.h"
+#include "lv_gpu_renderer_gles2_3d.h"
+#include "lv_gpu_renderer_gles2_2d.h"
 #include "../lv_draw_private.h"
 #include "../../core/lv_refr_private.h"
 #include "../../display/lv_display_private.h"
@@ -24,17 +30,17 @@
 #include "../../include/lvgl/draw/lv_draw_3d.h"
 #include <stdio.h>
 
-#define DRAW_UNIT_ID_GPU_COMPOSITE 11
+#define DRAW_UNIT_ID_GPU_RENDERER 11
 
 typedef struct {
     lv_draw_unit_t base_unit;
     lv_draw_task_t * task_act;
-    lv_gpu_composite_caps_t caps;
-} lv_draw_gpu_composite_unit_t;
+    lv_gpu_renderer_caps_t caps;
+} lv_draw_gpu_renderer_unit_t;
 
-static lv_draw_gpu_composite_unit_t * g_unit;
+static lv_draw_gpu_renderer_unit_t * g_unit;
 static unsigned int g_last_flush_tex_id;
-static lv_gpu_composite_frame_cb_t g_frame_ready_cb;
+static lv_gpu_renderer_frame_cb_t g_frame_ready_cb;
 static uint32_t g_last_flush_item_count;
 static uint32_t g_last_flush_vp_count;
 static uint8_t g_last_frame_max_alpha;
@@ -50,38 +56,38 @@ typedef struct {
     uint32_t fg_material_batches;
     uint32_t fg_gl_finish_count;
     char gl_renderer[128];
-} lv_gpu_composite_path_frame_t;
+} lv_gpu_renderer_path_frame_t;
 
-static lv_gpu_composite_path_frame_t g_path_stats;
+static lv_gpu_renderer_path_frame_t g_path_stats;
 static bool g_gl_renderer_logged;
 
-static int32_t gpu_composite_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
-static int32_t gpu_composite_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
-static void gpu_composite_flush_internal(unsigned int tex_id, int32_t dw, int32_t dh);
+static int32_t gpu_renderer_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
+static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
+static void gpu_renderer_flush_internal(unsigned int tex_id, int32_t dw, int32_t dh);
 
-void lv_draw_gpu_composite_init(void)
+void lv_draw_gpu_renderer_init(void)
 {
-    lv_draw_gpu_composite_unit_t * u = lv_draw_create_unit(sizeof(lv_draw_gpu_composite_unit_t));
-    u->base_unit.evaluate_cb = gpu_composite_evaluate;
-    u->base_unit.dispatch_cb = gpu_composite_dispatch;
-    u->base_unit.name = "GPU_COMPOSITE";
+    lv_draw_gpu_renderer_unit_t * u = lv_draw_create_unit(sizeof(lv_draw_gpu_renderer_unit_t));
+    u->base_unit.evaluate_cb = gpu_renderer_evaluate;
+    u->base_unit.dispatch_cb = gpu_renderer_dispatch;
+    u->base_unit.name = "GPU_RENDERER";
     g_unit = u;
-    lv_gpu_composite_fg_init();
+    lv_gpu_renderer_fg_init();
 }
 
-void lv_draw_gpu_composite_deinit(void)
+void lv_draw_gpu_renderer_deinit(void)
 {
 #if LV_USE_3D
-    lv_gpu_composite_gles2_3d_deinit();
+    lv_gpu_renderer_gles2_3d_deinit();
 #endif
-    lv_gpu_composite_gles2_2d_deinit();
-    lv_gpu_composite_fg_deinit();
+    lv_gpu_renderer_gles2_2d_deinit();
+    lv_gpu_renderer_fg_deinit();
     g_unit = NULL;
 }
 
-void lv_gpu_composite_set_ui_mode(int mode)
+void lv_gpu_renderer_set_ui_mode(int mode)
 {
-    lv_gpu_composite_fg_set_ui_mode((lv_gpu_ui_mode_t)mode);
+    lv_gpu_renderer_fg_set_ui_mode((lv_gpu_ui_mode_t)mode);
 }
 
 static void path_stats_cache_gl_renderer(void)
@@ -96,7 +102,7 @@ static void path_stats_cache_gl_renderer(void)
 
 static void path_stats_from_fg(void)
 {
-    const lv_gpu_composite_fg_stats_t * fg = lv_gpu_composite_fg_get_stats();
+    const lv_gpu_renderer_fg_stats_t * fg = lv_gpu_renderer_fg_get_stats();
     if(!fg) return;
     g_path_stats.fg_pass_count = fg->pass_count;
     g_path_stats.fg_batch_count = fg->batch_count;
@@ -104,10 +110,10 @@ static void path_stats_from_fg(void)
     g_path_stats.fg_gl_finish_count = fg->gl_finish_count;
 }
 
-static void gpu_composite_flush_internal(unsigned int tex_id, int32_t dw, int32_t dh)
+static void gpu_renderer_flush_internal(unsigned int tex_id, int32_t dw, int32_t dh)
 {
     if(!g_unit || tex_id == 0) return;
-    if(!lv_gpu_composite_fg_has_pending()) return;
+    if(!lv_gpu_renderer_fg_has_pending()) return;
 
     path_stats_cache_gl_renderer();
     g_path_stats.gpu_2d_tasks = 0;
@@ -115,12 +121,12 @@ static void gpu_composite_flush_internal(unsigned int tex_id, int32_t dw, int32_
     g_path_stats.sw_2d_raster_tasks = 0;
 
     g_last_flush_tex_id = tex_id;
-    g_last_flush_vp_count = lv_gpu_composite_fg_get_stats()->gpu_3d_vp_recorded;
+    g_last_flush_vp_count = lv_gpu_renderer_fg_get_stats()->gpu_3d_vp_recorded;
     g_last_flush_item_count = 0;
     g_last_frame_max_alpha = 0;
 
     uint32_t sw_raster = 0;
-    lv_gpu_composite_fg_execute(tex_id, dw, dh,
+    lv_gpu_renderer_fg_execute(tex_id, dw, dh,
                                 &g_path_stats.gpu_2d_tasks,
                                 &g_last_flush_item_count,
                                 &sw_raster,
@@ -132,34 +138,34 @@ static void gpu_composite_flush_internal(unsigned int tex_id, int32_t dw, int32_
     g_flush_serial++;
 }
 
-void lv_gpu_composite_set_frame_ready_cb(lv_gpu_composite_frame_cb_t cb)
+void lv_gpu_renderer_set_frame_ready_cb(lv_gpu_renderer_frame_cb_t cb)
 {
     g_frame_ready_cb = cb;
 }
 
-void lv_gpu_composite_notify_frame_ready(lv_display_t * disp)
+void lv_gpu_renderer_notify_frame_ready(lv_display_t * disp)
 {
     if(g_frame_ready_cb) g_frame_ready_cb(disp);
 }
 
-void lv_gpu_composite_flush_3d(lv_display_t * disp)
+void lv_gpu_renderer_flush_3d(lv_display_t * disp)
 {
     int32_t dw = lv_display_get_horizontal_resolution(disp);
     int32_t dh = lv_display_get_vertical_resolution(disp);
-    gpu_composite_flush_internal(lv_opengles_texture_get_texture_id(disp), dw, dh);
+    gpu_renderer_flush_internal(lv_opengles_texture_get_texture_id(disp), dw, dh);
 }
 
-void lv_gpu_composite_flush_3d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h)
+void lv_gpu_renderer_flush_3d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h)
 {
     LV_UNUSED(disp);
-    gpu_composite_flush_internal(tex_id, w, h);
+    gpu_renderer_flush_internal(tex_id, w, h);
 }
 
-void lv_gpu_composite_overlay_2d_fb(lv_display_t * disp)
+void lv_gpu_renderer_overlay_2d_fb(lv_display_t * disp)
 {
     int32_t w = lv_display_get_horizontal_resolution(disp);
     int32_t h = lv_display_get_vertical_resolution(disp);
-    lv_gpu_composite_overlay_2d_to_tex(disp, 0, w, h);
+    lv_gpu_renderer_overlay_2d_to_tex(disp, 0, w, h);
 }
 
 #if LV_COLOR_DEPTH == 32
@@ -229,7 +235,7 @@ static void overlay_restore_default_fb_state(void)
 }
 #endif /*LV_COLOR_DEPTH == 32*/
 
-void lv_gpu_composite_overlay_2d_screen(lv_display_t * disp, int32_t w, int32_t h)
+void lv_gpu_renderer_overlay_2d_screen(lv_display_t * disp, int32_t w, int32_t h)
 {
 #if LV_COLOR_DEPTH != 32
     LV_UNUSED(disp);
@@ -263,7 +269,7 @@ void lv_gpu_composite_overlay_2d_screen(lv_display_t * disp, int32_t w, int32_t 
 #endif
 }
 
-void lv_gpu_composite_overlay_2d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h)
+void lv_gpu_renderer_overlay_2d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h)
 {
     lv_opengles_texture_t * texture = lv_display_get_driver_data(disp);
     if(!texture || !texture->fb1) return;
@@ -346,16 +352,16 @@ static void verify_read_rgba(int32_t w, int32_t h, int lv_x, int lv_y, uint8_t r
     GL_CALL(glReadPixels(gl_x, gl_y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba));
 }
 
-bool lv_gpu_composite_verify_alpha(lv_display_t * disp, uint8_t * min_alpha_out, uint32_t * opaque_count_out)
+bool lv_gpu_renderer_verify_alpha(lv_display_t * disp, uint8_t * min_alpha_out, uint32_t * opaque_count_out)
 {
-    lv_gpu_composite_verify_stats_t stats;
-    if(!lv_gpu_composite_verify_stats(disp, &stats)) return false;
+    lv_gpu_renderer_verify_stats_t stats;
+    if(!lv_gpu_renderer_verify_stats(disp, &stats)) return false;
     if(min_alpha_out) *min_alpha_out = stats.corner_min_alpha;
     if(opaque_count_out) *opaque_count_out = stats.corner_opaque_count;
     return true;
 }
 
-bool lv_gpu_composite_verify_stats(lv_display_t * disp, lv_gpu_composite_verify_stats_t * stats)
+bool lv_gpu_renderer_verify_stats(lv_display_t * disp, lv_gpu_renderer_verify_stats_t * stats)
 {
     if(!stats) return false;
     lv_memzero(stats, sizeof(*stats));
@@ -434,7 +440,7 @@ bool lv_gpu_composite_verify_stats(lv_display_t * disp, lv_gpu_composite_verify_
     return true;
 }
 
-void lv_gpu_composite_get_path_stats(lv_gpu_composite_path_stats_t * stats)
+void lv_gpu_renderer_get_path_stats(lv_gpu_renderer_path_stats_t * stats)
 {
     if(!stats) return;
     stats->gpu_2d_tasks = g_path_stats.gpu_2d_tasks;
@@ -452,7 +458,7 @@ void lv_gpu_composite_get_path_stats(lv_gpu_composite_path_stats_t * stats)
     stats->gl_renderer[sizeof(stats->gl_renderer) - 1] = '\0';
 }
 
-bool lv_gpu_composite_dump_frame_lvgl(lv_display_t * disp, const char * path)
+bool lv_gpu_renderer_dump_frame_lvgl(lv_display_t * disp, const char * path)
 {
     if(!path || !disp) return false;
 
@@ -509,29 +515,29 @@ bool lv_gpu_composite_dump_frame_lvgl(lv_display_t * disp, const char * path)
     return true;
 }
 
-static int32_t gpu_composite_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
+static int32_t gpu_renderer_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
 {
     LV_UNUSED(draw_unit);
-    lv_gpu_composite_path_t path = LV_GPU_PATH_NONE;
-    int32_t score = lv_gpu_composite_fg_evaluate_score(task, &path);
+    lv_gpu_renderer_path_t path = LV_GPU_PATH_NONE;
+    int32_t score = lv_gpu_renderer_fg_evaluate_score(task, &path);
     if(score <= 0) return 0;
     if(g_unit && g_unit->caps.max_texture_size > 0 && !g_unit->caps.has_fbo) return 0;
     if(task->preference_score > score) {
         task->preference_score = score;
-        task->preferred_draw_unit_id = DRAW_UNIT_ID_GPU_COMPOSITE;
+        task->preferred_draw_unit_id = DRAW_UNIT_ID_GPU_RENDERER;
     }
     LV_UNUSED(path);
     return 0;
 }
 
-static int32_t gpu_composite_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
+static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
 {
-    lv_draw_gpu_composite_unit_t * u = (lv_draw_gpu_composite_unit_t *)draw_unit;
+    lv_draw_gpu_renderer_unit_t * u = (lv_draw_gpu_renderer_unit_t *)draw_unit;
     if(u->task_act) return 0;
 
-    lv_draw_task_t * t = lv_draw_get_available_task(layer, NULL, DRAW_UNIT_ID_GPU_COMPOSITE);
+    lv_draw_task_t * t = lv_draw_get_available_task(layer, NULL, DRAW_UNIT_ID_GPU_RENDERER);
     if(t == NULL) return LV_DRAW_UNIT_IDLE;
-    if(t->preferred_draw_unit_id != DRAW_UNIT_ID_GPU_COMPOSITE) return LV_DRAW_UNIT_IDLE;
+    if(t->preferred_draw_unit_id != DRAW_UNIT_ID_GPU_RENDERER) return LV_DRAW_UNIT_IDLE;
 
     if(t->type == LV_DRAW_TASK_TYPE_3D) {
         lv_draw_3d_dsc_t * dsc = lv_draw_task_get_3d_dsc(t);
@@ -539,7 +545,7 @@ static int32_t gpu_composite_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * l
 
 #if LV_USE_3D
         if(dsc->kind == LV_3D_DRAW_KIND_VIEWPORT_PASS && dsc->scene && dsc->camera) {
-            if(!lv_gpu_composite_fg_record_viewport(dsc->scene, dsc->camera, &dsc->viewport_area)) {
+            if(!lv_gpu_renderer_fg_record_viewport(dsc->scene, dsc->camera, &dsc->viewport_area)) {
                 return LV_DRAW_UNIT_IDLE;
             }
         }
@@ -548,9 +554,9 @@ static int32_t gpu_composite_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * l
         }
 #endif
     }
-    else if(lv_gpu_composite_fg_can_gpu_native_2d(t)) {
-        if(!lv_gpu_composite_fg_queue_2d_task(t)) return LV_DRAW_UNIT_IDLE;
-        lv_gpu_composite_fg_record_2d_task(t);
+    else if(lv_gpu_renderer_fg_can_gpu_native_2d(t)) {
+        if(!lv_gpu_renderer_fg_queue_2d_task(t)) return LV_DRAW_UNIT_IDLE;
+        lv_gpu_renderer_fg_record_2d_task(t);
     }
     else {
         return LV_DRAW_UNIT_IDLE;
@@ -564,21 +570,21 @@ static int32_t gpu_composite_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * l
     return 1;
 }
 
-void lv_gpu_composite_caps_probe_on_context(void)
+void lv_gpu_renderer_caps_probe_on_context(void)
 {
     if(g_unit) {
-        lv_gpu_composite_caps_probe(&g_unit->caps);
-        lv_gpu_composite_caps_log(&g_unit->caps);
+        lv_gpu_renderer_caps_probe(&g_unit->caps);
+        lv_gpu_renderer_caps_log(&g_unit->caps);
         path_stats_cache_gl_renderer();
         if(!g_gl_renderer_logged && g_path_stats.gl_renderer[0]) {
             LV_LOG_USER("LVGL GL_RENDERER: %s", g_path_stats.gl_renderer);
             g_gl_renderer_logged = true;
         }
-        lv_gpu_composite_gles2_2d_init();
+        lv_gpu_renderer_gles2_2d_init();
 #if LV_USE_3D
-        lv_gpu_composite_gles2_3d_init();
+        lv_gpu_renderer_gles2_3d_init();
 #endif
     }
 }
 
-#endif /*LV_USE_DRAW_GPU_COMPOSITE*/
+#endif /*LV_USE_DRAW_GPU_RENDERER*/

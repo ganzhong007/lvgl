@@ -1,11 +1,20 @@
 /**
- * @file lv_gpu_composite_framegraph.c
+ * @file lv_gpu_renderer_framegraph.c
  */
 
-#include "lv_gpu_composite_framegraph.h"
-#include "lv_gpu_composite_batch_3d.h"
-#include "lv_gpu_composite_gles2_2d.h"
-#include "lv_gpu_composite_gles2_3d.h"
+#ifdef LV_CONF_PATH
+#include LV_CONF_PATH
+#else
+#include "../../lv_conf_internal.h"
+#endif
+
+#if LV_USE_DRAW_GPU_RENDERER
+
+#include "lv_gpu_renderer_framegraph.h"
+
+#include "lv_gpu_renderer_batch_3d.h"
+#include "lv_gpu_renderer_gles2_2d.h"
+#include "lv_gpu_renderer_gles2_3d.h"
 #include "../../core/lv_refr_private.h"
 #include "../../display/lv_display_private.h"
 #include "../../drivers/opengles/lv_opengles_debug.h"
@@ -20,8 +29,8 @@
 #include "../../include/lvgl/3d/lv_3d_plane_bake.h"
 #endif
 
-#ifndef LV_GPU_COMPOSITE_FLUSH_MAX_BATCHES
-    #define LV_GPU_COMPOSITE_FLUSH_MAX_BATCHES 8
+#ifndef LV_GPU_RENDERER_FLUSH_MAX_BATCHES
+    #define LV_GPU_RENDERER_FLUSH_MAX_BATCHES 8
 #endif
 
 #define LV_GPU_FG_MAX_VP 8
@@ -35,7 +44,7 @@ typedef struct {
 static lv_gpu_ui_mode_t g_ui_mode = LV_GPU_UI_MODE_GENERIC;
 static lv_gpu_fg_vp_t g_vp_queue[LV_GPU_FG_MAX_VP];
 static uint32_t g_vp_count;
-static lv_gpu_composite_fg_stats_t g_fg_stats;
+static lv_gpu_renderer_fg_stats_t g_fg_stats;
 
 static bool is_display_fb_layer(const lv_layer_t * layer)
 {
@@ -65,8 +74,8 @@ static uint32_t fg_count_material_batches(const lv_3d_draw_item_t * items, uint3
         opaque_order[opaque_count++] = i;
     }
     if(opaque_count == 0) return 0;
-    lv_gpu_composite_batch_3d_sort_opaque(items, n, opaque_order, opaque_count);
-    return lv_gpu_composite_batch_3d_count_material_runs(items, opaque_order, opaque_count);
+    lv_gpu_renderer_batch_3d_sort_opaque(items, n, opaque_order, opaque_count);
+    return lv_gpu_renderer_batch_3d_count_material_runs(items, opaque_order, opaque_count);
 }
 
 static bool pass_3d_enabled(void)
@@ -89,35 +98,35 @@ static bool pass_2d_overlay_enabled(void)
     }
 }
 
-void lv_gpu_composite_fg_init(void)
+void lv_gpu_renderer_fg_init(void)
 {
-    lv_gpu_composite_fg_record_reset();
+    lv_gpu_renderer_fg_record_reset();
     lv_memzero(&g_fg_stats, sizeof(g_fg_stats));
 }
 
-void lv_gpu_composite_fg_deinit(void)
+void lv_gpu_renderer_fg_deinit(void)
 {
-    lv_gpu_composite_fg_record_reset();
+    lv_gpu_renderer_fg_record_reset();
 }
 
-void lv_gpu_composite_fg_set_ui_mode(lv_gpu_ui_mode_t mode)
+void lv_gpu_renderer_fg_set_ui_mode(lv_gpu_ui_mode_t mode)
 {
     g_ui_mode = mode;
 }
 
-lv_gpu_ui_mode_t lv_gpu_composite_fg_get_ui_mode(void)
+lv_gpu_ui_mode_t lv_gpu_renderer_fg_get_ui_mode(void)
 {
     return g_ui_mode;
 }
 
-void lv_gpu_composite_fg_record_reset(void)
+void lv_gpu_renderer_fg_record_reset(void)
 {
     g_vp_count = 0;
     g_fg_stats.gpu_2d_recorded = 0;
     g_fg_stats.gpu_3d_vp_recorded = 0;
 }
 
-bool lv_gpu_composite_fg_record_viewport(lv_obj_t * scene, lv_obj_t * camera, const lv_area_t * area)
+bool lv_gpu_renderer_fg_record_viewport(lv_obj_t * scene, lv_obj_t * camera, const lv_area_t * area)
 {
     if(!scene || !camera || !area) return false;
     if(g_vp_count >= LV_GPU_FG_MAX_VP) return false;
@@ -139,30 +148,32 @@ bool lv_gpu_composite_fg_record_viewport(lv_obj_t * scene, lv_obj_t * camera, co
     return true;
 }
 
-bool lv_gpu_composite_fg_record_2d_task(lv_draw_task_t * task)
+bool lv_gpu_renderer_fg_record_2d_task(lv_draw_task_t * task)
 {
     LV_UNUSED(task);
     g_fg_stats.gpu_2d_recorded++;
     return true;
 }
 
-bool lv_gpu_composite_fg_can_gpu_native_2d(const lv_draw_task_t * task)
+bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
 {
-    if(lv_gpu_composite_gles2_2d_is_raster_nest()) return false;
+    lv_draw_task_t * t = (lv_draw_task_t *)(uintptr_t)task;
+
+    if(lv_gpu_renderer_gles2_2d_is_raster_nest()) return false;
     if(lv_refr_get_disp_refreshing() == NULL) return false;
     if(!is_display_fb_layer(task->target_layer)) return false;
 
     switch(task->type) {
         case LV_DRAW_TASK_TYPE_FILL: {
-            lv_draw_fill_dsc_t * fd = lv_draw_task_get_fill_dsc(task);
+            lv_draw_fill_dsc_t * fd = lv_draw_task_get_fill_dsc(t);
             return fd && fd->grad.dir == LV_GRAD_DIR_NONE;
         }
         case LV_DRAW_TASK_TYPE_BORDER: {
-            lv_draw_border_dsc_t * bd = lv_draw_task_get_border_dsc(task);
+            lv_draw_border_dsc_t * bd = lv_draw_task_get_border_dsc(t);
             return bd && bd->width > 0;
         }
         case LV_DRAW_TASK_TYPE_LABEL: {
-            lv_draw_label_dsc_t * ld = lv_draw_task_get_label_dsc(task);
+            lv_draw_label_dsc_t * ld = lv_draw_task_get_label_dsc(t);
             return ld && ld->rotation == 0;
         }
         case LV_DRAW_TASK_TYPE_LETTER: {
@@ -170,7 +181,7 @@ bool lv_gpu_composite_fg_can_gpu_native_2d(const lv_draw_task_t * task)
             return ld && ld->rotation == 0;
         }
         case LV_DRAW_TASK_TYPE_IMAGE: {
-            lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(task);
+            lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(t);
             return id && id->rotation == 0 && id->scale_x == LV_SCALE_NONE && id->scale_y == LV_SCALE_NONE
                    && id->skew_x == 0 && id->skew_y == 0 && id->blend_mode == LV_BLEND_MODE_NORMAL;
         }
@@ -179,7 +190,7 @@ bool lv_gpu_composite_fg_can_gpu_native_2d(const lv_draw_task_t * task)
     }
 }
 
-int32_t lv_gpu_composite_fg_evaluate_score(lv_draw_task_t * task, lv_gpu_composite_path_t * path_out)
+int32_t lv_gpu_renderer_fg_evaluate_score(lv_draw_task_t * task, lv_gpu_renderer_path_t * path_out)
 {
     if(path_out) *path_out = LV_GPU_PATH_NONE;
     if(lv_refr_get_disp_refreshing() == NULL) return 0;
@@ -194,7 +205,7 @@ int32_t lv_gpu_composite_fg_evaluate_score(lv_draw_task_t * task, lv_gpu_composi
     }
 #endif
 
-    if(lv_gpu_composite_fg_can_gpu_native_2d(task)) {
+    if(lv_gpu_renderer_fg_can_gpu_native_2d(task)) {
         if(path_out) *path_out = LV_GPU_PATH_2D_NATIVE;
         return 20;
     }
@@ -202,46 +213,46 @@ int32_t lv_gpu_composite_fg_evaluate_score(lv_draw_task_t * task, lv_gpu_composi
     return 0;
 }
 
-bool lv_gpu_composite_fg_has_pending(void)
+bool lv_gpu_renderer_fg_has_pending(void)
 {
-    return g_vp_count > 0 || lv_gpu_composite_gles2_2d_queue_count() > 0;
+    return g_vp_count > 0 || lv_gpu_renderer_gles2_2d_queue_count() > 0;
 }
 
-bool lv_gpu_composite_fg_queue_2d_task(lv_draw_task_t * t)
+bool lv_gpu_renderer_fg_queue_2d_task(lv_draw_task_t * t)
 {
     switch(t->type) {
         case LV_DRAW_TASK_TYPE_FILL: {
             lv_draw_fill_dsc_t * fd = lv_draw_task_get_fill_dsc(t);
             if(!fd) return false;
-            return lv_gpu_composite_gles2_2d_queue_fill(&t->area, &t->clip_area, fd->color, fd->opa, fd->radius);
+            return lv_gpu_renderer_gles2_2d_queue_fill(&t->area, &t->clip_area, fd->color, fd->opa, fd->radius);
         }
         case LV_DRAW_TASK_TYPE_BORDER: {
             lv_draw_border_dsc_t * bd = lv_draw_task_get_border_dsc(t);
             if(!bd) return false;
-            return lv_gpu_composite_gles2_2d_queue_border(&t->area, &t->clip_area, bd->color, bd->opa, bd->width,
+            return lv_gpu_renderer_gles2_2d_queue_border(&t->area, &t->clip_area, bd->color, bd->opa, bd->width,
                                                           bd->radius, bd->side);
         }
         case LV_DRAW_TASK_TYPE_LABEL: {
             lv_draw_label_dsc_t * ld = lv_draw_task_get_label_dsc(t);
             if(!ld) return false;
-            return lv_gpu_composite_gles2_2d_queue_label(&t->area, &t->clip_area, ld);
+            return lv_gpu_renderer_gles2_2d_queue_label(&t->area, &t->clip_area, ld);
         }
         case LV_DRAW_TASK_TYPE_LETTER: {
             lv_draw_letter_dsc_t * ld = (lv_draw_letter_dsc_t *)t->draw_dsc;
             if(!ld) return false;
-            return lv_gpu_composite_gles2_2d_queue_letter(&t->area, &t->clip_area, ld);
+            return lv_gpu_renderer_gles2_2d_queue_letter(&t->area, &t->clip_area, ld);
         }
         case LV_DRAW_TASK_TYPE_IMAGE: {
             lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(t);
             if(!id) return false;
-            return lv_gpu_composite_gles2_2d_queue_image(&t->area, &t->clip_area, id);
+            return lv_gpu_renderer_gles2_2d_queue_image(&t->area, &t->clip_area, id);
         }
         default:
             return false;
     }
 }
 
-void lv_gpu_composite_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
+void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
                                  uint32_t * gpu_2d_out, uint32_t * gpu_3d_out,
                                  uint32_t * sw_raster_out, uint8_t * max_alpha_out)
 {
@@ -251,7 +262,7 @@ void lv_gpu_composite_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     g_fg_stats.gl_flush_count = 0;
     g_fg_stats.gl_finish_count = 0;
 
-    uint32_t q2d = lv_gpu_composite_gles2_2d_queue_count();
+    uint32_t q2d = lv_gpu_renderer_gles2_2d_queue_count();
     if(tex_id == 0 || (g_vp_count == 0 && q2d == 0)) {
         if(gpu_2d_out) *gpu_2d_out = 0;
         if(gpu_3d_out) *gpu_3d_out = 0;
@@ -295,13 +306,13 @@ void lv_gpu_composite_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
             int32_t vh = lv_area_get_height(&vp->area);
 
             uint8_t vp_max_a = 0;
-            lv_gpu_composite_gles2_render_viewport(tex_id, 0, vx, vy, vw, vh,
+            lv_gpu_renderer_gles2_render_viewport(tex_id, 0, vx, vy, vw, vh,
                                                    view, proj, items, n,
-                                                   LV_GPU_COMPOSITE_AR_PASSTHROUGH, &vp_max_a);
+                                                   LV_GPU_RENDERER_AR_PASSTHROUGH, &vp_max_a);
             if(vp_max_a > frame_max_a) frame_max_a = vp_max_a;
             item_total += n;
 
-            if(g_fg_stats.batch_count % LV_GPU_COMPOSITE_FLUSH_MAX_BATCHES == 0) {
+            if(g_fg_stats.batch_count % LV_GPU_RENDERER_FLUSH_MAX_BATCHES == 0) {
                 GL_CALL(glFlush());
                 g_fg_stats.gl_flush_count++;
             }
@@ -312,11 +323,11 @@ void lv_gpu_composite_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     if(pass_2d_overlay_enabled() && q2d > 0) {
         g_fg_stats.pass_count++;
         uint32_t sw_raster = 0;
-        uint32_t rendered = lv_gpu_composite_gles2_2d_render_batch(tex_id, dw, dh, &sw_raster);
-        g_fg_stats.batch_count += lv_gpu_composite_gles2_2d_count_shader_batches();
+        uint32_t rendered = lv_gpu_renderer_gles2_2d_render_batch(tex_id, dw, dh, &sw_raster);
+        g_fg_stats.batch_count += lv_gpu_renderer_gles2_2d_count_shader_batches();
         if(gpu_2d_out) *gpu_2d_out = rendered;
         if(sw_raster_out) *sw_raster_out = sw_raster;
-        lv_gpu_composite_gles2_2d_queue_reset();
+        lv_gpu_renderer_gles2_2d_queue_reset();
     }
     else {
         if(gpu_2d_out) *gpu_2d_out = 0;
@@ -334,7 +345,9 @@ void lv_gpu_composite_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     g_fg_stats.gpu_3d_vp_recorded = 0;
 }
 
-const lv_gpu_composite_fg_stats_t * lv_gpu_composite_fg_get_stats(void)
+const lv_gpu_renderer_fg_stats_t * lv_gpu_renderer_fg_get_stats(void)
 {
     return &g_fg_stats;
 }
+
+#endif /*LV_USE_DRAW_GPU_RENDERER*/

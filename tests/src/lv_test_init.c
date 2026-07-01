@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <assert.h>
 #include "../unity/unity.h"
+#if LV_USE_DRAW_GPU_RENDERER && LV_USE_GLFW
+#include "lv_test_display_gpu_renderer.h"
+#endif
 
 static void test_log_print_cb(lv_log_level_t level, const char * buf);
 
@@ -18,7 +21,13 @@ void lv_test_init(void)
     lv_profiler_builtin_set_enable(false);
 #endif
 
+#if LV_USE_DRAW_GPU_RENDERER && LV_USE_GLFW
+    if(!lv_test_display_gpu_renderer_create(LV_TEST_DISPLAY_HOR_RES, LV_TEST_DISPLAY_VER_RES)) {
+        lv_test_assert_fail();
+    }
+#else
     lv_test_display_create(LV_TEST_DISPLAY_HOR_RES, LV_TEST_DISPLAY_VER_RES);
+#endif
     lv_test_indev_create_all();
     lv_test_fs_init();
 

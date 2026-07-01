@@ -210,4 +210,18 @@
 
 #define LV_DISABLE_API_MAPPING 1
 
+/* 2D/3D backend fork options — off in default test profiles (see OPTIONS_TEST_GPU_RENDERER). */
+#ifndef LV_USE_DRAW_GPU_RENDERER
+#define LV_USE_DRAW_GPU_RENDERER        0
+#endif
+#ifndef LV_USE_3D
+#define LV_USE_3D                       0
+#endif
+#ifndef LV_USE_3DTEXTURE
+#define LV_USE_3DTEXTURE                0
+#endif
+#ifndef LV_USE_APPWINDOW
+#define LV_USE_APPWINDOW                0
+#endif
+
 #endif /* LV_TEST_CONF_FULL_H */

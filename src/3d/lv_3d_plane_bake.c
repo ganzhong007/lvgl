@@ -9,7 +9,7 @@
 #include "../include/lvgl/draw/lv_snapshot.h"
 #include "../drivers/opengles/lv_opengles_debug.h"
 #include "../drivers/opengles/lv_opengles_private.h"
-#include "../misc/lv_color.h"
+#include "../include/lvgl/draw/lv_color.h"
 #include <stdio.h>
 
 #define LV_3D_SNAPSHOT_POOL_SIZE 32

@@ -69,6 +69,12 @@ set(LVGL_TEST_OPTIONS_VG_LITE
     -Wno-dangling-pointer # workaround for thorvg dangling-pointer warning
 )
 
+set(LVGL_TEST_OPTIONS_GPU_RENDERER
+    -DLV_TEST_OPTION=8
+    -DLVGL_CI_USING_SYS_HEAP
+    -Wno-unused-but-set-variable
+)
+
 set(LVGL_TEST_OPTIONS_RISCV_V
     -DLV_TEST_OPTION=5
     -DLVGL_CI_USING_SYS_HEAP
@@ -155,6 +161,15 @@ elseif (OPTIONS_TEST_VG_LITE)
         # Set a tolerance value for the VG-Lite tests.
         add_definitions(-DREF_IMG_TOLERANCE=9)
     endif()
+elseif (OPTIONS_TEST_GPU_RENDERER)
+    set (BUILD_OPTIONS ${LVGL_TEST_OPTIONS_GPU_RENDERER})
+    filter_compiler_options (C TEST_LIBS ${SANITIZE_AND_COVERAGE_OPTIONS})
+    set (CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "disable examples" FORCE)
+    set (ENABLE_TESTS ON)
+    add_definitions(-DREF_IMGS_PATH="ref_imgs_gpu_renderer/")
+    if ($ENV{NON_AMD64_BUILD})
+        message(FATAL_ERROR "OPTIONS_TEST_GPU_RENDERER requires amd64 (OpenGL + GLFW)")
+    endif()
 elseif (OPTIONS_TEST_RISCV_V)
     set (BUILD_OPTIONS ${LVGL_TEST_OPTIONS_RISCV_V} ${SANITIZE_AND_COVERAGE_OPTIONS})
     filter_compiler_options (C TEST_LIBS ${SANITIZE_AND_COVERAGE_OPTIONS})
@@ -189,8 +204,10 @@ set(COMPILE_OPTIONS
 )
 
 if(NOT (CMAKE_C_COMPILER_ID STREQUAL "MSVC"))
+    if(NOT OPTIONS_TEST_GPU_RENDERER)
+        list(APPEND COMPILE_OPTIONS -pedantic-errors)
+    endif()
     list(APPEND COMPILE_OPTIONS
-        -pedantic-errors
         -Wall
         -Wformat-security
         -Wclobbered
@@ -204,7 +221,6 @@ if(NOT (CMAKE_C_COMPILER_ID STREQUAL "MSVC"))
         -Wmissing-prototypes
         -Wpointer-arith
         -Wmultichar
-        -Wpedantic
         -Wreturn-type
         -Wshadow
         -Wshift-negative-value
@@ -233,6 +249,14 @@ list(APPEND COMPILE_OPTIONS
     ${BUILD_OPTIONS}
     ${BUILD_TARGET_DEF}
 )
+
+if(NOT (CMAKE_C_COMPILER_ID STREQUAL "MSVC"))
+    if(OPTIONS_TEST_GPU_RENDERER)
+        list(APPEND COMPILE_OPTIONS -Wno-pedantic -Wno-cpp -Wno-unused-variable -Wno-deprecated-declarations)
+    else()
+        list(APPEND COMPILE_OPTIONS -Wpedantic)
+    endif()
+endif()
 
 # LV_USE_OBJ_PROPERTY is enabled in option OPTIONS_TEST_DEFHEAP
 # It relies on C11 anonymous struct/union support, thus disable warnings.
@@ -353,6 +377,11 @@ target_include_directories(test_common PUBLIC ${TEST_INCLUDE_DIRS})
 target_compile_options(test_common PUBLIC ${LVGL_TESTFILE_COMPILE_OPTIONS})
 target_compile_definitions(test_common PRIVATE LV_BUILD_TEST ${LVGL_COMPILER_DEFINES})
 
+if(OPTIONS_TEST_GPU_RENDERER)
+    target_sources(test_common PUBLIC "src/lv_test_display_gpu_renderer.c")
+    target_include_directories(test_common PUBLIC $<BUILD_INTERFACE:${LVGL_DIR}>)
+endif()
+
 # Generate one test executable for each source file pair.
 # The sources in ${CMAKE_CURRENT_BINARY_DIR} is auto-generated, the
 # sources in src/test_cases is the actual test case.
@@ -451,6 +480,11 @@ else()
     endif()
 endif()
 
+if(OPTIONS_TEST_GPU_RENDERER AND glfw3_FOUND)
+    target_include_directories(test_common PUBLIC ${GLFW_INCLUDE_DIRS})
+    target_link_libraries(test_common PUBLIC glfw)
+endif()
+
 if (NOT LIBINPUT_FOUND)
     message("libinput not found, defaulting to 0")
     add_definitions(-DLV_USE_LIBINPUT=0)
@@ -488,6 +522,9 @@ endif()
 # disable test targets for build only tests
 if (ENABLE_TESTS)
     file(GLOB_RECURSE TEST_CASE_FILES src/test_cases/*.c)
+    if(NOT OPTIONS_TEST_GPU_RENDERER)
+        list(FILTER TEST_CASE_FILES EXCLUDE REGEX ".*/test_gpu_renderer_.*\\.c$")
+    endif()
     file(GLOB_RECURSE TEST_LIBS_FILES src/test_libs/*.c)
 else()
     set(TEST_CASE_FILES)

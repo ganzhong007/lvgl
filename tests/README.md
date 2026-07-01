@@ -41,6 +41,32 @@ scripts/install-prerequisites.sh
 
 For full information on running tests run: `./tests/main.py --help`.
 
+### gpu_renderer (2D/3D OpenGL backend)
+
+Requires **Ruby**, **OpenGL**, **GLFW**, and a display (use `xvfb-run` on headless hosts).
+See also `docs/LVGL_2D3D_BACKEND_PLAN.md` §14 in lv_port_linux for Ruby install and gpu_renderer test workflow.
+
+```sh
+# Ruby (Ubuntu/Debian)
+sudo apt install -y ruby ruby-dev
+pip3 install pypng
+
+# Full LVGL test deps (recommended)
+scripts/install-prerequisites.sh
+
+# Run gpu_renderer tests
+xvfb-run -a ./tests/main.py --build-options OPTIONS_TEST_GPU_RENDERER test
+```
+
+Or run only the gpu_renderer suite:
+
+```sh
+xvfb-run -a ./tests/main.py --build-options OPTIONS_TEST_GPU_RENDERER --test-suite test_gpu_renderer test
+```
+
+Tests live in `src/test_cases/draw/test_gpu_renderer_*.c` and use a hidden GLFW window
+via `lv_test_display_gpu_renderer_create()`.
+
 ### Docker
 
 To run the tests in an environment matching the CI setup:
