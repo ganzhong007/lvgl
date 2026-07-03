@@ -25,8 +25,14 @@ void lv_gpu_renderer_set_ui_mode(int mode);
 void lv_draw_gpu_renderer_init(void);
 void lv_draw_gpu_renderer_deinit(void);
 
+/** Debug: LVGL_GPU_2D_ONLY (default on unless set to 0) — skip 3D/overlay, 2D batch → scanout only. */
+bool lv_gpu_renderer_debug_2d_only(void);
+
 /** Called from display flush: render queued 3D viewports. tex_id=0 uses display driver texture. */
 void lv_gpu_renderer_flush_3d(lv_display_t * disp);
+/** Debug flush: GLES2 native 2D batch only (no 3D, no SW overlay). */
+void lv_gpu_renderer_flush_2d_only(lv_display_t * disp);
+void lv_gpu_renderer_clear_tex_for_debug(unsigned int tex_id, int32_t w, int32_t h);
 void lv_gpu_renderer_flush_3d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h);
 
 /** Alpha-blend SW framebuffer (2D/cursor) on top of the GPU texture after 3D pass. */

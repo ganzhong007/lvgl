@@ -13,6 +13,7 @@
 
 #include "lv_opengles_debug.h"
 
+#include <string.h>
 #include "../../display/lv_display_private.h"
 #include "../../draw/nanovg/lv_draw_nanovg.h"
 #if LV_USE_DRAW_GPU_RENDERER
@@ -77,6 +78,12 @@ static void populate_vertex_buffer(float vertex_buffer[LV_OPENGLES_VERTEX_BUFFER
  **********************/
 static bool is_init;
 
+#if LV_USE_EGL
+static bool g_ext_unpack_row_length;
+static bool g_ext_bgra_tex;
+static GLenum g_index_elem_type = GL_UNSIGNED_SHORT;
+#endif
+
 static lv_opengl_shader_manager_t shader_manager;
 
 static unsigned int vertex_buffer_id = 0;
@@ -99,9 +106,63 @@ static int shader_location[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
  *   GLOBAL FUNCTIONS
  **********************/
 
+#if LV_USE_EGL
+static bool lv_opengles_ext_supported(const char * name)
+{
+    const char * exts = (const char *)glGetString(GL_EXTENSIONS);
+    return exts && strstr(exts, name) != NULL;
+}
+
+static void lv_opengles_probe_gles2_extensions(void)
+{
+    g_ext_unpack_row_length = lv_opengles_ext_supported("GL_EXT_unpack_subimage");
+    g_ext_bgra_tex = lv_opengles_ext_supported("GL_EXT_texture_format_BGRA8888");
+    const bool uint_index = lv_opengles_ext_supported("GL_OES_element_index_uint");
+    g_index_elem_type = uint_index ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT;
+    LV_LOG_USER("GLES2: unpack_subimage=%d bgra8888=%d uint_index=%d",
+                g_ext_unpack_row_length, g_ext_bgra_tex, uint_index);
+}
+
+void lv_opengles_teximage_bgra8888(int level, int32_t w, int32_t h, const uint8_t * data, uint32_t stride)
+{
+    if(w < 1 || h < 1 || !data) return;
+
+    const uint32_t tight_stride = (uint32_t)w * 4u;
+    uint8_t * tight = lv_malloc(tight_stride * (uint32_t)h);
+    if(!tight) return;
+
+    for(int32_t y = 0; y < h; y++) {
+        const uint8_t * row = data + (uint32_t)y * stride;
+        uint8_t * out = tight + (uint32_t)y * tight_stride;
+        for(int32_t x = 0; x < w; x++) {
+            out[x * 4 + 0] = row[x * 4 + 2];
+            out[x * 4 + 1] = row[x * 4 + 1];
+            out[x * 4 + 2] = row[x * 4 + 0];
+            out[x * 4 + 3] = row[x * 4 + 3];
+        }
+    }
+    GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, tight));
+    lv_free(tight);
+}
+#else
+void lv_opengles_teximage_bgra8888(int level, int32_t w, int32_t h, const uint8_t * data, uint32_t stride)
+{
+    if(w < 1 || h < 1 || !data) return;
+    GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, (GLint)(stride / lv_color_format_get_size(LV_COLOR_FORMAT_ARGB8888))));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, data));
+    GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, 0));
+}
+#endif
+
 void lv_opengles_init(void)
 {
     if(is_init) return;
+
+#if LV_USE_EGL
+    lv_opengles_probe_gles2_extensions();
+#endif
 
     lv_opengles_enable_blending(false);
 
@@ -223,6 +284,13 @@ void lv_opengles_render_fill(lv_color_t color, const lv_area_t * area, lv_opa_t 
 void lv_opengles_render_display(lv_display_t * display, const lv_opengles_render_params_t * params)
 {
     LV_PROFILER_DRAW_BEGIN;
+#if LV_USE_EGL
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+#endif
+    GL_CALL(glDisable(GL_BLEND));
+    GL_CALL(glClearColor(0.f, 0.f, 0.f, 1.f));
+    GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+
     unsigned int texture = (lv_uintptr_t)display->layer_head->user_data;
     GL_CALL(glActiveTexture(GL_TEXTURE0));
     GL_CALL(glBindTexture(GL_TEXTURE_2D, texture));
@@ -510,7 +578,19 @@ static void lv_opengles_index_buffer_init(const unsigned int * data, unsigned in
 
     GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_id));
 
-    GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(GLuint), data, GL_STATIC_DRAW));
+#if LV_USE_EGL
+    if(g_index_elem_type == GL_UNSIGNED_INT) {
+        GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(unsigned int), data, GL_STATIC_DRAW));
+    }
+    else {
+        unsigned short idx[32];
+        unsigned int n = count > 32 ? 32 : count;
+        for(unsigned int i = 0; i < n; i++) idx[i] = (unsigned short)data[i];
+        GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, n * sizeof(unsigned short), idx, GL_STATIC_DRAW));
+    }
+#else
+    GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(unsigned int), data, GL_STATIC_DRAW));
+#endif
 }
 
 static void lv_opengles_index_buffer_deinit(void)
@@ -537,7 +617,16 @@ static void lv_opengles_index_buffer_unbind(void)
 
 static unsigned int lv_opengles_shader_manager_init(void)
 {
+#if LV_USE_EGL
+    static const lv_opengl_glsl_version_t egl_versions[] = {
+        LV_OPENGL_GLSL_VERSION_100,
+        LV_OPENGL_GLSL_VERSION_LAST,
+    };
+    for(size_t vi = 0; egl_versions[vi] != LV_OPENGL_GLSL_VERSION_LAST; ++vi) {
+        lv_opengl_glsl_version_t version = egl_versions[vi];
+#else
     for(lv_opengl_glsl_version_t version = LV_OPENGL_GLSL_VERSION_300ES; version < LV_OPENGL_GLSL_VERSION_LAST; ++version) {
+#endif
         LV_LOG_INFO("Trying GLSL version %s", lv_opengles_glsl_version_to_string(version));
         {
             /* Initialize the shader manager*/
@@ -654,7 +743,11 @@ static void lv_opengles_render_draw(void)
     lv_opengles_vertex_array_bind();
     lv_opengles_index_buffer_bind();
     unsigned int count = lv_opengles_index_buffer_get_count();
+#if LV_USE_EGL
+    GL_CALL(glDrawElements(GL_TRIANGLES, count, g_index_elem_type, NULL));
+#else
     GL_CALL(glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, NULL));
+#endif
     LV_PROFILER_DRAW_END;
 }
 

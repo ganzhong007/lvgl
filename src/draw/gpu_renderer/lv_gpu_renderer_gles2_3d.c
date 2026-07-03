@@ -406,12 +406,20 @@ static void draw_shaded_box_sharp(const lv_3d_draw_item_t * it, const float mvp[
     float verts[108];
     box_solid_verts(it->w, it->h, it->d, verts);
 
-    /* SHADED_BOX: top cap at local +Y (face 4), bottom at -Y (face 5). */
+    /* SHADED_BOX: top cap at local +Y (face 4), bottom at -Y (face 5).
+     * EGL scanout keeps +Y toward screen bottom — swap cap colors only, not projection. */
+#if LV_USE_EGL
+    const int top_face = 5;
+    const int bot_face = 4;
+#else
+    const int top_face = 4;
+    const int bot_face = 5;
+#endif
     for(int f = 0; f < 4; f++) {
         draw_box_triangles(verts, f * 6, 6, mvp, it->material.color, it->material.opa);
     }
-    draw_box_triangles(verts, 4 * 6, 6, mvp, it->material.top_color, it->material.opa);
-    draw_box_triangles(verts, 5 * 6, 6, mvp, it->material.color, it->material.opa);
+    draw_box_triangles(verts, top_face * 6, 6, mvp, it->material.top_color, it->material.opa);
+    draw_box_triangles(verts, bot_face * 6, 6, mvp, it->material.color, it->material.opa);
 }
 
 static void draw_shaded_box(const lv_3d_draw_item_t * it, const float mvp[16]);
@@ -454,33 +462,40 @@ static void draw_shaded_rounded_box(const lv_3d_draw_item_t * it, const float mv
     float r = it->material.corner_radius;
 
     float top[RBOX_MAX_VERT * 3];
-    int n = rounded_cap_perimeter_xz(hx, hz, r, hy, top, RBOX_MAX_VERT);
+#if LV_USE_EGL
+    const float cap_y = -hy;
+    const float side_hi = -hy;
+    const float side_lo = hy;
+#else
+    const float cap_y = hy;
+    const float side_hi = hy;
+    const float side_lo = -hy;
+#endif
+    int n = rounded_cap_perimeter_xz(hx, hz, r, cap_y, top, RBOX_MAX_VERT);
     if(n < 3) {
         draw_shaded_box_sharp(it, mvp);
         return;
     }
 
-    const float cy = hy;
     for(int i = 0; i < n; i++) {
         int j = (i + 1) % n;
         float tri[9] = {
-            0.0f, cy, 0.0f,
+            0.0f, cap_y, 0.0f,
             top[i * 3 + 0], top[i * 3 + 1], top[i * 3 + 2],
             top[j * 3 + 0], top[j * 3 + 1], top[j * 3 + 2],
         };
         draw_box_triangles(tri, 0, 3, mvp, it->material.top_color, it->material.opa);
     }
 
-    const float by = -hy;
     for(int i = 0; i < n; i++) {
         int j = (i + 1) % n;
         float side[18] = {
-            top[i * 3 + 0], hy, top[i * 3 + 2],
-            top[j * 3 + 0], hy, top[j * 3 + 2],
-            top[j * 3 + 0], by, top[j * 3 + 2],
-            top[i * 3 + 0], hy, top[i * 3 + 2],
-            top[j * 3 + 0], by, top[j * 3 + 2],
-            top[i * 3 + 0], by, top[i * 3 + 2],
+            top[i * 3 + 0], side_hi, top[i * 3 + 2],
+            top[j * 3 + 0], side_hi, top[j * 3 + 2],
+            top[j * 3 + 0], side_lo, top[j * 3 + 2],
+            top[i * 3 + 0], side_hi, top[i * 3 + 2],
+            top[j * 3 + 0], side_lo, top[j * 3 + 2],
+            top[i * 3 + 0], side_lo, top[i * 3 + 2],
         };
         draw_box_triangles(side, 0, 3, mvp, it->material.color, it->material.opa);
         draw_box_triangles(side, 3, 3, mvp, it->material.color, it->material.opa);
@@ -635,6 +650,10 @@ static void render_viewport_probe_alpha(unsigned int fbo, int32_t x, int32_t y, 
 {
     if(!max_alpha_out) return;
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+        return;
+    }
     uint8_t probe[4];
     static const int ppts[9][2] = {{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1},
                                  {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};

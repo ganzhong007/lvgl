@@ -78,6 +78,9 @@ bool lv_gpu_renderer_fg_queue_2d_task(lv_draw_task_t * task);
 /** True when viewport or 2D batch queues have work for the next flush. */
 bool lv_gpu_renderer_fg_has_pending(void);
 
+/** Re-queue the last viewport pass (animated 3D when DRAW_MAIN was skipped). */
+bool lv_gpu_renderer_fg_restore_last_viewport(void);
+
 /**
  * Build + execute recorded frame into tex_id.
  * Updates fg_stats and caller path counters via out params.

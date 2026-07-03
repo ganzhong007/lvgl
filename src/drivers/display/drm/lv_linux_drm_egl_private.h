@@ -29,6 +29,8 @@ extern "C" {
  *      DEFINES
  *********************/
 
+#define DRM_EGL_MAX_PROPS 128
+
 /**********************
  *      TYPEDEFS
  **********************/
@@ -51,9 +53,32 @@ typedef struct {
     struct gbm_bo * gbm_bo_flipped;
     struct gbm_bo * gbm_bo_presented;
 
+    /* ARGB GLES render → separate scanout BO when plane fmt != GBM (e.g. DPI RG24) */
+    struct gbm_bo * scanout_bo;
+    uint32_t scanout_fb_id;
+    uint32_t scanout_w;
+    uint32_t scanout_h;
+    bool scanout_from_gl;
+
     lv_linux_drm_select_mode_cb_t mode_select_cb;
     int fd;
     bool crtc_isset;
+
+    /* Atomic KMS (ZynqMP / Mali — legacy SetCrtc often returns -EINVAL) */
+    bool use_atomic;
+    bool atomic_modeset_done;
+    uint32_t plane_id;
+    uint32_t plane_fourcc;
+    uint32_t gbm_fourcc; /* EGL/GBM window surface format (e.g. ARGB8888) */
+    uint32_t crtc_idx;
+    uint32_t mode_blob_id;
+    drmModeAtomicReqPtr atomic_req;
+    uint32_t count_plane_props;
+    uint32_t count_crtc_props;
+    uint32_t count_conn_props;
+    drmModePropertyPtr plane_props[DRM_EGL_MAX_PROPS];
+    drmModePropertyPtr crtc_props[DRM_EGL_MAX_PROPS];
+    drmModePropertyPtr conn_props[DRM_EGL_MAX_PROPS];
 } lv_drm_ctx_t;
 
 

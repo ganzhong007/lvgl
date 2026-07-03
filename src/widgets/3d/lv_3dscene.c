@@ -8,12 +8,24 @@
 
 #include "../../core/lv_obj_class_private.h"
 
+#define MY_CLASS (&lv_3dscene_class)
+
+static void lv_3dscene_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
+
 const lv_obj_class_t lv_3dscene_class = {
+    .constructor_cb = lv_3dscene_constructor,
     .width_def = LV_PCT(100),
     .height_def = LV_PCT(100),
     .base_class = &lv_obj_class,
     .name = "3dscene",
 };
+
+static void lv_3dscene_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
+{
+    LV_UNUSED(class_p);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(obj, 0, 0);
+}
 
 lv_obj_t * lv_3dscene_create(lv_obj_t * parent)
 {

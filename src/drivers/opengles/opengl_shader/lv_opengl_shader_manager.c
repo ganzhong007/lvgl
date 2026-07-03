@@ -377,6 +377,7 @@ const char * lv_opengles_glsl_version_to_string(lv_opengl_glsl_version_t version
 
     switch(version) {
         case LV_OPENGL_GLSL_VERSION_100:
+            /* GLES 2.0: #version 100 (no "es" suffix; Mali-400 rejects "100 es") */
             return "#version 100\n";
         case LV_OPENGL_GLSL_VERSION_300ES:
             return "#version 300 es\n";

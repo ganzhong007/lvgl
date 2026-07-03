@@ -129,6 +129,14 @@ bool lv_linux_drm_mode_is_preferred(const lv_linux_drm_mode_t * mode);
  */
 void * lv_linux_drm_mode_get_raw(const lv_linux_drm_mode_t * mode);
 
+#if LV_USE_DRAW_GPU_RENDERER
+/**
+ * Composite GPU 3D/2D into the scanout buffer and present (once per frame, after lv_refr_now).
+ * Matches the GLFW backend: refresh records draw tasks; present runs GLES composite separately.
+ */
+void lv_linux_drm_gpu_present(lv_display_t * disp);
+#endif
+
 /**********************
  *      MACROS
  **********************/

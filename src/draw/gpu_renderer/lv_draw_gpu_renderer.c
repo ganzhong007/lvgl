@@ -27,6 +27,8 @@
 #include "../../drivers/opengles/lv_opengles_driver.h"
 #include "../../drivers/opengles/lv_opengles_private.h"
 #include "../../drivers/opengles/lv_opengles_texture_private.h"
+
+#include <stdlib.h>
 #include "../../include/lvgl/draw/lv_draw_3d.h"
 #include <stdio.h>
 
@@ -64,6 +66,70 @@ static bool g_gl_renderer_logged;
 static int32_t gpu_renderer_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
 static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
 static void gpu_renderer_flush_internal(unsigned int tex_id, int32_t dw, int32_t dh);
+static void gpu_renderer_clear_tex(unsigned int tex_id, int32_t w, int32_t h, float r, float g, float b, float a);
+
+bool lv_gpu_renderer_debug_2d_only(void)
+{
+    static int cached = -1;
+    if(cached < 0) {
+        const char * env = getenv("LVGL_GPU_2D_ONLY");
+        cached = (env && env[0] == '1') ? 1 : 0;
+        if(cached) {
+            LV_LOG_USER("GPU debug: 2D batch only (LVGL_GPU_2D_ONLY=1)");
+        }
+    }
+    return cached != 0;
+}
+
+void lv_gpu_renderer_flush_2d_only(lv_display_t * disp)
+{
+    int32_t dw = lv_display_get_horizontal_resolution(disp);
+    int32_t dh = lv_display_get_vertical_resolution(disp);
+    gpu_renderer_flush_internal(lv_opengles_texture_get_texture_id(disp), dw, dh);
+}
+
+void lv_gpu_renderer_clear_tex_for_debug(unsigned int tex_id, int32_t w, int32_t h)
+{
+    gpu_renderer_clear_tex(tex_id, w, h, 0.0f, 0.75f, 0.15f, 1.0f);
+    {
+        unsigned int probe_fbo = 0;
+        uint8_t center[4] = {0};
+        GL_CALL(glGenFramebuffers(1, &probe_fbo));
+        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, probe_fbo));
+        GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex_id, 0));
+        if(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+            GL_CALL(glReadPixels(w / 2, h / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, center));
+        }
+        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+        GL_CALL(glDeleteFramebuffers(1, &probe_fbo));
+        static bool logged;
+        if(!logged) {
+            LV_LOG_USER("2D-only tex clear probe center RGBA %u %u %u %u (fbo ok=%d)",
+                        center[0], center[1], center[2], center[3],
+                        (int)(probe_fbo != 0));
+            logged = true;
+        }
+    }
+}
+
+static void gpu_renderer_clear_tex(unsigned int tex_id, int32_t w, int32_t h, float r, float g, float b, float a)
+{
+    if(tex_id == 0 || w < 1 || h < 1) return;
+
+    unsigned int fbo = 0;
+    GL_CALL(glGenFramebuffers(1, &fbo));
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
+    GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex_id, 0));
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+        GL_CALL(glViewport(0, 0, w, h));
+        GL_CALL(glDisable(GL_SCISSOR_TEST));
+        GL_CALL(glDisable(GL_BLEND));
+        GL_CALL(glClearColor(r, g, b, a));
+        GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+    }
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    GL_CALL(glDeleteFramebuffers(1, &fbo));
+}
 
 void lv_draw_gpu_renderer_init(void)
 {
@@ -113,7 +179,19 @@ static void path_stats_from_fg(void)
 static void gpu_renderer_flush_internal(unsigned int tex_id, int32_t dw, int32_t dh)
 {
     if(!g_unit || tex_id == 0) return;
-    if(!lv_gpu_renderer_fg_has_pending()) return;
+    if(!lv_gpu_renderer_fg_has_pending()) {
+        lv_gpu_renderer_fg_restore_last_viewport();
+    }
+    if(!lv_gpu_renderer_fg_has_pending()) {
+        static bool logged;
+        if(!logged) {
+            LV_LOG_USER("GPU flush_3d: no pending 3D/2D (vp=%u q2d=%u)",
+                        (unsigned)lv_gpu_renderer_fg_get_stats()->gpu_3d_vp_recorded,
+                        (unsigned)lv_gpu_renderer_gles2_2d_queue_count());
+            logged = true;
+        }
+        return;
+    }
 
     path_stats_cache_gl_renderer();
     g_path_stats.gpu_2d_tasks = 0;
@@ -134,6 +212,27 @@ static void gpu_renderer_flush_internal(unsigned int tex_id, int32_t dw, int32_t
     g_path_stats.gpu_3d_draws = g_last_flush_item_count;
     g_path_stats.sw_2d_raster_tasks = sw_raster;
     path_stats_from_fg();
+
+    {
+        static bool logged_full;
+        static bool logged_2d;
+        if(lv_gpu_renderer_debug_2d_only()) {
+            if(!logged_2d) {
+                LV_LOG_USER("GPU flush_2d_only: batch=%u sw_raster=%u",
+                            (unsigned)g_path_stats.gpu_2d_tasks,
+                            (unsigned)g_path_stats.sw_2d_raster_tasks);
+                logged_2d = true;
+            }
+        }
+        else if(!logged_full) {
+            LV_LOG_USER("GPU flush_3d: vp=%u items=%u 2d=%u max_alpha=%u",
+                        (unsigned)g_last_flush_vp_count,
+                        (unsigned)g_last_flush_item_count,
+                        (unsigned)g_path_stats.gpu_2d_tasks,
+                        (unsigned)g_last_frame_max_alpha);
+            logged_full = true;
+        }
+    }
 
     g_flush_serial++;
 }
@@ -169,17 +268,25 @@ void lv_gpu_renderer_overlay_2d_fb(lv_display_t * disp)
 }
 
 #if LV_COLOR_DEPTH == 32
+static bool overlay_pixel_visible(const uint8_t * p, lv_color_format_t cf)
+{
+    if(lv_color_format_has_alpha(cf)) {
+        if(p[3] <= 16) return false;
+        /* Default widget white background — not intentional 2D UI */
+        if(p[0] > 240 && p[1] > 240 && p[2] > 240 && p[3] > 240) return false;
+        return true;
+    }
+    if((p[0] | p[1] | p[2]) <= 16) return false;
+    if(p[0] > 240 && p[1] > 240 && p[2] > 240) return false;
+    return true;
+}
+
 static bool overlay_fb_has_visible_2d(const uint8_t * px, uint32_t stride, int32_t w, int32_t h, lv_color_format_t cf)
 {
     for(int32_t y = 0; y < h; y += 32) {
         for(int32_t x = 0; x < w; x += 32) {
             const uint8_t * p = px + (uint32_t)y * stride + (uint32_t)x * 4;
-            if(lv_color_format_has_alpha(cf)) {
-                if(p[3] > 16) return true;
-            }
-            else if((p[0] | p[1] | p[2]) > 16) {
-                return true;
-            }
+            if(overlay_pixel_visible(p, cf)) return true;
         }
     }
     return false;
@@ -203,10 +310,8 @@ static bool overlay_upload_sw_tex(lv_opengles_texture_t * texture, lv_display_t 
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-    GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, stride / lv_color_format_get_size(cf)));
-    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, texture->fb1));
+    lv_opengles_teximage_bgra8888(0, w, h, texture->fb1, stride);
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
-    GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, 0));
 
     if(sw_tex_out) *sw_tex_out = sw_tex;
     return true;
@@ -523,8 +628,8 @@ bool lv_gpu_renderer_dump_screen_lvgl(int32_t w, int32_t h, const char * path)
 
 void lv_gpu_renderer_restore_default_framebuffer(void)
 {
-#if !LV_USE_EGL
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+#if !LV_USE_EGL
     {
         GLenum draw_buf = GL_BACK;
         GL_CALL(glDrawBuffers(1, &draw_buf));
@@ -539,6 +644,17 @@ bool lv_gpu_renderer_present_tex_to_window(unsigned int tex_id, int32_t w, int32
 
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    GL_CALL(glViewport(0, 0, w, h));
+    GL_CALL(glDisable(GL_SCISSOR_TEST));
+
+#if LV_USE_EGL && LV_GPU_RENDERER_GLES_API < 3
+    /* GLES2 EGL (e.g. Mali): no glBlitFramebuffer — composite with a fullscreen quad. */
+    lv_area_t full = { 0, 0, w - 1, h - 1 };
+    lv_opengles_reinit_state();
+    lv_opengles_render_texture_rbswap(tex_id, &full, LV_OPA_COVER, w, h, &full, false, false);
+    lv_gpu_renderer_restore_default_framebuffer();
+    return true;
+#else
 
     static unsigned int read_fbo;
     if(read_fbo == 0) {
@@ -579,6 +695,7 @@ bool lv_gpu_renderer_present_tex_to_window(unsigned int tex_id, int32_t w, int32
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     lv_gpu_renderer_restore_default_framebuffer();
     return true;
+#endif
 }
 
 bool lv_gpu_renderer_present_tex_readback(unsigned int tex_id, int32_t w, int32_t h)

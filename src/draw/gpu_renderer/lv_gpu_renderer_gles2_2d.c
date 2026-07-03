@@ -454,10 +454,8 @@ static bool raster_sw_to_texture(const lv_area_t * area, const lv_area_t * clip,
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
     GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-    GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, g_raster_buf.header.stride / 4));
-    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rw, rh, 0, GL_BGRA, GL_UNSIGNED_BYTE, g_raster_buf.data));
+    lv_opengles_teximage_bgra8888(0, rw, rh, g_raster_buf.data, g_raster_buf.header.stride);
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
-    GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, 0));
     *tex_out = tex;
     return true;
 }
@@ -526,6 +524,11 @@ uint32_t lv_gpu_renderer_gles2_2d_render_batch(unsigned int color_tex, int32_t d
         GL_CALL(glReadBuffer(GL_COLOR_ATTACHMENT0));
     }
 #endif
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+        GL_CALL(glDeleteFramebuffers(1, &fbo));
+        return 0;
+    }
 
     GL_CALL(glViewport(0, 0, dw, dh));
     GL_CALL(glEnable(GL_BLEND));

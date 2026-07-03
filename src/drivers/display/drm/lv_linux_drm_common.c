@@ -12,6 +12,7 @@
 #if LV_USE_LINUX_DRM
 
 #include <dirent.h>
+#include <string.h>
 #include <xf86drmMode.h>
 #include "lv_linux_drm_private.h"
 
@@ -31,6 +32,35 @@
  **********************/
 
 static char * find_by_class(void);
+
+static int drm_connector_dir_score(const char * name)
+{
+    if(!name) return 0;
+    /* Prefer DP (zynqmp-display) over DPI panel when both are connected */
+    if(strstr(name, "-DP-") != NULL) return 100;
+    if(strstr(name, "-HDMI-") != NULL) return 90;
+    if(strstr(name, "-DPI-") != NULL) return 10;
+    return 50;
+}
+
+static char * card_path_from_connector_dir(const char * name)
+{
+    if(!name || lv_strncmp(name, "card", 4) != 0) {
+        return NULL;
+    }
+    const size_t buf_size = lv_strlen(LV_DRM_CARD_PATH) + 3;
+    char * card_path = lv_zalloc(buf_size);
+    if(!card_path) {
+        return NULL;
+    }
+    if(name[5] != '-') {
+        lv_snprintf(card_path, buf_size, LV_DRM_CARD_PATH "%c%c", name[4], name[5]);
+    }
+    else {
+        lv_snprintf(card_path, buf_size, LV_DRM_CARD_PATH "%c", name[4]);
+    }
+    return card_path;
+}
 
 /**********************
  *  STATIC VARIABLES
@@ -60,12 +90,15 @@ static char * find_by_class(void)
         return NULL;
     }
 
+    int best_score = -1;
+    char best_name[64];
+    best_name[0] = '\0';
+
     struct dirent * ent;
     while((ent = readdir(d)) != NULL) {
         if(lv_strcmp(ent->d_name, ".") == 0 || lv_strcmp(ent->d_name, "..") == 0) {
             continue;
         }
-        /* connector dirs look like card0-HDMI-A-1, card0-eDP-1, etc. */
         bool is_card = lv_strncmp(ent->d_name, "card", 4) == 0;
         bool is_connected = lv_strchr(ent->d_name, '-') != NULL;
 
@@ -73,22 +106,21 @@ static char * find_by_class(void)
             continue;
         }
 
-        const size_t buf_size = lv_strlen(LV_DRM_CARD_PATH) + 3;
-        char * card_path = lv_zalloc(buf_size);
-        if(ent->d_name[5] != '-') {
-            /* Double digit card*/
-            lv_snprintf(card_path, buf_size, LV_DRM_CARD_PATH "%c%c", ent->d_name[4], ent->d_name[5]);
+        int score = drm_connector_dir_score(ent->d_name);
+        if(score > best_score) {
+            best_score = score;
+            lv_strncpy(best_name, ent->d_name, sizeof(best_name) - 1);
+            best_name[sizeof(best_name) - 1] = '\0';
         }
-        else {
-            lv_snprintf(card_path, buf_size, LV_DRM_CARD_PATH "%c", ent->d_name[4]);
-        }
-        closedir(d);
-        return card_path;
     }
 
     closedir(d);
-    return NULL;
 
+    if(best_score < 0) {
+        return NULL;
+    }
+
+    return card_path_from_connector_dir(best_name);
 }
 
 int32_t lv_linux_drm_mode_get_horizontal_resolution(const lv_linux_drm_mode_t * mode)

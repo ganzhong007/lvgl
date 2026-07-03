@@ -37,7 +37,7 @@ static lv_result_t load_egl(lv_opengles_egl_t * ctx);
 static EGLDisplay create_egl_display(lv_opengles_egl_t * ctx);
 static EGLSurface create_egl_surface(lv_opengles_egl_t * ctx);
 static EGLContext create_egl_context(lv_opengles_egl_t * ctx);
-static EGLConfig create_egl_config(lv_opengles_egl_t * ctx);
+static lv_result_t egl_bind_config_and_surface(lv_opengles_egl_t * ctx);
 static lv_result_t lv_egl_config_from_egl_config(lv_opengles_egl_t * ctx, lv_egl_config_t * lv_egl_config,
                                                  EGLConfig egl_config);
 static void * create_native_window(lv_opengles_egl_t * ctx);
@@ -187,21 +187,8 @@ static lv_result_t load_egl(lv_opengles_egl_t * ctx)
         goto opengl_lib_err;
     }
 
-    ctx->egl_config = create_egl_config(ctx);
-    if(!ctx->egl_config) {
-        LV_LOG_ERROR("Failed to create EGL config. Error code: %#x", eglGetError());
-        goto egl_config_err;
-    }
-
-    ctx->native_window = (EGLNativeWindowType)create_native_window(ctx);
-    if(!ctx->native_window) {
-        LV_LOG_ERROR("Failed to create native window");
-        goto create_window_err;
-
-    }
-    ctx->egl_surface = create_egl_surface(ctx);
-    if(!ctx->egl_surface) {
-        LV_LOG_ERROR("Failed to create EGL surface. Error code: %#x", eglGetError());
+    if(egl_bind_config_and_surface(ctx) != LV_RESULT_OK) {
+        LV_LOG_ERROR("Failed to bind EGL config and surface");
         goto egl_surface_err;
     }
 
@@ -233,13 +220,16 @@ load_opengl_functions_err:
 egl_make_current_context_err:
     ctx->egl_context = NULL;
 egl_context_err:
-    ctx->egl_surface = NULL;
+    if(ctx->egl_surface && ctx->egl_display) {
+        eglDestroySurface(ctx->egl_display, ctx->egl_surface);
+    }
+    ctx->egl_surface = EGL_NO_SURFACE;
 egl_surface_err:
-    ctx->interface.destroy_window_cb(ctx->interface.driver_data, (void *)ctx->native_window);
+    if(ctx->native_window && ctx->interface.destroy_window_cb) {
+        ctx->interface.destroy_window_cb(ctx->interface.driver_data, (void *)ctx->native_window);
+    }
     ctx->native_window = 0;
-create_window_err:
     ctx->egl_config = NULL;
-egl_config_err:
     dlclose(ctx->opengl_lib_handle);
     ctx->opengl_lib_handle = NULL;
 opengl_lib_err:
@@ -364,7 +354,39 @@ static GLADapiproc glad_egl_load_cb(void * userdata, const char * name)
     return result.fn;
 }
 
-static EGLConfig create_egl_config(lv_opengles_egl_t * ctx)
+typedef struct {
+    const lv_egl_config_t * configs;
+    const EGLConfig * egl_configs;
+    size_t count;
+} egl_config_sort_ctx_t;
+
+#if LV_USE_LINUX_DRM && LV_LINUX_DRM_USE_EGL
+static int egl_config_cmp(const void * a, const void * b, void * user)
+{
+    const size_t ia = *(const size_t *)a;
+    const size_t ib = *(const size_t *)b;
+    egl_config_sort_ctx_t * s = (egl_config_sort_ctx_t *)user;
+    int pa = lv_linux_drm_egl_config_priority(&s->configs[ia]);
+    int pb = lv_linux_drm_egl_config_priority(&s->configs[ib]);
+    if(pa != pb) return pa - pb;
+    return (int)ia - (int)ib;
+}
+
+static void egl_sort_try_indices(size_t * try_idx, size_t try_count, egl_config_sort_ctx_t * sort_ctx)
+{
+    for(size_t i = 0; i + 1 < try_count; i++) {
+        for(size_t j = i + 1; j < try_count; j++) {
+            if(egl_config_cmp(&try_idx[i], &try_idx[j], sort_ctx) > 0) {
+                size_t tmp = try_idx[i];
+                try_idx[i] = try_idx[j];
+                try_idx[j] = tmp;
+            }
+        }
+    }
+}
+#endif
+
+static lv_result_t egl_bind_config_and_surface(lv_opengles_egl_t * ctx)
 {
     const EGLint config_attribs[] = {
         EGL_RENDERABLE_TYPE,
@@ -373,63 +395,100 @@ static EGLConfig create_egl_config(lv_opengles_egl_t * ctx)
     };
 
     EGLint num_configs = 0;
-    if(!eglChooseConfig(ctx->egl_display, config_attribs, 0, 0, &num_configs)) {
-        LV_LOG_ERROR("Failed to get number of configs: %d", eglGetError());
-        return NULL;
+    if(!eglChooseConfig(ctx->egl_display, config_attribs, 0, 0, &num_configs) || num_configs <= 0) {
+        LV_LOG_ERROR("No EGL configs");
+        return LV_RESULT_INVALID;
     }
 
-    if(num_configs == 0) {
-        LV_LOG_ERROR("No valid configs");
-        return NULL;
-    }
-
-    EGLConfig * egl_configs = lv_malloc(num_configs * sizeof(*egl_configs));
+    EGLConfig * egl_configs = lv_malloc((size_t)num_configs * sizeof(*egl_configs));
+    lv_egl_config_t * configs = lv_malloc((size_t)num_configs * sizeof(*configs));
     LV_ASSERT_MALLOC(egl_configs);
-    if(!egl_configs) {
-        LV_LOG_ERROR("Failed to allocate memory for possible configs");
-        return NULL;
+    LV_ASSERT_MALLOC(configs);
+    if(!egl_configs || !configs) {
+        lv_free(egl_configs);
+        lv_free(configs);
+        return LV_RESULT_INVALID;
     }
 
     if(!eglChooseConfig(ctx->egl_display, config_attribs, egl_configs, num_configs, &num_configs)) {
-        LV_LOG_ERROR("Failed to get configs: %d", eglGetError());
-        return NULL;
-    }
-
-    lv_egl_config_t * configs = lv_malloc(num_configs * sizeof(*configs));
-    LV_ASSERT_MALLOC(configs);
-    if(!configs) {
-        LV_LOG_ERROR("Failed to allocate memory for configs");
         lv_free(egl_configs);
-        return NULL;
+        lv_free(configs);
+        return LV_RESULT_INVALID;
     }
 
-    size_t valid_config_count = 0;
-    for(size_t i = 0; i < (size_t)num_configs; ++i) {
-        lv_result_t err = lv_egl_config_from_egl_config(ctx, configs + i, egl_configs[i]);
-        if(err == LV_RESULT_OK) {
-            valid_config_count ++;
+    size_t valid_idx[32];
+    size_t valid_count = 0;
+    for(EGLint i = 0; i < num_configs && valid_count < 32; i++) {
+        if(lv_egl_config_from_egl_config(ctx, &configs[i], egl_configs[i]) == LV_RESULT_OK) {
+            valid_idx[valid_count++] = (size_t)i;
         }
     }
-
-    if(valid_config_count == 0) {
-        LV_LOG_ERROR("Failed to parse available EGL configs");
+    if(valid_count == 0) {
         lv_free(egl_configs);
         lv_free(configs);
-        return NULL;
+        return LV_RESULT_INVALID;
     }
 
-    size_t config_id = ctx->interface.select_config(ctx->interface.driver_data, configs, valid_config_count);
+    size_t picked = ctx->interface.select_config(ctx->interface.driver_data, configs, valid_count);
 
-    if(config_id >= (size_t)num_configs) {
-        LV_LOG_ERROR("Failed to find suitable EGL config");
+    size_t try_idx[32];
+    size_t try_count = 0;
+
+#if LV_USE_LINUX_DRM && LV_LINUX_DRM_USE_EGL
+    LV_UNUSED(picked);
+    for(size_t i = 0; i < valid_count; i++) {
+        try_idx[try_count++] = valid_idx[i];
+    }
+    egl_config_sort_ctx_t sort_ctx = { configs, egl_configs, valid_count };
+    egl_sort_try_indices(try_idx, try_count, &sort_ctx);
+#else
+    if(picked >= valid_count) {
         lv_free(egl_configs);
         lv_free(configs);
-        return NULL;
+        return LV_RESULT_INVALID;
     }
-    EGLConfig config = egl_configs[config_id];
-    lv_free(configs);
+    try_idx[try_count++] = valid_idx[picked];
+#endif
+
+    for(size_t t = 0; t < try_count; t++) {
+        const size_t ci = try_idx[t];
+        ctx->egl_config = egl_configs[ci];
+
+        if(ctx->native_window && ctx->interface.destroy_window_cb) {
+            ctx->interface.destroy_window_cb(ctx->interface.driver_data, (void *)ctx->native_window);
+            ctx->native_window = 0;
+        }
+        if(ctx->egl_surface) {
+            eglDestroySurface(ctx->egl_display, ctx->egl_surface);
+            ctx->egl_surface = EGL_NO_SURFACE;
+        }
+
+        ctx->native_window = (EGLNativeWindowType)create_native_window(ctx);
+        if(!ctx->native_window) {
+            LV_LOG_WARN("EGL config %zu: native window failed", ci);
+            continue;
+        }
+
+        ctx->egl_surface = create_egl_surface(ctx);
+        if(!ctx->egl_surface) {
+            LV_LOG_WARN("EGL config %zu: surface failed (%#x)", ci, eglGetError());
+            ctx->interface.destroy_window_cb(ctx->interface.driver_data, (void *)ctx->native_window);
+            ctx->native_window = 0;
+            continue;
+        }
+
+        EGLint visual = 0;
+        eglGetConfigAttrib(ctx->egl_display, ctx->egl_config, EGL_NATIVE_VISUAL_ID, &visual);
+        LV_LOG_USER("EGL config %zu ok (visual %#x, %d-%d-%d-%d)", ci, visual,
+                    configs[ci].r_bits, configs[ci].g_bits, configs[ci].b_bits, configs[ci].a_bits);
+        lv_free(egl_configs);
+        lv_free(configs);
+        return LV_RESULT_OK;
+    }
+
     lv_free(egl_configs);
-    return config;
+    lv_free(configs);
+    return LV_RESULT_INVALID;
 }
 
 static EGLSurface create_egl_surface(lv_opengles_egl_t * ctx)

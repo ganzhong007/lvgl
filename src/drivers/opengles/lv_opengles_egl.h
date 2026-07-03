@@ -36,6 +36,11 @@ typedef struct _lv_egl_config lv_egl_config_t;
 lv_opengles_egl_t * lv_opengles_egl_context_create(const lv_egl_interface_t * interface);
 lv_color_format_t lv_opengles_egl_color_format_from_egl_config(const lv_egl_config_t * config);
 
+#if LV_USE_LINUX_DRM && LV_LINUX_DRM_USE_EGL
+/** Lower = try first (Mali/GBM scanout). */
+int lv_linux_drm_egl_config_priority(const lv_egl_config_t * config);
+#endif
+
 void lv_opengles_egl_update(lv_opengles_egl_t * ctx);
 void lv_opengles_egl_clear(lv_opengles_egl_t * ctx);
 void lv_opengles_egl_context_destroy(lv_opengles_egl_t * ctx);

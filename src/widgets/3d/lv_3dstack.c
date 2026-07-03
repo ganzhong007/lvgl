@@ -18,13 +18,23 @@ typedef struct {
     float y_gap;
 } lv_3dstack_t;
 
+static void lv_3dstack_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
+
 static const lv_obj_class_t lv_3dstack_class = {
+    .constructor_cb = lv_3dstack_constructor,
     .width_def = LV_PCT(100),
     .height_def = LV_PCT(100),
     .instance_size = sizeof(lv_3dstack_t),
     .base_class = &lv_obj_class,
     .name = "3dstack",
 };
+
+static void lv_3dstack_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
+{
+    LV_UNUSED(class_p);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(obj, 0, 0);
+}
 
 lv_obj_t * lv_3dstack_create(lv_obj_t * parent)
 {

@@ -54,6 +54,8 @@ static void lv_3dcamera_constructor(const lv_obj_class_t * class_p, lv_obj_t * o
     cam->fov_deg = 45.0f;
     cam->near_z = 10.0f;
     cam->far_z = 5000.0f;
+    lv_obj_set_style_bg_opa(obj, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(obj, 0, 0);
 }
 
 #endif /*LV_USE_3D && LV_USE_3D_WIDGETS*/

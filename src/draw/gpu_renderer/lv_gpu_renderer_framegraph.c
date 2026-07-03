@@ -17,6 +17,8 @@
 #include "lv_gpu_renderer_gles2_2d.h"
 #include "lv_gpu_renderer_gles2_3d.h"
 #include "../../core/lv_refr_private.h"
+#include "../../core/lv_obj_class_private.h"
+#include "../../core/lv_obj_private.h"
 #include "../../display/lv_display_private.h"
 #include "../../drivers/opengles/lv_opengles_debug.h"
 #include "../../drivers/opengles/lv_opengles_private.h"
@@ -45,6 +47,8 @@ typedef struct {
 static lv_gpu_ui_mode_t g_ui_mode = LV_GPU_UI_MODE_GENERIC;
 static lv_gpu_fg_vp_t g_vp_queue[LV_GPU_FG_MAX_VP];
 static uint32_t g_vp_count;
+static lv_gpu_fg_vp_t g_vp_last[LV_GPU_FG_MAX_VP];
+static uint32_t g_vp_last_count;
 static lv_gpu_renderer_fg_stats_t g_fg_stats;
 
 static bool is_display_fb_layer(const lv_layer_t * layer)
@@ -81,6 +85,9 @@ static uint32_t fg_count_material_batches(const lv_3d_draw_item_t * items, uint3
 
 static bool pass_3d_enabled(void)
 {
+    if(lv_gpu_renderer_debug_2d_only()) {
+        return false;
+    }
     switch(g_ui_mode) {
         case LV_GPU_UI_MODE_APP_FULLSCREEN:
             return false;
@@ -156,6 +163,20 @@ bool lv_gpu_renderer_fg_record_2d_task(lv_draw_task_t * task)
     return true;
 }
 
+static bool gpu_obj_is_3d_logical(const lv_obj_t * obj)
+{
+    if(!obj) return false;
+    for(const lv_obj_class_t * c = obj->class_p; c; c = c->base_class) {
+        if(!c->name) continue;
+        if(!lv_strcmp(c->name, "3dscene")) return true;
+        if(!lv_strcmp(c->name, "3dstack")) return true;
+        if(!lv_strcmp(c->name, "3dcamera")) return true;
+        if(!lv_strcmp(c->name, "3dviewport")) return true;
+        if(!lv_strcmp(c->name, "3dmesh")) return true;
+    }
+    return false;
+}
+
 bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
 {
     lv_draw_task_t * t = (lv_draw_task_t *)(uintptr_t)task;
@@ -164,10 +185,20 @@ bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
     if(lv_refr_get_disp_refreshing() == NULL) return false;
     if(!is_display_fb_layer(task->target_layer)) return false;
 
+    {
+        const lv_draw_dsc_base_t * base = (const lv_draw_dsc_base_t *)t->draw_dsc;
+        if(base && gpu_obj_is_3d_logical(base->obj)) return false;
+    }
+
     switch(task->type) {
         case LV_DRAW_TASK_TYPE_FILL: {
             lv_draw_fill_dsc_t * fd = lv_draw_task_get_fill_dsc(t);
-            return fd && fd->grad.dir == LV_GRAD_DIR_NONE;
+            if(!fd || fd->grad.dir != LV_GRAD_DIR_NONE) return false;
+            if(fd->opa > LV_OPA_80) {
+                lv_color32_t c = lv_color_to_32(fd->color, fd->opa);
+                if(c.red > 240 && c.green > 240 && c.blue > 240) return false;
+            }
+            return true;
         }
         case LV_DRAW_TASK_TYPE_BORDER: {
             lv_draw_border_dsc_t * bd = lv_draw_task_get_border_dsc(t);
@@ -216,7 +247,18 @@ int32_t lv_gpu_renderer_fg_evaluate_score(lv_draw_task_t * task, lv_gpu_renderer
 
 bool lv_gpu_renderer_fg_has_pending(void)
 {
+    if(lv_gpu_renderer_debug_2d_only()) {
+        return lv_gpu_renderer_gles2_2d_queue_count() > 0;
+    }
     return g_vp_count > 0 || lv_gpu_renderer_gles2_2d_queue_count() > 0;
+}
+
+bool lv_gpu_renderer_fg_restore_last_viewport(void)
+{
+    if(g_vp_last_count == 0 || g_vp_last_count > LV_GPU_FG_MAX_VP) return false;
+    lv_memcpy(g_vp_queue, g_vp_last, g_vp_last_count * sizeof(g_vp_queue[0]));
+    g_vp_count = g_vp_last_count;
+    return true;
 }
 
 bool lv_gpu_renderer_fg_queue_2d_task(lv_draw_task_t * t)
@@ -263,8 +305,13 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     g_fg_stats.gl_flush_count = 0;
     g_fg_stats.gl_finish_count = 0;
 
+    if(g_vp_count == 0) {
+        lv_gpu_renderer_fg_restore_last_viewport();
+    }
+
     uint32_t q2d = lv_gpu_renderer_gles2_2d_queue_count();
-    if(tex_id == 0 || (g_vp_count == 0 && q2d == 0)) {
+    const bool only2d = lv_gpu_renderer_debug_2d_only();
+    if(tex_id == 0 || (only2d ? (q2d == 0) : (g_vp_count == 0 && q2d == 0))) {
         if(gpu_2d_out) *gpu_2d_out = 0;
         if(gpu_3d_out) *gpu_3d_out = 0;
         if(sw_raster_out) *sw_raster_out = 0;
@@ -323,6 +370,10 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
 
     if(pass_2d_overlay_enabled() && q2d > 0) {
         g_fg_stats.pass_count++;
+        if(only2d) {
+            /* Debug backdrop: distinguish uninitialized tex from 2D output. */
+            lv_gpu_renderer_clear_tex_for_debug(tex_id, dw, dh);
+        }
         uint32_t sw_raster = 0;
         uint32_t rendered = lv_gpu_renderer_gles2_2d_render_batch(tex_id, dw, dh, &sw_raster);
         g_fg_stats.batch_count += lv_gpu_renderer_gles2_2d_count_shader_batches();
@@ -341,10 +392,13 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     GL_CALL(glFinish());
     g_fg_stats.gl_finish_count = 1;
 
-#if !LV_USE_EGL
-    /* 2D batch leaves draw/read buffers on COLOR_ATTACHMENT0; restore for window blit. */
+    /* 2D/3D batch may leave FBO bound to the display texture; restore for window blit. */
     lv_gpu_renderer_restore_default_framebuffer();
-#endif
+
+    if(g_vp_count > 0) {
+        lv_memcpy(g_vp_last, g_vp_queue, g_vp_count * sizeof(g_vp_queue[0]));
+        g_vp_last_count = g_vp_count;
+    }
 
     g_vp_count = 0;
     g_fg_stats.gpu_2d_recorded = 0;

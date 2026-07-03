@@ -7,6 +7,7 @@
 #if LV_USE_3D && LV_USE_3D_SEGMENT_POOL
 
 #include "../widgets/3d/lv_3dmesh_private.h"
+#include "../widgets/3d/lv_3dviewport_private.h"
 
 #define LV_3D_SEGMENT_POOL_MAX_SLOTS 24
 
@@ -55,6 +56,21 @@ static float segment_min_base_z(const lv_3d_segment_pool_t * pool)
         if(pool->slots[i].base_z < min_z) min_z = pool->slots[i].base_z;
     }
     return min_z;
+}
+
+static void invalidate_scene_viewport(lv_obj_t * scene)
+{
+    lv_obj_t * scr = lv_obj_get_screen(scene);
+    if(!scr) return;
+
+    uint32_t n = lv_obj_get_child_count(scr);
+    for(uint32_t i = 0; i < n; i++) {
+        lv_obj_t * child = lv_obj_get_child(scr, i);
+        if(lv_obj_check_type(child, &lv_3dviewport_class)) {
+            lv_obj_invalidate(child);
+            return;
+        }
+    }
 }
 
 lv_3d_segment_pool_t * lv_3d_segment_pool_create(lv_obj_t * scene, const lv_3d_segment_pool_cfg_t * cfg)
@@ -124,6 +140,8 @@ void lv_3d_segment_pool_tick(lv_3d_segment_pool_t * pool, float dt)
     }
 
     lv_obj_invalidate(pool->scene);
+    lv_obj_invalidate(lv_obj_get_screen(pool->scene));
+    invalidate_scene_viewport(pool->scene);
 }
 
 void lv_3d_segment_pool_get_stats(const lv_3d_segment_pool_t * pool, lv_3d_segment_pool_stats_t * stats)

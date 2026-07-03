@@ -178,6 +178,12 @@ void lv_opengles_regular_viewport(int32_t x, int32_t y, int32_t w, int32_t h);
 
 void lv_opengles_render_display(lv_display_t * display, const lv_opengles_render_params_t * params);
 
+/**
+ * Upload LVGL ARGB8888 (BGRA byte order) pixels to a bound GL_TEXTURE_2D.
+ * Handles GLES2 drivers (e.g. Mali) without GL_EXT_unpack_subimage / BGRA extensions.
+ */
+void lv_opengles_teximage_bgra8888(int level, int32_t w, int32_t h, const uint8_t * data, uint32_t stride);
+
 /**********************
  *      MACROS
  **********************/

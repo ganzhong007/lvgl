@@ -111,6 +111,9 @@ static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     vp->input_route = false;
     vp->pressed_obj = NULL;
     vp->hovered_obj = NULL;
+    /* 3D 由 GPU 画在 display texture；默认不透明白底会经 2D overlay 盖住整屏 */
+    lv_obj_set_style_bg_opa(obj, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(obj, 0, 0);
 }
 
 static void route_hover_event(lv_obj_t * obj, lv_event_t * e)
