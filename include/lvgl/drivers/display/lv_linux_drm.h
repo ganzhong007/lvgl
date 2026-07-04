@@ -135,6 +135,10 @@ void * lv_linux_drm_mode_get_raw(const lv_linux_drm_mode_t * mode);
  * Matches the GLFW backend: refresh records draw tasks; present runs GLES composite separately.
  */
 void lv_linux_drm_gpu_present(lv_display_t * disp);
+/** @return true when a scanout frame was committed. */
+bool lv_linux_drm_gpu_present_ex(lv_display_t * disp);
+/** Non-blocking: true when the previous atomic page-flip finished. */
+bool lv_linux_drm_gpu_flip_ready(lv_display_t * disp);
 #endif
 
 /**********************

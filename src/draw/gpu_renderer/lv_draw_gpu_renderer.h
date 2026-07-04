@@ -19,6 +19,7 @@ extern "C" {
 #define LV_GPU_RENDERER_UI_AR_LAUNCHER     1
 #define LV_GPU_RENDERER_UI_NAV_AR          2
 #define LV_GPU_RENDERER_UI_APP_FULLSCREEN  3
+#define LV_GPU_RENDERER_UI_WIREFRAME_BENCH 4
 
 void lv_gpu_renderer_set_ui_mode(int mode);
 
@@ -31,6 +32,8 @@ bool lv_gpu_renderer_debug_2d_only(void);
 /** Called from display flush: render queued 3D viewports. tex_id=0 uses display driver texture. */
 /** True after lv_refr_now if a GPU composite pass is needed before present. */
 bool lv_gpu_renderer_has_pending_composite(void);
+/** True after the first viewport pass was recorded (direct present without refresh). */
+bool lv_gpu_renderer_has_restorable_viewport(void);
 
 void lv_gpu_renderer_flush_3d(lv_display_t * disp);
 /** Debug flush: GLES2 native 2D batch only (no 3D, no SW overlay). */
@@ -40,6 +43,10 @@ void lv_gpu_renderer_flush_3d_to_tex(lv_display_t * disp, unsigned int tex_id, i
 
 /** Alpha-blend SW framebuffer (2D/cursor) on top of the GPU texture after 3D pass. */
 void lv_gpu_renderer_overlay_2d_fb(lv_display_t * disp);
+bool lv_gpu_renderer_overlay_2d_enabled(void);
+void lv_gpu_renderer_set_overlay_2d_enable(bool enable);
+/** Skip 9x glReadPixels alpha probe per viewport (turbo / bench). */
+void lv_gpu_renderer_set_skip_alpha_probe(bool skip);
 void lv_gpu_renderer_overlay_2d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h);
 /** Alpha-blend 2D/cursor on the default framebuffer (after 3D texture blit). */
 void lv_gpu_renderer_overlay_2d_screen(lv_display_t * disp, int32_t w, int32_t h);

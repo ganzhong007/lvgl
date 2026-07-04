@@ -22,6 +22,7 @@ typedef enum {
     LV_GPU_UI_MODE_AR_LAUNCHER,
     LV_GPU_UI_MODE_NAV_AR,
     LV_GPU_UI_MODE_APP_FULLSCREEN,
+    LV_GPU_UI_MODE_WIREFRAME_BENCH,
 } lv_gpu_ui_mode_t;
 
 typedef enum {
@@ -77,6 +78,9 @@ bool lv_gpu_renderer_fg_queue_2d_task(lv_draw_task_t * task);
 
 /** True when viewport or 2D batch queues have work for the next flush. */
 bool lv_gpu_renderer_fg_has_pending(void);
+
+/** True after at least one viewport pass was recorded (direct present without lv_refr_now). */
+bool lv_gpu_renderer_fg_has_restorable_viewport(void);
 
 /** Re-queue the last viewport pass (animated 3D when DRAW_MAIN was skipped). */
 bool lv_gpu_renderer_fg_restore_last_viewport(void);

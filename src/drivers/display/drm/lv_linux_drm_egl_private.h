@@ -30,7 +30,7 @@ extern "C" {
  *********************/
 
 #define DRM_EGL_MAX_PROPS 128
-#define DRM_DMABUF_SCANOUT_BUFS 2
+#define DRM_DMABUF_SCANOUT_BUFS 3
 
 /**********************
  *      TYPEDEFS

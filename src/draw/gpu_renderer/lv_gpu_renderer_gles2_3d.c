@@ -33,6 +33,35 @@ static int32_t g_msaa_h;
 static int g_msaa_cached_samples;
 #endif
 
+static bool g_skip_alpha_probe;
+static unsigned int g_tex_fbo;
+static unsigned int g_tex_fbo_tex;
+
+static void tex_fbo_release(void)
+{
+    if(g_tex_fbo) {
+        GL_CALL(glDeleteFramebuffers(1, &g_tex_fbo));
+        g_tex_fbo = 0;
+    }
+    g_tex_fbo_tex = 0;
+}
+
+static unsigned int tex_fbo_bind(unsigned int color_tex)
+{
+    if(!g_tex_fbo) {
+        GL_CALL(glGenFramebuffers(1, &g_tex_fbo));
+    }
+    if(g_tex_fbo_tex != color_tex) {
+        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_tex_fbo));
+        GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_tex, 0));
+        g_tex_fbo_tex = color_tex;
+    }
+    else {
+        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_tex_fbo));
+    }
+    return g_tex_fbo;
+}
+
 static int msaa_samples_effective(void)
 {
     static int cached = -1;
@@ -286,6 +315,11 @@ void lv_gpu_renderer_gles2_3d_init(void)
     }
 }
 
+void lv_gpu_renderer_gles2_3d_set_skip_alpha_probe(bool skip)
+{
+    g_skip_alpha_probe = skip;
+}
+
 void lv_gpu_renderer_gles2_3d_deinit(void)
 {
     if(prog) {
@@ -298,6 +332,7 @@ void lv_gpu_renderer_gles2_3d_deinit(void)
         prog_tex = 0;
     }
 #endif
+    tex_fbo_release();
 #if !LV_USE_EGL
     msaa_fbo_release();
 #endif
@@ -593,8 +628,11 @@ static void render_viewport_draw(unsigned int fbo, int32_t vp_x, int32_t vp_y, i
     GL_CALL(glScissor(vp_x, vp_y, w, h));
 
     if(ar_passthrough) {
-        /* GENERIC demos: opaque backdrop (transparent + black GLFW clear = black screen). */
-        if(lv_gpu_renderer_fg_get_ui_mode() == LV_GPU_UI_MODE_GENERIC) {
+        if(lv_gpu_renderer_fg_get_ui_mode() == LV_GPU_UI_MODE_WIREFRAME_BENCH) {
+            GL_CALL(glClearColor(0.0f, 0.0f, 0.0f, 1.0f));
+        }
+        else if(lv_gpu_renderer_fg_get_ui_mode() == LV_GPU_UI_MODE_GENERIC) {
+            /* GENERIC demos: opaque backdrop (transparent + black GLFW clear = black screen). */
             GL_CALL(glClearColor(0.14f, 0.14f, 0.16f, 1.0f));
         }
         else {
@@ -695,15 +733,11 @@ void lv_gpu_renderer_gles2_render_viewport(unsigned int color_tex, unsigned int 
     }
 #endif
 
-    unsigned int fbo = 0;
-    GL_CALL(glGenFramebuffers(1, &fbo));
-    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
-    GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_tex, 0));
+    unsigned int fbo = tex_fbo_bind(color_tex);
 
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         LV_LOG_ERROR("LVGL FBO incomplete");
         GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
-        GL_CALL(glDeleteFramebuffers(1, &fbo));
         return;
     }
 
@@ -716,10 +750,11 @@ void lv_gpu_renderer_gles2_render_viewport(unsigned int color_tex, unsigned int 
 #endif
 
     render_viewport_draw(fbo, x, y, w, h, view, proj, items, item_count, ar_passthrough);
-    render_viewport_probe_alpha(fbo, x, y, w, h, max_alpha_out);
+    if(!g_skip_alpha_probe) {
+        render_viewport_probe_alpha(fbo, x, y, w, h, max_alpha_out);
+    }
 
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
-    GL_CALL(glDeleteFramebuffers(1, &fbo));
 }
 
 #endif /*LV_USE_DRAW_GPU_RENDERER && LV_USE_3D*/

@@ -17,6 +17,7 @@ extern "C" {
 
 void lv_gpu_renderer_gles2_3d_init(void);
 void lv_gpu_renderer_gles2_3d_deinit(void);
+void lv_gpu_renderer_gles2_3d_set_skip_alpha_probe(bool skip);
 
 void lv_gpu_renderer_gles2_render_viewport(unsigned int color_tex, unsigned int depth_rb,
                                             int32_t x, int32_t y, int32_t w, int32_t h,

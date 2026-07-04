@@ -253,6 +253,11 @@ bool lv_gpu_renderer_fg_has_pending(void)
     return g_vp_count > 0 || lv_gpu_renderer_gles2_2d_queue_count() > 0;
 }
 
+bool lv_gpu_renderer_fg_has_restorable_viewport(void)
+{
+    return g_vp_last_count > 0;
+}
+
 bool lv_gpu_renderer_fg_restore_last_viewport(void)
 {
     if(g_vp_last_count == 0 || g_vp_last_count > LV_GPU_FG_MAX_VP) return false;

@@ -62,6 +62,7 @@ typedef struct {
 
 static lv_gpu_renderer_path_frame_t g_path_stats;
 static bool g_gl_renderer_logged;
+static bool g_overlay_2d_enable = true;
 
 static int32_t gpu_renderer_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
 static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
@@ -154,6 +155,21 @@ void lv_draw_gpu_renderer_deinit(void)
 void lv_gpu_renderer_set_ui_mode(int mode)
 {
     lv_gpu_renderer_fg_set_ui_mode((lv_gpu_ui_mode_t)mode);
+}
+
+bool lv_gpu_renderer_overlay_2d_enabled(void)
+{
+    return g_overlay_2d_enable;
+}
+
+void lv_gpu_renderer_set_overlay_2d_enable(bool enable)
+{
+    g_overlay_2d_enable = enable;
+}
+
+void lv_gpu_renderer_set_skip_alpha_probe(bool skip)
+{
+    lv_gpu_renderer_gles2_3d_set_skip_alpha_probe(skip);
 }
 
 static void path_stats_cache_gl_renderer(void)
@@ -249,7 +265,12 @@ void lv_gpu_renderer_notify_frame_ready(lv_display_t * disp)
 
 bool lv_gpu_renderer_has_pending_composite(void)
 {
-    return lv_gpu_renderer_fg_has_pending();
+    return lv_gpu_renderer_fg_has_pending() || lv_gpu_renderer_fg_has_restorable_viewport();
+}
+
+bool lv_gpu_renderer_has_restorable_viewport(void)
+{
+    return lv_gpu_renderer_fg_has_restorable_viewport();
 }
 
 void lv_gpu_renderer_flush_3d(lv_display_t * disp)
@@ -267,6 +288,7 @@ void lv_gpu_renderer_flush_3d_to_tex(lv_display_t * disp, unsigned int tex_id, i
 
 void lv_gpu_renderer_overlay_2d_fb(lv_display_t * disp)
 {
+    if(!g_overlay_2d_enable) return;
     int32_t w = lv_display_get_horizontal_resolution(disp);
     int32_t h = lv_display_get_vertical_resolution(disp);
     lv_gpu_renderer_overlay_2d_to_tex(disp, 0, w, h);
@@ -379,6 +401,7 @@ void lv_gpu_renderer_overlay_2d_screen(lv_display_t * disp, int32_t w, int32_t h
 
 void lv_gpu_renderer_overlay_2d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h)
 {
+    if(!g_overlay_2d_enable) return;
     lv_opengles_texture_t * texture = lv_display_get_driver_data(disp);
     if(!texture || !texture->fb1) return;
 

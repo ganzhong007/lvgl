@@ -72,7 +72,7 @@ static lv_result_t drm_egl_atomic_init(lv_drm_ctx_t * ctx);
 static int drm_egl_atomic_present(lv_drm_ctx_t * ctx, drm_fb_state_t * pending_fb);
 static void drm_flip_cb(void * driver_data, bool vsync);
 static void drm_egl_present_scanout_gl(lv_drm_ctx_t * ctx);
-static void drm_egl_present_fb(lv_drm_ctx_t * ctx, uint32_t fb_id);
+static int drm_egl_present_fb(lv_drm_ctx_t * ctx, uint32_t fb_id);
 #if LV_USE_DRAW_GPU_RENDERER
 static void drm_dmabuf_scanout_deinit(lv_drm_ctx_t * ctx);
 static lv_result_t drm_dmabuf_scanout_try_init(lv_drm_ctx_t * ctx, lv_display_t * disp);
@@ -102,6 +102,47 @@ static bool drm_debug_solid_scanout(void)
         }
     }
     return cached != 0;
+}
+
+static bool drm_turbo_present(void)
+{
+    static int cached = -1;
+    if(cached < 0) {
+        const char * env = getenv("LVGL_DRM_TURBO");
+        cached = (env && (env[0] == '1' || env[0] == 'y' || env[0] == 'Y')) ? 1 : 0;
+        if(cached) {
+            LV_LOG_USER("DRM turbo present: glFlush + paced flip");
+        }
+    }
+    return cached != 0;
+}
+
+/** Wait until the previous atomic page-flip completes (or times out). */
+static void drm_egl_drain_flip(lv_drm_ctx_t * ctx)
+{
+    if(!ctx->atomic_req) return;
+
+    const bool turbo = drm_turbo_present();
+    const int polls = turbo ? 24 : 40;
+    const int timeout_ms = turbo ? 0 : 10;
+
+    for(int i = 0; i < polls && ctx->atomic_req; i++) {
+        if(drm_do_page_flip(ctx, timeout_ms) <= 0) break;
+    }
+
+    if(turbo && ctx->atomic_req) {
+        for(int i = 0; i < 6 && ctx->atomic_req; i++) {
+            if(drm_do_page_flip(ctx, 1) <= 0) break;
+        }
+    }
+}
+
+/** Quick poll: true when a new atomic present is allowed. */
+static bool drm_egl_flip_idle(lv_drm_ctx_t * ctx)
+{
+    if(!ctx->use_atomic || !ctx->atomic_req) return true;
+    drm_do_page_flip(ctx, 0);
+    return ctx->atomic_req == NULL;
 }
 
 static lv_result_t drm_egl_fill_scanout_solid_cpu(lv_drm_ctx_t * ctx, int32_t w, int32_t h,
@@ -349,16 +390,14 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_m
 
 /* GL → scanout BO capture path: present plane FB directly (eglSwapBuffers flip_cb
  * bails on frame 2+ while atomic_req is still pending). */
-static void drm_egl_present_fb(lv_drm_ctx_t * ctx, uint32_t fb_id)
+static int drm_egl_present_fb(lv_drm_ctx_t * ctx, uint32_t fb_id)
 {
     if(!ctx->use_atomic || !fb_id) {
         lv_opengles_egl_update(ctx->egl_ctx);
-        return;
+        return 0;
     }
 
-    for(int i = 0; i < 40 && ctx->atomic_req; i++) {
-        if(drm_do_page_flip(ctx, 10) <= 0) break;
-    }
+    drm_egl_drain_flip(ctx);
 
     drm_fb_state_t fb = {
         .fd = ctx->fd,
@@ -367,9 +406,15 @@ static void drm_egl_present_fb(lv_drm_ctx_t * ctx, uint32_t fb_id)
     };
 
     int status = drm_egl_atomic_present(ctx, &fb);
+    for(int retry = 0; status == -EBUSY && retry < 4; retry++) {
+        drm_egl_drain_flip(ctx);
+        status = drm_egl_atomic_present(ctx, &fb);
+    }
     if(status < 0) {
-        LV_LOG_ERROR("Scanout atomic present failed: %d", status);
-        return;
+        if(status != -EBUSY) {
+            LV_LOG_ERROR("Scanout atomic present failed: %d", status);
+        }
+        return status;
     }
 
     drm_do_page_flip(ctx, 0);
@@ -379,6 +424,7 @@ static void drm_egl_present_fb(lv_drm_ctx_t * ctx, uint32_t fb_id)
     if(frame == 2 || (frame % 120U) == 0U) {
         LV_LOG_USER("Scanout present frame %u fb %u", (unsigned)frame, (unsigned)fb_id);
     }
+    return 0;
 }
 
 static void drm_egl_present_scanout_gl(lv_drm_ctx_t * ctx)
@@ -386,18 +432,30 @@ static void drm_egl_present_scanout_gl(lv_drm_ctx_t * ctx)
     drm_egl_present_fb(ctx, ctx->scanout_fb_id);
 }
 
-void lv_linux_drm_gpu_present(lv_display_t * disp)
+bool lv_linux_drm_gpu_flip_ready(lv_display_t * disp)
 {
-    if(!disp) return;
+    if(!disp) return true;
+    lv_drm_ctx_t * ctx = lv_display_get_driver_data(disp);
+    if(!ctx) return true;
+    return drm_egl_flip_idle(ctx);
+}
+
+bool lv_linux_drm_gpu_present_ex(lv_display_t * disp)
+{
+    if(!disp) return false;
 
 #if LV_USE_DRAW_GPU_RENDERER
     if(!lv_gpu_renderer_has_pending_composite()) {
-        return;
+        return false;
     }
 #endif
 
     lv_drm_ctx_t * ctx = lv_display_get_driver_data(disp);
-    if(!ctx || !ctx->egl_ctx) return;
+    if(!ctx || !ctx->egl_ctx) return false;
+
+    if(ctx->use_atomic && !drm_egl_flip_idle(ctx)) {
+        return false;
+    }
 
     const int32_t w = lv_display_get_horizontal_resolution(disp);
     const int32_t h = lv_display_get_vertical_resolution(disp);
@@ -405,28 +463,44 @@ void lv_linux_drm_gpu_present(lv_display_t * disp)
     if(drm_debug_solid_scanout()) {
         drm_egl_fill_scanout_solid_cpu(ctx, w, h, 255, 0, 255);
         drm_egl_present_scanout_gl(ctx);
+        return true;
     }
-    else if(lv_gpu_renderer_debug_2d_only()) {
+    if(lv_gpu_renderer_debug_2d_only()) {
         lv_gpu_renderer_flush_2d_only(disp);
         drm_egl_capture_scanout_from_gl(ctx, disp, w, h);
         drm_egl_present_scanout_gl(ctx);
+        return true;
     }
-    else {
-        lv_gpu_renderer_flush_3d(disp);
-        lv_gpu_renderer_notify_frame_ready(disp);
+
+    lv_gpu_renderer_flush_3d(disp);
+    lv_gpu_renderer_notify_frame_ready(disp);
+    if(lv_gpu_renderer_overlay_2d_enabled()) {
         lv_gpu_renderer_overlay_2d_fb(disp);
-        if(ctx->dmabuf_scanout_ok) {
-            /* Single GPU sync after 3D + 2D overlay (framegraph uses glFlush only). */
-            GL_CALL(glFinish());
-            drm_egl_present_fb(ctx, ctx->dmabuf_bufs[ctx->dmabuf_render_idx].fb_id);
-            ctx->dmabuf_render_idx = (ctx->dmabuf_render_idx + 1U) % ctx->dmabuf_buf_count;
-            drm_dmabuf_bind_render_target(ctx, disp);
+    }
+    if(ctx->dmabuf_scanout_ok) {
+        if(drm_turbo_present()) {
+            GL_CALL(glFlush());
         }
         else {
-            drm_egl_capture_scanout_from_gl(ctx, disp, w, h);
-            drm_egl_present_scanout_gl(ctx);
+            GL_CALL(glFinish());
         }
+        const uint32_t present_idx = ctx->dmabuf_render_idx;
+        if(drm_egl_present_fb(ctx, ctx->dmabuf_bufs[present_idx].fb_id) == 0) {
+            ctx->dmabuf_render_idx = (present_idx + 1U) % ctx->dmabuf_buf_count;
+            drm_dmabuf_bind_render_target(ctx, disp);
+            return true;
+        }
+        return false;
     }
+
+    drm_egl_capture_scanout_from_gl(ctx, disp, w, h);
+    drm_egl_present_scanout_gl(ctx);
+    return true;
+}
+
+void lv_linux_drm_gpu_present(lv_display_t * disp)
+{
+    lv_linux_drm_gpu_present_ex(disp);
 }
 
 static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
@@ -843,8 +917,8 @@ static lv_result_t drm_dmabuf_scanout_try_init(lv_drm_ctx_t * ctx, lv_display_t 
     ctx->dmabuf_scanout_ok = true;
     drm_dmabuf_bind_render_target(ctx, disp);
 
-    LV_LOG_USER("DMA-BUF zero-copy scanout enabled: %u x %u fmt %#x (2 buffers)",
-                w, h, ctx->plane_fourcc);
+    LV_LOG_USER("DMA-BUF zero-copy scanout enabled: %u x %u fmt %#x (%u buffers)",
+                w, h, ctx->plane_fourcc, (unsigned)ctx->dmabuf_buf_count);
     return LV_RESULT_OK;
 }
 
@@ -1460,8 +1534,10 @@ static int drm_egl_atomic_present(lv_drm_ctx_t * ctx, drm_fb_state_t * pending_f
 
     int status = drmModeAtomicCommit(ctx->fd, req, flags, ctx);
     if(status < 0) {
-        LV_LOG_ERROR("Atomic commit failed: %s (%d) fb %u plane %u",
-                     strerror(errno), status, pending_fb->fb_id, ctx->plane_id);
+        if(status != -EBUSY) {
+            LV_LOG_ERROR("Atomic commit failed: %s (%d) fb %u plane %u",
+                         strerror(errno), status, pending_fb->fb_id, ctx->plane_id);
+        }
         drmModeAtomicFree(req);
         return status;
     }
