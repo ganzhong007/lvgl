@@ -30,10 +30,18 @@ extern "C" {
  *********************/
 
 #define DRM_EGL_MAX_PROPS 128
+#define DRM_DMABUF_SCANOUT_BUFS 2
 
 /**********************
  *      TYPEDEFS
  **********************/
+
+typedef struct {
+    struct gbm_bo * bo;
+    uint32_t fb_id;
+    EGLImageKHR image;
+    unsigned int texture_id;
+} drm_dmabuf_buf_t;
 
 typedef struct {
     lv_opengles_texture_t texture;
@@ -59,6 +67,12 @@ typedef struct {
     uint32_t scanout_w;
     uint32_t scanout_h;
     bool scanout_from_gl;
+
+    /* Ping-pong GBM scanout BOs imported as EGLImage → GL texture (zero-copy present). */
+    drm_dmabuf_buf_t dmabuf_bufs[DRM_DMABUF_SCANOUT_BUFS];
+    uint32_t dmabuf_buf_count;
+    uint32_t dmabuf_render_idx;
+    bool dmabuf_scanout_ok;
 
     lv_linux_drm_select_mode_cb_t mode_select_cb;
     int fd;

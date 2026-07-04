@@ -26,6 +26,7 @@
 #include "../../opengles/lv_opengles_private.h"
 #if LV_USE_DRAW_GPU_RENDERER
 #include "../../../draw/gpu_renderer/lv_draw_gpu_renderer.h"
+#include "../../../display/lv_display_private.h"
 #endif
 
 /**********************
@@ -71,6 +72,12 @@ static lv_result_t drm_egl_atomic_init(lv_drm_ctx_t * ctx);
 static int drm_egl_atomic_present(lv_drm_ctx_t * ctx, drm_fb_state_t * pending_fb);
 static void drm_flip_cb(void * driver_data, bool vsync);
 static void drm_egl_present_scanout_gl(lv_drm_ctx_t * ctx);
+static void drm_egl_present_fb(lv_drm_ctx_t * ctx, uint32_t fb_id);
+#if LV_USE_DRAW_GPU_RENDERER
+static void drm_dmabuf_scanout_deinit(lv_drm_ctx_t * ctx);
+static lv_result_t drm_dmabuf_scanout_try_init(lv_drm_ctx_t * ctx, lv_display_t * disp);
+static void drm_dmabuf_bind_render_target(lv_drm_ctx_t * ctx, lv_display_t * disp);
+#endif
 
 static void * drm_create_window(void * driver_data, const lv_egl_native_window_properties_t * properties);
 static void drm_destroy_window(void * driver_data, void * native_window);
@@ -235,6 +242,12 @@ lv_result_t lv_linux_drm_set_file(lv_display_t * display, const char * file, int
         return LV_RESULT_INVALID;
     }
 
+#if LV_USE_DRAW_GPU_RENDERER
+    if(drm_dmabuf_scanout_try_init(ctx, display) != LV_RESULT_OK) {
+        LV_LOG_USER("DMA-BUF scanout unavailable — using glReadPixels readback path");
+    }
+#endif
+
     lv_display_set_flush_cb(display, flush_cb);
     lv_display_set_render_mode(display, LV_USE_DRAW_NANOVG ? LV_DISPLAY_RENDER_MODE_FULL : LV_DISPLAY_RENDER_MODE_DIRECT);
 
@@ -274,12 +287,18 @@ static void event_cb(lv_event_t * e)
             }
             break;
         case LV_EVENT_RESOLUTION_CHANGED: {
+                drm_dmabuf_scanout_deinit(ctx);
                 lv_result_t res = lv_opengles_texture_reshape(&ctx->texture, display, lv_display_get_horizontal_resolution(display),
                                                               lv_display_get_vertical_resolution(display));
 
                 if(res != LV_RESULT_OK) {
                     LV_LOG_ERROR("Failed to resize display");
                 }
+#if LV_USE_DRAW_GPU_RENDERER
+                else if(drm_dmabuf_scanout_try_init(ctx, display) != LV_RESULT_OK) {
+                    LV_LOG_USER("DMA-BUF scanout unavailable after resize — readback path");
+                }
+#endif
             }
             break;
         default:
@@ -330,9 +349,9 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_m
 
 /* GL → scanout BO capture path: present plane FB directly (eglSwapBuffers flip_cb
  * bails on frame 2+ while atomic_req is still pending). */
-static void drm_egl_present_scanout_gl(lv_drm_ctx_t * ctx)
+static void drm_egl_present_fb(lv_drm_ctx_t * ctx, uint32_t fb_id)
 {
-    if(!ctx->use_atomic || !ctx->scanout_fb_id) {
+    if(!ctx->use_atomic || !fb_id) {
         lv_opengles_egl_update(ctx->egl_ctx);
         return;
     }
@@ -344,7 +363,7 @@ static void drm_egl_present_scanout_gl(lv_drm_ctx_t * ctx)
     drm_fb_state_t fb = {
         .fd = ctx->fd,
         .bo = NULL,
-        .fb_id = ctx->scanout_fb_id,
+        .fb_id = fb_id,
     };
 
     int status = drm_egl_atomic_present(ctx, &fb);
@@ -358,8 +377,13 @@ static void drm_egl_present_scanout_gl(lv_drm_ctx_t * ctx)
     static uint32_t frame;
     frame++;
     if(frame == 2 || (frame % 120U) == 0U) {
-        LV_LOG_USER("Scanout present frame %u fb %u", (unsigned)frame, (unsigned)ctx->scanout_fb_id);
+        LV_LOG_USER("Scanout present frame %u fb %u", (unsigned)frame, (unsigned)fb_id);
     }
+}
+
+static void drm_egl_present_scanout_gl(lv_drm_ctx_t * ctx)
+{
+    drm_egl_present_fb(ctx, ctx->scanout_fb_id);
 }
 
 void lv_linux_drm_gpu_present(lv_display_t * disp)
@@ -385,8 +409,16 @@ void lv_linux_drm_gpu_present(lv_display_t * disp)
         lv_gpu_renderer_flush_3d(disp);
         lv_gpu_renderer_notify_frame_ready(disp);
         lv_gpu_renderer_overlay_2d_fb(disp);
-        drm_egl_capture_scanout_from_gl(ctx, disp, w, h);
-        drm_egl_present_scanout_gl(ctx);
+        if(ctx->dmabuf_scanout_ok) {
+            GL_CALL(glFinish());
+            drm_egl_present_fb(ctx, ctx->dmabuf_bufs[ctx->dmabuf_render_idx].fb_id);
+            ctx->dmabuf_render_idx = (ctx->dmabuf_render_idx + 1U) % ctx->dmabuf_buf_count;
+            drm_dmabuf_bind_render_target(ctx, disp);
+        }
+        else {
+            drm_egl_capture_scanout_from_gl(ctx, disp, w, h);
+            drm_egl_present_scanout_gl(ctx);
+        }
     }
 }
 
@@ -442,6 +474,9 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_m
 
 void drm_device_deinit(lv_drm_ctx_t * ctx)
 {
+#if LV_USE_DRAW_GPU_RENDERER
+    drm_dmabuf_scanout_deinit(ctx);
+#endif
     drm_egl_scanout_deinit(ctx);
     drm_egl_atomic_deinit(ctx);
 
@@ -558,6 +593,255 @@ static void drm_egl_scanout_deinit(lv_drm_ctx_t * ctx)
     ctx->scanout_h = 0;
     ctx->scanout_from_gl = false;
 }
+
+#if LV_USE_DRAW_GPU_RENDERER
+
+typedef void (* PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(GLenum target, void * image);
+static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC s_glEGLImageTargetTexture2DOES;
+
+static bool drm_dmabuf_scanout_wanted(void)
+{
+    static int cached = -1;
+    if(cached < 0) {
+        const char * env = getenv("LVGL_DRM_DMABUF_SCANOUT");
+        if(env && env[0] == '0') {
+            cached = 0;
+        }
+        else if(getenv("LVGL_DRM_READBACK") && getenv("LVGL_DRM_READBACK")[0] == '1') {
+            cached = 0;
+        }
+        else {
+            cached = 1;
+        }
+    }
+    return cached != 0;
+}
+
+static bool drm_dmabuf_plane_format_ok(uint32_t fmt)
+{
+    return fmt == DRM_FORMAT_ARGB8888 || fmt == DRM_FORMAT_XRGB8888
+           || fmt == DRM_FORMAT_ABGR8888 || fmt == DRM_FORMAT_XBGR8888;
+}
+
+static lv_result_t drm_dmabuf_add_fb(lv_drm_ctx_t * ctx, struct gbm_bo * bo, uint32_t * fb_id_out)
+{
+    const uint32_t w = gbm_bo_get_width(bo);
+    const uint32_t h = gbm_bo_get_height(bo);
+    const uint32_t format = gbm_bo_get_format(bo);
+    uint32_t handles[4] = {0};
+    uint32_t strides[4] = {0};
+    uint32_t offsets[4] = {0};
+    uint64_t modifiers[4] = {0};
+    const uint64_t modifier = gbm_bo_get_modifier(bo);
+    uint32_t fb_id = 0;
+    int32_t status;
+
+    for(int i = 0; i < gbm_bo_get_plane_count(bo); i++) {
+        handles[i] = gbm_bo_get_handle_for_plane(bo, i).u32;
+        strides[i] = gbm_bo_get_stride_for_plane(bo, i);
+        offsets[i] = gbm_bo_get_offset(bo, i);
+        modifiers[i] = modifier;
+    }
+
+    status = drmModeAddFB2(ctx->fd, w, h, format, handles, strides, offsets, &fb_id, 0);
+    if(status < 0 && modifier != DRM_FORMAT_MOD_INVALID) {
+        status = drmModeAddFB2WithModifiers(ctx->fd, w, h, format, handles, strides, offsets,
+                                            modifiers, &fb_id, DRM_MODE_FB_MODIFIERS);
+    }
+    if(status < 0) {
+        LV_LOG_ERROR("DMA-BUF AddFB2 failed: %d (fmt %#x %ux%u)", status, format, w, h);
+        return LV_RESULT_INVALID;
+    }
+
+    *fb_id_out = fb_id;
+    return LV_RESULT_OK;
+}
+
+static EGLImageKHR drm_dmabuf_create_egl_image(EGLDisplay dpy, struct gbm_bo * bo)
+{
+    int fd = -1;
+#if defined(GBM_BO_IMPORT_WL_BUFFER) || 1
+    /* gbm_bo_get_fd: widely available on embedded GBM (incl. PetaLinux 2020.2). */
+    fd = gbm_bo_get_fd(bo);
+#endif
+    if(fd < 0) {
+        LV_LOG_ERROR("DMA-BUF: gbm_bo_get_fd failed");
+        return EGL_NO_IMAGE_KHR;
+    }
+
+    const uint32_t w = gbm_bo_get_width(bo);
+    const uint32_t h = gbm_bo_get_height(bo);
+    const uint32_t stride = gbm_bo_get_stride_for_plane(bo, 0);
+    const uint32_t offset = gbm_bo_get_offset(bo, 0);
+    const uint32_t format = gbm_bo_get_format(bo);
+    const uint64_t modifier = gbm_bo_get_modifier(bo);
+
+    EGLint attrs[32];
+    int ai = 0;
+    attrs[ai++] = EGL_WIDTH;
+    attrs[ai++] = (EGLint)w;
+    attrs[ai++] = EGL_HEIGHT;
+    attrs[ai++] = (EGLint)h;
+    attrs[ai++] = EGL_LINUX_DRM_FOURCC_EXT;
+    attrs[ai++] = (EGLint)format;
+    attrs[ai++] = EGL_DMA_BUF_PLANE0_FD_EXT;
+    attrs[ai++] = fd;
+    attrs[ai++] = EGL_DMA_BUF_PLANE0_OFFSET_EXT;
+    attrs[ai++] = (EGLint)offset;
+    attrs[ai++] = EGL_DMA_BUF_PLANE0_PITCH_EXT;
+    attrs[ai++] = (EGLint)stride;
+    if(modifier != DRM_FORMAT_MOD_INVALID && GLAD_EGL_EXT_image_dma_buf_import_modifiers) {
+        attrs[ai++] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;
+        attrs[ai++] = (EGLint)(modifier & 0xFFFFFFFFU);
+        attrs[ai++] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT;
+        attrs[ai++] = (EGLint)(modifier >> 32);
+    }
+    attrs[ai++] = EGL_NONE;
+
+    EGLImageKHR image = eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT,
+                                          (EGLClientBuffer)(intptr_t)NULL, attrs);
+    close(fd);
+
+    if(image == EGL_NO_IMAGE_KHR) {
+        LV_LOG_ERROR("DMA-BUF eglCreateImageKHR failed: %#x", eglGetError());
+    }
+    return image;
+}
+
+static lv_result_t drm_dmabuf_create_gl_texture(EGLImageKHR image, unsigned int * tex_out)
+{
+    if(!s_glEGLImageTargetTexture2DOES || image == EGL_NO_IMAGE_KHR) {
+        return LV_RESULT_INVALID;
+    }
+
+    unsigned int tex = 0;
+    GL_CALL(glGenTextures(1, &tex));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+    s_glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+
+    *tex_out = tex;
+    return LV_RESULT_OK;
+}
+
+static void drm_dmabuf_bind_render_target(lv_drm_ctx_t * ctx, lv_display_t * disp)
+{
+    if(!ctx->dmabuf_scanout_ok || ctx->dmabuf_buf_count == 0) {
+        return;
+    }
+
+    const unsigned int tex = ctx->dmabuf_bufs[ctx->dmabuf_render_idx].texture_id;
+    ctx->texture.texture_id = tex;
+#if !LV_USE_DRAW_NANOVG
+    disp->layer_head->user_data = (void *)(lv_uintptr_t)tex;
+#endif
+}
+
+static void drm_dmabuf_scanout_deinit(lv_drm_ctx_t * ctx)
+{
+    if(!ctx) {
+        return;
+    }
+
+    EGLDisplay dpy = ctx->egl_ctx ? ctx->egl_ctx->egl_display : EGL_NO_DISPLAY;
+
+    for(uint32_t i = 0; i < ctx->dmabuf_buf_count; i++) {
+        drm_dmabuf_buf_t * b = &ctx->dmabuf_bufs[i];
+        if(b->texture_id) {
+            GL_CALL(glDeleteTextures(1, &b->texture_id));
+            b->texture_id = 0;
+        }
+        if(b->image != EGL_NO_IMAGE_KHR && dpy != EGL_NO_DISPLAY) {
+            eglDestroyImageKHR(dpy, b->image);
+            b->image = EGL_NO_IMAGE_KHR;
+        }
+        if(b->fb_id) {
+            drmModeRmFB(ctx->fd, b->fb_id);
+            b->fb_id = 0;
+        }
+        if(b->bo) {
+            gbm_bo_destroy(b->bo);
+            b->bo = NULL;
+        }
+    }
+
+    ctx->dmabuf_buf_count = 0;
+    ctx->dmabuf_render_idx = 0;
+    ctx->dmabuf_scanout_ok = false;
+}
+
+static lv_result_t drm_dmabuf_scanout_try_init(lv_drm_ctx_t * ctx, lv_display_t * disp)
+{
+    drm_dmabuf_scanout_deinit(ctx);
+
+    if(!drm_dmabuf_scanout_wanted() || !ctx->use_atomic || !ctx->egl_ctx) {
+        return LV_RESULT_INVALID;
+    }
+    if(!drm_dmabuf_plane_format_ok(ctx->plane_fourcc)) {
+        LV_LOG_USER("DMA-BUF scanout skipped: plane fmt %#x needs readback convert", ctx->plane_fourcc);
+        return LV_RESULT_INVALID;
+    }
+    if(!GLAD_EGL_EXT_image_dma_buf_import || !GLAD_EGL_KHR_image_base) {
+        LV_LOG_WARN("DMA-BUF scanout: EGL dma-buf import extensions missing");
+        return LV_RESULT_INVALID;
+    }
+
+    if(!s_glEGLImageTargetTexture2DOES) {
+        s_glEGLImageTargetTexture2DOES =
+            (PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)glad_eglGetProcAddress("glEGLImageTargetTexture2DOES");
+    }
+    if(!s_glEGLImageTargetTexture2DOES) {
+        LV_LOG_WARN("DMA-BUF scanout: glEGLImageTargetTexture2DOES unavailable");
+        return LV_RESULT_INVALID;
+    }
+
+    const uint32_t w = ctx->drm_mode->hdisplay;
+    const uint32_t h = ctx->drm_mode->vdisplay;
+    const uint32_t bo_flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
+    EGLDisplay dpy = ctx->egl_ctx->egl_display;
+
+    for(uint32_t i = 0; i < DRM_DMABUF_SCANOUT_BUFS; i++) {
+        drm_dmabuf_buf_t * b = &ctx->dmabuf_bufs[i];
+        struct gbm_bo * bo = gbm_bo_create(ctx->gbm_dev, w, h, ctx->plane_fourcc, bo_flags);
+        if(!bo) {
+            LV_LOG_ERROR("DMA-BUF scanout: gbm_bo_create failed for buf %u (fmt %#x)", i, ctx->plane_fourcc);
+            drm_dmabuf_scanout_deinit(ctx);
+            return LV_RESULT_INVALID;
+        }
+
+        b->bo = bo;
+        if(drm_dmabuf_add_fb(ctx, bo, &b->fb_id) != LV_RESULT_OK) {
+            drm_dmabuf_scanout_deinit(ctx);
+            return LV_RESULT_INVALID;
+        }
+
+        b->image = drm_dmabuf_create_egl_image(dpy, bo);
+        if(b->image == EGL_NO_IMAGE_KHR || drm_dmabuf_create_gl_texture(b->image, &b->texture_id) != LV_RESULT_OK) {
+            drm_dmabuf_scanout_deinit(ctx);
+            return LV_RESULT_INVALID;
+        }
+    }
+
+    if(ctx->texture.is_texture_owner && ctx->texture.texture_id) {
+        GL_CALL(glDeleteTextures(1, &ctx->texture.texture_id));
+    }
+    ctx->texture.is_texture_owner = false;
+
+    ctx->dmabuf_buf_count = DRM_DMABUF_SCANOUT_BUFS;
+    ctx->dmabuf_render_idx = 0;
+    ctx->dmabuf_scanout_ok = true;
+    drm_dmabuf_bind_render_target(ctx, disp);
+
+    LV_LOG_USER("DMA-BUF zero-copy scanout enabled: %u x %u fmt %#x (2 buffers)",
+                w, h, ctx->plane_fourcc);
+    return LV_RESULT_OK;
+}
+
+#endif /*LV_USE_DRAW_GPU_RENDERER*/
 
 static void rgba_row_to_argb8888_le(uint8_t * dst, const uint8_t * src, uint32_t w, uint32_t plane_fourcc)
 {
