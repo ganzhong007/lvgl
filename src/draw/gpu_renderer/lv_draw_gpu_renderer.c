@@ -247,6 +247,11 @@ void lv_gpu_renderer_notify_frame_ready(lv_display_t * disp)
     if(g_frame_ready_cb) g_frame_ready_cb(disp);
 }
 
+bool lv_gpu_renderer_has_pending_composite(void)
+{
+    return lv_gpu_renderer_fg_has_pending();
+}
+
 void lv_gpu_renderer_flush_3d(lv_display_t * disp)
 {
     int32_t dw = lv_display_get_horizontal_resolution(disp);

@@ -390,6 +390,12 @@ void lv_linux_drm_gpu_present(lv_display_t * disp)
 {
     if(!disp) return;
 
+#if LV_USE_DRAW_GPU_RENDERER
+    if(!lv_gpu_renderer_has_pending_composite()) {
+        return;
+    }
+#endif
+
     lv_drm_ctx_t * ctx = lv_display_get_driver_data(disp);
     if(!ctx || !ctx->egl_ctx) return;
 
@@ -410,6 +416,7 @@ void lv_linux_drm_gpu_present(lv_display_t * disp)
         lv_gpu_renderer_notify_frame_ready(disp);
         lv_gpu_renderer_overlay_2d_fb(disp);
         if(ctx->dmabuf_scanout_ok) {
+            /* Single GPU sync after 3D + 2D overlay (framegraph uses glFlush only). */
             GL_CALL(glFinish());
             drm_egl_present_fb(ctx, ctx->dmabuf_bufs[ctx->dmabuf_render_idx].fb_id);
             ctx->dmabuf_render_idx = (ctx->dmabuf_render_idx + 1U) % ctx->dmabuf_buf_count;

@@ -389,8 +389,9 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     if(max_alpha_out) *max_alpha_out = frame_max_a;
     if(gpu_3d_out) *gpu_3d_out = item_total;
 
-    GL_CALL(glFinish());
-    g_fg_stats.gl_finish_count = 1;
+    /* glFlush only — caller syncs once after overlay (e.g. DRM dma-buf present). */
+    GL_CALL(glFlush());
+    g_fg_stats.gl_flush_count++;
 
     /* 2D/3D batch may leave FBO bound to the display texture; restore for window blit. */
     lv_gpu_renderer_restore_default_framebuffer();

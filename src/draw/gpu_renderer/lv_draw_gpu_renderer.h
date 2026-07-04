@@ -29,6 +29,9 @@ void lv_draw_gpu_renderer_deinit(void);
 bool lv_gpu_renderer_debug_2d_only(void);
 
 /** Called from display flush: render queued 3D viewports. tex_id=0 uses display driver texture. */
+/** True after lv_refr_now if a GPU composite pass is needed before present. */
+bool lv_gpu_renderer_has_pending_composite(void);
+
 void lv_gpu_renderer_flush_3d(lv_display_t * disp);
 /** Debug flush: GLES2 native 2D batch only (no 3D, no SW overlay). */
 void lv_gpu_renderer_flush_2d_only(lv_display_t * disp);

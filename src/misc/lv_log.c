@@ -16,6 +16,10 @@
     #include <stdio.h>
 #endif
 
+#if LV_LOG_USE_TIMESTAMP && (defined(__linux__) || defined(__unix__))
+    #include <time.h>
+#endif
+
 /*********************
  *      DEFINES
  *********************/
@@ -25,11 +29,11 @@
 #define custom_print_cb LV_GLOBAL_DEFAULT()->custom_log_print_cb
 
 #if LV_LOG_USE_TIMESTAMP
-    #define LOG_TIMESTAMP_FMT  "\t(%" LV_PRIu32 ".%03" LV_PRIu32 ", +%" LV_PRIu32 ")\t"
-    #define LOG_TIMESTAMP_EXPR t / 1000, t % 1000, t - last_log_time,
+    #define LOG_TIMESTAMP_FMT  "\t%s (%" LV_PRIu32 ".%03" LV_PRIu32 ", +%" LV_PRIu32 ")\t"
+    #define LOG_TIMESTAMP_ARGS wall_ts, t / 1000, t % 1000, t - last_log_time
 #else
     #define LOG_TIMESTAMP_FMT
-    #define LOG_TIMESTAMP_EXPR
+    #define LOG_TIMESTAMP_ARGS
 #endif
 
 #if LV_LOG_USE_FILE_LINE
@@ -47,6 +51,10 @@
 /**********************
  *  STATIC PROTOTYPES
  **********************/
+
+#if LV_LOG_USE_TIMESTAMP && (defined(__linux__) || defined(__unix__))
+static void lv_log_wall_time_str(char * dst, size_t dst_size);
+#endif
 
 /**********************
  *  STATIC VARIABLES
@@ -89,6 +97,10 @@ void lv_log_add(lv_log_level_t level, const char * file, int line, const char * 
 
 #if LV_LOG_USE_TIMESTAMP
         uint32_t t = lv_tick_get();
+        char wall_ts[20] = "";
+#if defined(__linux__) || defined(__unix__)
+        lv_log_wall_time_str(wall_ts, sizeof(wall_ts));
+#endif
 #endif
         static const char * lvl_prefix[] = {"Trace", "Info", "Warn", "Error", "User"};
 
@@ -97,13 +109,13 @@ void lv_log_add(lv_log_level_t level, const char * file, int line, const char * 
             char msg[256];
             lv_vsnprintf(msg, sizeof(msg), format, args);
             lv_snprintf(buf, sizeof(buf), "[%s]" LOG_TIMESTAMP_FMT " %s: %s" LOG_FILE_LINE_FMT "\n",
-                        lvl_prefix[level], LOG_TIMESTAMP_EXPR func, msg LOG_FILE_LINE_EXPR);
+                        lvl_prefix[level], LOG_TIMESTAMP_ARGS, func, msg LOG_FILE_LINE_EXPR);
             custom_print_cb(level, buf);
         }
 #if LV_LOG_PRINTF
         else {
             printf("[%s]" LOG_TIMESTAMP_FMT " %s: ",
-                   lvl_prefix[level], LOG_TIMESTAMP_EXPR func);
+                   lvl_prefix[level], LOG_TIMESTAMP_ARGS, func);
             vprintf(format, args);
             printf(LOG_FILE_LINE_FMT "\n" LOG_FILE_LINE_EXPR);
             fflush(stdout);
@@ -141,5 +153,22 @@ void lv_log(const char * format, ...)
 /**********************
  *   STATIC FUNCTIONS
  **********************/
+
+#if LV_LOG_USE_TIMESTAMP && (defined(__linux__) || defined(__unix__))
+static void lv_log_wall_time_str(char * dst, size_t dst_size)
+{
+    struct timespec ts;
+    struct tm tm_info;
+
+    if(dst_size == 0) return;
+    dst[0] = '\0';
+    if(clock_gettime(CLOCK_REALTIME, &ts) != 0) return;
+    if(localtime_r(&ts.tv_sec, &tm_info) == NULL) return;
+
+    lv_snprintf(dst, dst_size, "%02d:%02d:%02d.%03ld",
+                tm_info.tm_hour, tm_info.tm_min, tm_info.tm_sec,
+                (long)(ts.tv_nsec / 1000000L));
+}
+#endif
 
 #endif /*LV_USE_LOG*/
