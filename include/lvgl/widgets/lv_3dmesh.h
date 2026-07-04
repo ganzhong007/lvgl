@@ -18,6 +18,7 @@ extern "C" {
 
 lv_obj_t * lv_3dmesh_create(lv_obj_t * parent);
 void lv_3dmesh_set_box(lv_obj_t * mesh, float w, float h, float d);
+void lv_3dmesh_set_uv_sphere(lv_obj_t * mesh, float diameter);
 void lv_3dmesh_set_wireframe(lv_obj_t * mesh, bool en);
 void lv_3dmesh_set_color(lv_obj_t * mesh, lv_color_t c);
 void lv_3dmesh_set_material(lv_obj_t * mesh, const lv_3d_material_t * mat);

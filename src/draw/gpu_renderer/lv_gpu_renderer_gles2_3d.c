@@ -25,6 +25,22 @@
     #define LV_GPU_RENDERER_MSAA_SAMPLES 0
 #endif
 
+#ifndef LV_3D_UV_SPHERE_SLICES
+    #define LV_3D_UV_SPHERE_SLICES 24
+#endif
+
+#ifndef LV_3D_UV_SPHERE_LAT_ARCS
+    /* Latitude rings between equator and each pole (excluding equator itself). */
+    #define LV_3D_UV_SPHERE_LAT_ARCS 3
+#endif
+
+#define LV_3D_UV_SPHERE_LAT_RINGS (1 + 2 * LV_3D_UV_SPHERE_LAT_ARCS)
+#define LV_3D_UV_SPHERE_MERIDIAN_SEGS (2 + 2 * LV_3D_UV_SPHERE_LAT_ARCS)
+
+#define LV_3D_UV_SPHERE_MAX_LINE_VERTS \
+    ((LV_3D_UV_SPHERE_LAT_RINGS * LV_3D_UV_SPHERE_SLICES + \
+      LV_3D_UV_SPHERE_SLICES * LV_3D_UV_SPHERE_MERIDIAN_SEGS) * 2)
+
 #if !LV_USE_EGL
 static unsigned int g_msaa_fbo;
 static unsigned int g_msaa_color_rb;
@@ -373,6 +389,73 @@ static void box_solid_verts(float w, float h, float d, float * out108)
     }
 }
 
+static uint32_t uv_sphere_append_ring(float r, float phi, float * out, uint32_t n, uint32_t max_floats)
+{
+    const float y = r * cosf(phi);
+    const float ring_r = r * sinf(phi);
+
+    for(int seg = 0; seg < LV_3D_UV_SPHERE_SLICES; seg++) {
+        const float t0 = (float)seg * 2.0f * (float)M_PI / (float)LV_3D_UV_SPHERE_SLICES;
+        const float t1 = (float)(seg + 1) * 2.0f * (float)M_PI / (float)LV_3D_UV_SPHERE_SLICES;
+        if(n + 6 > max_floats) return n;
+        out[n++] = ring_r * cosf(t0); out[n++] = y; out[n++] = ring_r * sinf(t0);
+        out[n++] = ring_r * cosf(t1); out[n++] = y; out[n++] = ring_r * sinf(t1);
+    }
+    return n;
+}
+
+static uint32_t uv_sphere_wire_verts(float diameter, float * out, uint32_t max_floats)
+{
+    const float r = diameter * 0.5f;
+    uint32_t n = 0;
+    const float half_pi = (float)M_PI * 0.5f;
+    const int lat_arcs = LV_3D_UV_SPHERE_LAT_ARCS;
+
+    /* Equator */
+    n = uv_sphere_append_ring(r, half_pi, out, n, max_floats);
+
+    /* 3 latitude rings between equator and each pole */
+    for(int i = 1; i <= lat_arcs; i++) {
+        const float delta = half_pi * (float)i / (float)(lat_arcs + 1);
+        n = uv_sphere_append_ring(r, half_pi - delta, out, n, max_floats);
+        n = uv_sphere_append_ring(r, half_pi + delta, out, n, max_floats);
+    }
+
+    /* Meridians: segment only at the same phi levels as latitude rings */
+    float phi_levels[2 + 2 * LV_3D_UV_SPHERE_LAT_ARCS + 1];
+    int phi_count = 0;
+    phi_levels[phi_count++] = 0.0f;
+    for(int i = lat_arcs; i >= 1; i--) {
+        const float delta = half_pi * (float)i / (float)(lat_arcs + 1);
+        phi_levels[phi_count++] = half_pi - delta;
+    }
+    phi_levels[phi_count++] = half_pi;
+    for(int i = 1; i <= lat_arcs; i++) {
+        const float delta = half_pi * (float)i / (float)(lat_arcs + 1);
+        phi_levels[phi_count++] = half_pi + delta;
+    }
+    phi_levels[phi_count++] = (float)M_PI;
+
+    for(int seg = 0; seg < LV_3D_UV_SPHERE_SLICES; seg++) {
+        const float theta = (float)seg * 2.0f * (float)M_PI / (float)LV_3D_UV_SPHERE_SLICES;
+        const float ct = cosf(theta);
+        const float st = sinf(theta);
+        for(int p = 0; p < phi_count - 1; p++) {
+            const float phi0 = phi_levels[p];
+            const float phi1 = phi_levels[p + 1];
+            const float y0 = r * cosf(phi0);
+            const float y1 = r * cosf(phi1);
+            const float rr0 = r * sinf(phi0);
+            const float rr1 = r * sinf(phi1);
+            if(n + 6 > max_floats) return n / 3;
+            out[n++] = rr0 * ct; out[n++] = y0; out[n++] = rr0 * st;
+            out[n++] = rr1 * ct; out[n++] = y1; out[n++] = rr1 * st;
+        }
+    }
+
+    return n / 3;
+}
+
 static void draw_plane_snapshot(const lv_3d_draw_item_t * it, const float view[16], const float proj[16])
 {
 #if LV_USE_SNAPSHOT
@@ -422,6 +505,29 @@ static void gpu_comp_uniform_rgba(int loc, lv_color32_t c32)
     /* window_display_texture is presented with rb_swap; match SW overlay channel order */
     GL_CALL(glUniform4f(loc, c32.blue / 255.0f, c32.green / 255.0f, c32.red / 255.0f,
                         c32.alpha / 255.0f));
+}
+
+static void draw_uv_sphere_wireframe(const lv_3d_draw_item_t * it, const float mvp[16])
+{
+    float verts[LV_3D_UV_SPHERE_MAX_LINE_VERTS * 3];
+    const uint32_t vert_count = uv_sphere_wire_verts(it->w, verts, (uint32_t)(sizeof(verts) / sizeof(verts[0])));
+    if(vert_count == 0) return;
+
+    lv_color32_t c32 = lv_color_to_32(it->material.color, it->material.opa);
+    GL_CALL(glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp));
+    gpu_comp_uniform_rgba(loc_color, c32);
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, verts));
+    GL_CALL(glLineWidth(3.75f));
+#if !LV_USE_EGL
+    GL_CALL(glEnable(GL_LINE_SMOOTH));
+    GL_CALL(glHint(GL_LINE_SMOOTH_HINT, GL_NICEST));
+#endif
+    GL_CALL(glDrawArrays(GL_LINES, 0, (GLsizei)vert_count));
+#if !LV_USE_EGL
+    GL_CALL(glDisable(GL_LINE_SMOOTH));
+#endif
+    GL_CALL(glDisableVertexAttribArray(0));
 }
 
 static void draw_box_triangles(const float verts[108], int vert_offset, int vert_count,
@@ -581,6 +687,12 @@ static void draw_item(const lv_3d_draw_item_t * it, const float view[16], const 
         return;
     }
 
+    if((it->wireframe || it->material.kind == LV_3D_MAT_WIREFRAME) &&
+       it->shape == LV_3D_MESH_UV_SPHERE) {
+        draw_uv_sphere_wireframe(it, mvp);
+        return;
+    }
+
     lv_color32_t c32 = lv_color_to_32(it->material.color, it->material.opa);
     GL_CALL(glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp));
     gpu_comp_uniform_rgba(loc_color, c32);
@@ -597,7 +709,7 @@ static void draw_item(const lv_3d_draw_item_t * it, const float view[16], const 
         box_wire_verts(it->w, it->h, it->d, verts);
         gpu_comp_uniform_rgba(loc_color, c32);
         GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, verts));
-        GL_CALL(glLineWidth(2.0f));
+        GL_CALL(glLineWidth(5.0f));
 #if !LV_USE_EGL
         GL_CALL(glEnable(GL_LINE_SMOOTH));
         GL_CALL(glHint(GL_LINE_SMOOTH_HINT, GL_NICEST));

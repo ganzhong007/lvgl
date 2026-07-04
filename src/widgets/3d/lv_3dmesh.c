@@ -69,6 +69,15 @@ void lv_3dmesh_set_box(lv_obj_t * obj, float w, float h, float d)
     lv_obj_invalidate(obj);
 }
 
+void lv_3dmesh_set_uv_sphere(lv_obj_t * obj, float diameter)
+{
+    lv_3dmesh_t * mesh = mesh_from_obj(obj);
+    if(!mesh) return;
+    mesh->mesh_id = lv_3d_mesh_alloc_uv_sphere(diameter, false);
+    sync_transform(mesh);
+    lv_obj_invalidate(obj);
+}
+
 void lv_3dmesh_set_wireframe(lv_obj_t * obj, bool en)
 {
     lv_3dmesh_t * mesh = mesh_from_obj(obj);

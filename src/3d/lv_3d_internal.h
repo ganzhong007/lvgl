@@ -18,8 +18,14 @@ typedef struct {
     bool dirty;
 } lv_3d_transform_t;
 
+typedef enum {
+    LV_3D_MESH_BOX = 0,
+    LV_3D_MESH_UV_SPHERE,
+} lv_3d_mesh_shape_t;
+
 typedef struct {
     lv_3d_mesh_id_t id;
+    lv_3d_mesh_shape_t shape;
     float w, h, d;
     bool wireframe;
     lv_3d_material_t material;
@@ -48,6 +54,7 @@ void lv_3d_transform_set_local_trs(lv_3d_transform_t * t, float tx, float ty, fl
 void lv_3d_transform_update_world(lv_3d_transform_t * t, const float parent_world[16]);
 
 lv_3d_mesh_id_t lv_3d_mesh_alloc_box(float w, float h, float d, bool wireframe);
+lv_3d_mesh_id_t lv_3d_mesh_alloc_uv_sphere(float diameter, bool wireframe);
 const lv_3d_draw_item_t * lv_3d_mesh_get_draw_item(lv_3d_mesh_id_t id);
 lv_3d_draw_item_t * lv_3d_mesh_get_draw_item_mut(lv_3d_mesh_id_t id);
 

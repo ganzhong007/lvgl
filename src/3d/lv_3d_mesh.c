@@ -8,6 +8,7 @@
 
 typedef struct {
     bool used;
+    lv_3d_mesh_shape_t shape;
     float w, h, d;
     bool wireframe;
     lv_3d_draw_item_t item;
@@ -22,14 +23,39 @@ lv_3d_mesh_id_t lv_3d_mesh_alloc_box(float w, float h, float d, bool wireframe)
     for(uint32_t i = 1; i < LV_3D_MESH_POOL_SIZE; i++) {
         if(!mesh_pool[i].used) {
             mesh_pool[i].used = true;
+            mesh_pool[i].shape = LV_3D_MESH_BOX;
             mesh_pool[i].w = w;
             mesh_pool[i].h = h;
             mesh_pool[i].d = d;
             mesh_pool[i].wireframe = wireframe;
             mesh_pool[i].item.id = i;
+            mesh_pool[i].item.shape = LV_3D_MESH_BOX;
             mesh_pool[i].item.w = w;
             mesh_pool[i].item.h = h;
             mesh_pool[i].item.d = d;
+            mesh_pool[i].item.wireframe = wireframe;
+            lv_3d_transform_init(&mesh_pool[i].item.transform);
+            return i;
+        }
+    }
+    return LV_3D_MESH_ID_NONE;
+}
+
+lv_3d_mesh_id_t lv_3d_mesh_alloc_uv_sphere(float diameter, bool wireframe)
+{
+    for(uint32_t i = 1; i < LV_3D_MESH_POOL_SIZE; i++) {
+        if(!mesh_pool[i].used) {
+            mesh_pool[i].used = true;
+            mesh_pool[i].shape = LV_3D_MESH_UV_SPHERE;
+            mesh_pool[i].w = diameter;
+            mesh_pool[i].h = diameter;
+            mesh_pool[i].d = diameter;
+            mesh_pool[i].wireframe = wireframe;
+            mesh_pool[i].item.id = i;
+            mesh_pool[i].item.shape = LV_3D_MESH_UV_SPHERE;
+            mesh_pool[i].item.w = diameter;
+            mesh_pool[i].item.h = diameter;
+            mesh_pool[i].item.d = diameter;
             mesh_pool[i].item.wireframe = wireframe;
             lv_3d_transform_init(&mesh_pool[i].item.transform);
             return i;
