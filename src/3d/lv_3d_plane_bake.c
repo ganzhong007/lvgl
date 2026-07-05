@@ -105,9 +105,11 @@ static void slot_upload_gl(lv_3d_snapshot_slot_t * slot)
     uint8_t * rgba = lv_malloc(rgba_bytes);
     if(!rgba) return;
 
+    /* LVGL draw buf is top-down; glTexImage2D row 0 is texture bottom — flip on upload. */
     for(int32_t y = 0; y < h; y++) {
+        const int32_t src_y = h - 1 - y;
         bgra8888_row_to_rgba8888(rgba + (size_t)y * (size_t)w * 4u,
-                                 slot->buf->data + (uint32_t)y * stride, w);
+                                 slot->buf->data + (uint32_t)src_y * stride, w);
     }
 
     GL_CALL(glBindTexture(GL_TEXTURE_2D, slot->tex_id));
