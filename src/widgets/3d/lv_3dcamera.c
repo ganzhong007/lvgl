@@ -7,6 +7,7 @@
 #if LV_USE_3D && LV_USE_3D_WIDGETS
 
 #include "../../core/lv_obj_class_private.h"
+#include "../../3d/lv_3d_internal.h"
 
 #define MY_CLASS (&lv_3dcamera_class)
 
@@ -33,6 +34,7 @@ void lv_3dcamera_set_perspective(lv_obj_t * obj, float fov_deg, float near_z, fl
     cam->fov_deg = fov_deg;
     cam->near_z = near_z;
     cam->far_z = far_z;
+    lv_3d_camera_mark_dirty(obj);
 }
 
 void lv_3dcamera_look_at(lv_obj_t * obj, lv_vec3_t eye, lv_vec3_t target, lv_vec3_t up)
@@ -42,6 +44,7 @@ void lv_3dcamera_look_at(lv_obj_t * obj, lv_vec3_t eye, lv_vec3_t target, lv_vec
     cam->eye = eye;
     cam->target = target;
     cam->up = up;
+    lv_3d_camera_mark_dirty(obj);
 }
 
 static void lv_3dcamera_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj)

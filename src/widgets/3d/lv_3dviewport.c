@@ -108,7 +108,8 @@ static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     LV_UNUSED(class_p);
     lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
     vp->pickable = true;
-    vp->input_route = false;
+    vp->input_route = true;
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
     vp->pressed_obj = NULL;
     vp->hovered_obj = NULL;
     /* 3D 由 GPU 画在 display texture；默认不透明白底会经 2D overlay 盖住整屏 */

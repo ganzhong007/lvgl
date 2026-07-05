@@ -11,6 +11,7 @@
 #if LV_USE_DRAW_GPU_RENDERER
 
 #include "lv_gpu_renderer_gles2_2d.h"
+#include "lv_draw_gpu_renderer.h"
 
 #include "../../draw/sw/lv_draw_sw.h"
 #include "../lv_draw_private.h"
@@ -28,36 +29,7 @@
 
 #define LV_GPU2D_QUEUE_MAX 512
 
-typedef enum {
-    LV_GPU2D_CMD_FILL = 0,
-    LV_GPU2D_CMD_BORDER,
-    LV_GPU2D_CMD_LABEL,
-    LV_GPU2D_CMD_LETTER,
-    LV_GPU2D_CMD_IMAGE,
-} lv_gpu2d_cmd_type_t;
-
-typedef struct {
-    lv_gpu2d_cmd_type_t type;
-    lv_area_t area;
-    lv_area_t clip;
-    union {
-        struct {
-            lv_color_t color;
-            lv_opa_t opa;
-            int32_t radius;
-        } fill;
-        struct {
-            lv_color_t color;
-            lv_opa_t opa;
-            int32_t width;
-            int32_t radius;
-            lv_border_side_t side;
-        } border;
-        lv_draw_label_dsc_t label;
-        lv_draw_letter_dsc_t letter;
-        lv_draw_image_dsc_t image;
-    } u;
-} lv_gpu2d_cmd_t;
+typedef lv_gpu_renderer_gles2_cmd_t lv_gpu2d_cmd_t;
 
 static lv_gpu2d_cmd_t g_queue[LV_GPU2D_QUEUE_MAX];
 static uint32_t g_queue_count;
@@ -225,9 +197,9 @@ uint32_t lv_gpu_renderer_gles2_2d_queue_count(void)
     return g_queue_count;
 }
 
-static bool gpu2d_cmd_uses_fill_shader(lv_gpu2d_cmd_type_t type)
+static bool gpu2d_cmd_uses_fill_shader(lv_gpu_renderer_gles2_cmd_type_t type)
 {
-    return type == LV_GPU2D_CMD_FILL || type == LV_GPU2D_CMD_BORDER;
+    return type == LV_GPU_RENDERER_GLES2_CMD_FILL || type == LV_GPU_RENDERER_GLES2_CMD_BORDER;
 }
 
 uint32_t lv_gpu_renderer_gles2_2d_count_shader_batches(void)
@@ -261,7 +233,7 @@ bool lv_gpu_renderer_gles2_2d_queue_fill(const lv_area_t * area, const lv_area_t
 {
     lv_gpu2d_cmd_t cmd;
     lv_memzero(&cmd, sizeof(cmd));
-    cmd.type = LV_GPU2D_CMD_FILL;
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_FILL;
     cmd.area = *area;
     cmd.clip = *clip;
     cmd.u.fill.color = color;
@@ -276,7 +248,7 @@ bool lv_gpu_renderer_gles2_2d_queue_border(const lv_area_t * area, const lv_area
 {
     lv_gpu2d_cmd_t cmd;
     lv_memzero(&cmd, sizeof(cmd));
-    cmd.type = LV_GPU2D_CMD_BORDER;
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_BORDER;
     cmd.area = *area;
     cmd.clip = *clip;
     cmd.u.border.color = color;
@@ -292,7 +264,7 @@ bool lv_gpu_renderer_gles2_2d_queue_label(const lv_area_t * area, const lv_area_
 {
     lv_gpu2d_cmd_t cmd;
     lv_memzero(&cmd, sizeof(cmd));
-    cmd.type = LV_GPU2D_CMD_LABEL;
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_LABEL;
     cmd.area = *area;
     cmd.clip = *clip;
     cmd.u.label = *dsc;
@@ -304,7 +276,7 @@ bool lv_gpu_renderer_gles2_2d_queue_letter(const lv_area_t * area, const lv_area
 {
     lv_gpu2d_cmd_t cmd;
     lv_memzero(&cmd, sizeof(cmd));
-    cmd.type = LV_GPU2D_CMD_LETTER;
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_LETTER;
     cmd.area = *area;
     cmd.clip = *clip;
     cmd.u.letter = *dsc;
@@ -316,11 +288,18 @@ bool lv_gpu_renderer_gles2_2d_queue_image(const lv_area_t * area, const lv_area_
 {
     lv_gpu2d_cmd_t cmd;
     lv_memzero(&cmd, sizeof(cmd));
-    cmd.type = LV_GPU2D_CMD_IMAGE;
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_IMAGE;
     cmd.area = *area;
     cmd.clip = *clip;
     cmd.u.image = *dsc;
     return queue_push(&cmd);
+}
+
+bool lv_gpu_renderer_gles2_2d_copy_last_cmd(lv_gpu_renderer_gles2_cmd_t * out)
+{
+    if(!out || g_queue_count == 0) return false;
+    *out = g_queue[g_queue_count - 1];
+    return true;
 }
 
 static void gpu_comp_uniform_rgba(int loc, lv_color32_t c32)
@@ -506,7 +485,95 @@ static void draw_textured_quad(const lv_area_t * area, int32_t dw, int32_t dh, u
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
 }
 
+uint32_t lv_gpu_renderer_gles2_2d_render_cmd_list(const lv_gpu_renderer_gles2_cmd_t * cmds, uint32_t count,
+                                                   unsigned int color_tex, int32_t dw, int32_t dh,
+                                                   uint32_t * sw_raster_out)
+{
+    if(sw_raster_out) *sw_raster_out = 0;
+    if(!cmds || count == 0 || color_tex == 0 || dw < 1 || dh < 1) return 0;
+    if(!prog_fill && !prog_tex) lv_gpu_renderer_gles2_2d_init();
+
+    if(!lv_gpu_renderer_tex_fbo_bind_complete(color_tex)) {
+        lv_gpu_renderer_restore_default_framebuffer();
+        return 0;
+    }
+
+    GL_CALL(glViewport(0, 0, dw, dh));
+    GL_CALL(glEnable(GL_BLEND));
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+
+    uint32_t rendered = 0;
+    uint32_t sw_raster = 0;
+
+    for(uint32_t i = 0; i < count; i++) {
+        const lv_gpu_renderer_gles2_cmd_t * cmd = &cmds[i];
+        lv_gpu2d_cmd_t * mut_cmd = (lv_gpu2d_cmd_t *)(uintptr_t)cmd;
+        lv_area_t draw_area;
+        if(!lv_area_intersect(&draw_area, &cmd->area, &cmd->clip)) continue;
+        apply_scissor(&cmd->clip, dh);
+
+        switch(cmd->type) {
+            case LV_GPU_RENDERER_GLES2_CMD_FILL:
+                draw_fill_quad(&draw_area, dw, dh, cmd->u.fill.color, cmd->u.fill.opa, cmd->u.fill.radius);
+                rendered++;
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_BORDER:
+                draw_border_gpu(mut_cmd, dw, dh);
+                rendered++;
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_LABEL: {
+                    unsigned int tex = 0;
+                    if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_label_sw_cb,
+                                             &cmd->u.label, &tex)) {
+                        draw_textured_quad(&draw_area, dw, dh, tex);
+                        GL_CALL(glDeleteTextures(1, &tex));
+                        sw_raster++;
+                        rendered++;
+                    }
+                }
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_LETTER: {
+                    unsigned int tex = 0;
+                    if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_letter_sw_cb,
+                                             &cmd->u.letter, &tex)) {
+                        draw_textured_quad(&draw_area, dw, dh, tex);
+                        GL_CALL(glDeleteTextures(1, &tex));
+                        sw_raster++;
+                        rendered++;
+                    }
+                }
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_IMAGE: {
+                    unsigned int tex = 0;
+                    if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_image_sw_cb,
+                                             &cmd->u.image, &tex)) {
+                        draw_textured_quad(&draw_area, dw, dh, tex);
+                        GL_CALL(glDeleteTextures(1, &tex));
+                        sw_raster++;
+                        rendered++;
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    GL_CALL(glDisable(GL_SCISSOR_TEST));
+    lv_gpu_renderer_restore_default_framebuffer();
+
+    if(sw_raster_out) *sw_raster_out = sw_raster;
+    return rendered;
+}
+
 uint32_t lv_gpu_renderer_gles2_2d_render_batch(unsigned int color_tex, int32_t dw, int32_t dh,
+                                                uint32_t * sw_raster_out)
+{
+    return lv_gpu_renderer_gles2_2d_render_cmd_list(g_queue, g_queue_count, color_tex, dw, dh, sw_raster_out);
+}
+
+#if 0
+uint32_t lv_gpu_renderer_gles2_2d_render_batch_legacy(unsigned int color_tex, int32_t dw, int32_t dh,
                                                 uint32_t * sw_raster_out)
 {
     if(sw_raster_out) *sw_raster_out = 0;
@@ -544,15 +611,15 @@ uint32_t lv_gpu_renderer_gles2_2d_render_batch(unsigned int color_tex, int32_t d
         apply_scissor(&cmd->clip, dh);
 
         switch(cmd->type) {
-            case LV_GPU2D_CMD_FILL:
+            case LV_GPU_RENDERER_GLES2_CMD_FILL:
                 draw_fill_quad(&draw_area, dw, dh, cmd->u.fill.color, cmd->u.fill.opa, cmd->u.fill.radius);
                 rendered++;
                 break;
-            case LV_GPU2D_CMD_BORDER:
+            case LV_GPU_RENDERER_GLES2_CMD_BORDER:
                 draw_border_gpu(cmd, dw, dh);
                 rendered++;
                 break;
-            case LV_GPU2D_CMD_LABEL: {
+            case LV_GPU_RENDERER_GLES2_CMD_LABEL: {
                     unsigned int tex = 0;
                     if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_label_sw_cb,
                                              &cmd->u.label, &tex)) {
@@ -563,7 +630,7 @@ uint32_t lv_gpu_renderer_gles2_2d_render_batch(unsigned int color_tex, int32_t d
                     }
                 }
                 break;
-            case LV_GPU2D_CMD_LETTER: {
+            case LV_GPU_RENDERER_GLES2_CMD_LETTER: {
                     unsigned int tex = 0;
                     if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_letter_sw_cb,
                                              &cmd->u.letter, &tex)) {
@@ -574,7 +641,7 @@ uint32_t lv_gpu_renderer_gles2_2d_render_batch(unsigned int color_tex, int32_t d
                     }
                 }
                 break;
-            case LV_GPU2D_CMD_IMAGE: {
+            case LV_GPU_RENDERER_GLES2_CMD_IMAGE: {
                     unsigned int tex = 0;
                     if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_image_sw_cb,
                                              &cmd->u.image, &tex)) {
@@ -598,5 +665,6 @@ uint32_t lv_gpu_renderer_gles2_2d_render_batch(unsigned int color_tex, int32_t d
     if(sw_raster_out) *sw_raster_out = sw_raster;
     return rendered;
 }
+#endif
 
 #endif /*LV_USE_DRAW_GPU_RENDERER*/

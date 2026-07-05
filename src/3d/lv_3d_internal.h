@@ -62,6 +62,20 @@ void lv_3d_camera_get_view_proj(lv_obj_t * cam, int32_t vp_w, int32_t vp_h, floa
 
 uint32_t lv_3d_scene_collect(lv_obj_t * scene, lv_3d_draw_item_t * out, uint32_t max_out);
 
+/** Mark scene subtree dirty (mesh transform/material change). */
+void lv_3d_scene_mark_dirty(lv_obj_t * scene);
+/** True if any mesh under scene had local transform dirtied since last collect. */
+bool lv_3d_scene_is_dirty(lv_obj_t * scene);
+void lv_3d_scene_clear_dirty(lv_obj_t * scene);
+
+/** True if scene or any mesh transform is dirty (skip static GPU redraw when false). */
+bool lv_3d_scene_has_volatile_meshes(lv_obj_t * scene);
+
+/** Camera parameter change → next viewport draw must refresh matrices. */
+void lv_3d_camera_mark_dirty(lv_obj_t * cam);
+bool lv_3d_camera_is_dirty(lv_obj_t * cam);
+void lv_3d_camera_clear_dirty(lv_obj_t * cam);
+
 lv_obj_t * lv_3d_pick_scene(lv_obj_t * scene, lv_vec3_t origin, lv_vec3_t dir);
 
 #endif /*LV_USE_3D*/

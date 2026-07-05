@@ -9,6 +9,8 @@
 #include "../../core/lv_obj_class_private.h"
 #include "../../3d/lv_3d_internal.h"
 
+extern const lv_obj_class_t lv_3dscene_class;
+
 #define MY_CLASS (&lv_3dmesh_class)
 
 static void lv_3dmesh_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
@@ -43,6 +45,16 @@ static void sync_draw_material(lv_3dmesh_t * mesh)
     if(item) item->material = mesh->material;
 }
 
+static void mesh_mark_scene_dirty(lv_obj_t * obj)
+{
+    for(lv_obj_t * p = lv_obj_get_parent(obj); p; p = lv_obj_get_parent(p)) {
+        if(lv_obj_check_type(p, &lv_3dscene_class)) {
+            lv_3d_scene_mark_dirty(p);
+            return;
+        }
+    }
+}
+
 static void sync_transform(lv_3dmesh_t * mesh)
 {
     lv_3d_draw_item_t * item = lv_3d_mesh_get_draw_item_mut(mesh->mesh_id);
@@ -66,6 +78,7 @@ void lv_3dmesh_set_box(lv_obj_t * obj, float w, float h, float d)
     if(!mesh) return;
     mesh->mesh_id = lv_3d_mesh_alloc_box(w, h, d, false);
     sync_transform(mesh);
+    mesh_mark_scene_dirty(obj);
     lv_obj_invalidate(obj);
 }
 
@@ -88,6 +101,7 @@ void lv_3dmesh_set_wireframe(lv_obj_t * obj, bool en)
     }
     lv_3d_material_init(&mesh->material, en ? LV_3D_MAT_WIREFRAME : LV_3D_MAT_OPAQUE, mesh->material.color,
                         mesh->material.opa);
+    mesh_mark_scene_dirty(obj);
     lv_obj_invalidate(obj);
 }
 
@@ -109,6 +123,7 @@ void lv_3dmesh_set_material(lv_obj_t * obj, const lv_3d_material_t * mat)
         lv_3d_draw_item_t * item = lv_3d_mesh_get_draw_item_mut(mesh->mesh_id);
         if(item) item->wireframe = (mat->kind == LV_3D_MAT_WIREFRAME);
     }
+    mesh_mark_scene_dirty(obj);
     lv_obj_invalidate(obj);
 }
 
@@ -119,6 +134,7 @@ void lv_3dmesh_set_plane_snapshot(lv_obj_t * obj, lv_3d_snapshot_id_t snapshot_i
     mesh->snapshot_id = snapshot_id;
     mesh->material.kind = LV_3D_MAT_PLANE_SNAPSHOT;
     mesh->material.opa = LV_OPA_COVER;
+    mesh_mark_scene_dirty(obj);
     lv_obj_invalidate(obj);
 }
 
@@ -128,6 +144,7 @@ void lv_3dmesh_set_position(lv_obj_t * obj, float x, float y, float z)
     if(!mesh) return;
     mesh->pos[0] = x; mesh->pos[1] = y; mesh->pos[2] = z;
     sync_transform(mesh);
+    mesh_mark_scene_dirty(obj);
     lv_obj_invalidate(obj);
 }
 
@@ -144,6 +161,7 @@ void lv_3dmesh_set_rotation(lv_obj_t * obj, float pitch_deg, float yaw_deg, floa
     mesh->rot[1] = yaw_deg * deg_to_rad;
     mesh->rot[2] = roll_deg * deg_to_rad;
     sync_transform(mesh);
+    mesh_mark_scene_dirty(obj);
     lv_obj_invalidate(obj);
 }
 

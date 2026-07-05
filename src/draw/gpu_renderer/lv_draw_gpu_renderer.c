@@ -29,6 +29,7 @@
 #include "../../drivers/opengles/lv_opengles_texture_private.h"
 
 #include <stdlib.h>
+#include <string.h>
 #include "../../include/lvgl/draw/lv_draw_3d.h"
 #include <stdio.h>
 
@@ -57,12 +58,16 @@ typedef struct {
     uint32_t fg_batch_count;
     uint32_t fg_material_batches;
     uint32_t fg_gl_finish_count;
+    uint32_t fg_skipped_static_3d;
+    uint32_t fg_energy_cost;
     char gl_renderer[128];
 } lv_gpu_renderer_path_frame_t;
 
 static lv_gpu_renderer_path_frame_t g_path_stats;
 static bool g_gl_renderer_logged;
 static bool g_overlay_2d_enable = true;
+static unsigned int g_scanout_tex_fbo;
+static unsigned int g_scanout_tex_fbo_tex;
 
 static int32_t gpu_renderer_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
 static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
@@ -117,19 +122,16 @@ static void gpu_renderer_clear_tex(unsigned int tex_id, int32_t w, int32_t h, fl
 {
     if(tex_id == 0 || w < 1 || h < 1) return;
 
-    unsigned int fbo = 0;
-    GL_CALL(glGenFramebuffers(1, &fbo));
-    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
-    GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex_id, 0));
-    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
-        GL_CALL(glViewport(0, 0, w, h));
-        GL_CALL(glDisable(GL_SCISSOR_TEST));
-        GL_CALL(glDisable(GL_BLEND));
-        GL_CALL(glClearColor(r, g, b, a));
-        GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+    if(!lv_gpu_renderer_tex_fbo_bind_complete(tex_id)) {
+        lv_gpu_renderer_restore_default_framebuffer();
+        return;
     }
-    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
-    GL_CALL(glDeleteFramebuffers(1, &fbo));
+    GL_CALL(glViewport(0, 0, w, h));
+    GL_CALL(glDisable(GL_SCISSOR_TEST));
+    GL_CALL(glDisable(GL_BLEND));
+    GL_CALL(glClearColor(r, g, b, a));
+    GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+    lv_gpu_renderer_restore_default_framebuffer();
 }
 
 void lv_draw_gpu_renderer_init(void)
@@ -149,7 +151,46 @@ void lv_draw_gpu_renderer_deinit(void)
 #endif
     lv_gpu_renderer_gles2_2d_deinit();
     lv_gpu_renderer_fg_deinit();
+    lv_gpu_renderer_tex_fbo_release();
     g_unit = NULL;
+}
+
+unsigned int lv_gpu_renderer_tex_fbo_bind(unsigned int color_tex)
+{
+    if(color_tex == 0) return 0;
+
+    if(!g_scanout_tex_fbo) {
+        GL_CALL(glGenFramebuffers(1, &g_scanout_tex_fbo));
+    }
+
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_scanout_tex_fbo));
+    if(g_scanout_tex_fbo_tex != color_tex) {
+        GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_tex, 0));
+#if !LV_USE_EGL
+        {
+            GLenum draw_buf = GL_COLOR_ATTACHMENT0;
+            GL_CALL(glDrawBuffers(1, &draw_buf));
+            GL_CALL(glReadBuffer(GL_COLOR_ATTACHMENT0));
+        }
+#endif
+        g_scanout_tex_fbo_tex = color_tex;
+    }
+    return g_scanout_tex_fbo;
+}
+
+bool lv_gpu_renderer_tex_fbo_bind_complete(unsigned int color_tex)
+{
+    if(lv_gpu_renderer_tex_fbo_bind(color_tex) == 0) return false;
+    return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+}
+
+void lv_gpu_renderer_tex_fbo_release(void)
+{
+    if(g_scanout_tex_fbo) {
+        GL_CALL(glDeleteFramebuffers(1, &g_scanout_tex_fbo));
+        g_scanout_tex_fbo = 0;
+    }
+    g_scanout_tex_fbo_tex = 0;
 }
 
 void lv_gpu_renderer_set_ui_mode(int mode)
@@ -190,6 +231,8 @@ static void path_stats_from_fg(void)
     g_path_stats.fg_batch_count = fg->batch_count;
     g_path_stats.fg_material_batches = fg->material_batches;
     g_path_stats.fg_gl_finish_count = fg->gl_finish_count;
+    g_path_stats.fg_skipped_static_3d = fg->skipped_static_3d;
+    g_path_stats.fg_energy_cost = fg->energy_cost;
 }
 
 static void gpu_renderer_flush_internal(unsigned int tex_id, int32_t dw, int32_t dh)
@@ -284,6 +327,24 @@ void lv_gpu_renderer_flush_3d_to_tex(lv_display_t * disp, unsigned int tex_id, i
 {
     LV_UNUSED(disp);
     gpu_renderer_flush_internal(tex_id, w, h);
+}
+
+bool lv_gpu_renderer_blit_tex_to_tex(unsigned int dst_tex, unsigned int src_tex, int32_t w, int32_t h)
+{
+    if(dst_tex == 0 || src_tex == 0 || dst_tex == src_tex || w < 1 || h < 1) return false;
+
+    if(!lv_gpu_renderer_tex_fbo_bind_complete(dst_tex)) {
+        lv_gpu_renderer_restore_default_framebuffer();
+        return false;
+    }
+
+    lv_area_t full = { 0, 0, w - 1, h - 1 };
+    lv_opengles_reinit_state();
+    /* FBO→FBO copy: v_flip=true avoids display-path Y flip (v_flip=false inverts scanout tex). */
+    lv_opengles_render_texture_rbswap(src_tex, &full, LV_OPA_COVER, w, h, &full, false, true);
+
+    lv_gpu_renderer_restore_default_framebuffer();
+    return true;
 }
 
 void lv_gpu_renderer_overlay_2d_fb(lv_display_t * disp)
@@ -399,6 +460,61 @@ void lv_gpu_renderer_overlay_2d_screen(lv_display_t * disp, int32_t w, int32_t h
 #endif
 }
 
+bool lv_gpu_renderer_composite_layer_to_tex(unsigned int tex_id, const lv_draw_image_dsc_t * draw_dsc,
+                                             const lv_area_t * coords, const lv_area_t * clip,
+                                             int32_t dw, int32_t dh)
+{
+#if LV_COLOR_DEPTH != 32
+    LV_UNUSED(tex_id);
+    LV_UNUSED(draw_dsc);
+    LV_UNUSED(coords);
+    LV_UNUSED(clip);
+    LV_UNUSED(dw);
+    LV_UNUSED(dh);
+    return false;
+#else
+    if(!draw_dsc || !coords || !clip || tex_id == 0 || dw < 1 || dh < 1) return false;
+
+    lv_layer_t * layer_to_draw = (lv_layer_t *)draw_dsc->src;
+    if(!layer_to_draw || !layer_to_draw->draw_buf || !layer_to_draw->draw_buf->data) return false;
+
+    lv_draw_buf_t * buf = layer_to_draw->draw_buf;
+    int32_t lw = lv_area_get_width(&layer_to_draw->buf_area);
+    int32_t lh = lv_area_get_height(&layer_to_draw->buf_area);
+    if(lw < 1 || lh < 1) return false;
+
+    lv_color_format_t cf = buf->header.cf;
+    if(cf != LV_COLOR_FORMAT_ARGB8888 && cf != LV_COLOR_FORMAT_XRGB8888) return false;
+
+    lv_area_t draw_area;
+    if(!lv_area_intersect(&draw_area, coords, clip)) return false;
+
+    unsigned int layer_tex = 0;
+    GL_CALL(glGenTextures(1, &layer_tex));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, layer_tex));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    lv_opengles_teximage_bgra8888(0, lw, lh, buf->data, buf->header.stride);
+
+    if(!lv_gpu_renderer_tex_fbo_bind_complete(tex_id)) {
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+        GL_CALL(glDeleteTextures(1, &layer_tex));
+        return false;
+    }
+
+    lv_opengles_reinit_state();
+    lv_opengles_render_texture_rbswap(layer_tex, coords, draw_dsc->opa, dw, dh, &draw_area, false, false);
+
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    GL_CALL(glDeleteTextures(1, &layer_tex));
+    lv_gpu_renderer_restore_default_framebuffer();
+    return true;
+#endif
+}
+
 void lv_gpu_renderer_overlay_2d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h)
 {
     if(!g_overlay_2d_enable) return;
@@ -418,24 +534,15 @@ void lv_gpu_renderer_overlay_2d_to_tex(lv_display_t * disp, unsigned int tex_id,
 
     g_path_stats.sw_overlay_uploads++;
 
-    unsigned int fbo = 0;
-    GL_CALL(glGenFramebuffers(1, &fbo));
-    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
-    GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex_id, 0));
-
-#if !LV_USE_EGL
-    {
-        GLenum draw_buf = GL_COLOR_ATTACHMENT0;
-        GL_CALL(glDrawBuffers(1, &draw_buf));
-        GL_CALL(glReadBuffer(GL_COLOR_ATTACHMENT0));
+    if(!lv_gpu_renderer_tex_fbo_bind_complete(tex_id)) {
+        overlay_restore_default_fb_state();
+        return;
     }
-#endif
 
     lv_area_t full = { 0, 0, w - 1, h - 1 };
     lv_opengles_reinit_state();
     lv_opengles_render_texture_rbswap(sw_tex, &full, LV_OPA_COVER, w, h, &full, false, false);
 
-    GL_CALL(glDeleteFramebuffers(1, &fbo));
     overlay_restore_default_fb_state();
 #endif
 }
@@ -450,24 +557,17 @@ static unsigned int verify_bind_tex_fbo(lv_display_t * disp, int32_t * w_out, in
     int32_t h = lv_display_get_vertical_resolution(disp);
     if(w < 16 || h < 16) return 0;
 
-    unsigned int fbo = 0;
-    GL_CALL(glGenFramebuffers(1, &fbo));
-    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
-    GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex_id, 0));
-
-#if !LV_USE_EGL
-    GL_CALL(glReadBuffer(GL_COLOR_ATTACHMENT0));
-#endif
+    if(!lv_gpu_renderer_tex_fbo_bind_complete(tex_id)) return 0;
 
     if(w_out) *w_out = w;
     if(h_out) *h_out = h;
-    return fbo;
+    return g_scanout_tex_fbo;
 }
 
 static void verify_unbind_fbo(unsigned int fbo)
 {
-    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
-    if(fbo) GL_CALL(glDeleteFramebuffers(1, &fbo));
+    LV_UNUSED(fbo);
+    lv_gpu_renderer_restore_default_framebuffer();
 }
 
 static void verify_read_rgba(int32_t w, int32_t h, int lv_x, int lv_y, uint8_t rgba[4])
@@ -479,6 +579,27 @@ static void verify_read_rgba(int32_t w, int32_t h, int lv_x, int lv_y, uint8_t r
     if(gl_x >= w) gl_x = w - 1;
     if(gl_y >= h) gl_y = h - 1;
     GL_CALL(glReadPixels(gl_x, gl_y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba));
+}
+
+bool lv_gpu_renderer_verify_lite_enabled(void)
+{
+    static int cached = -1;
+    if(cached >= 0) return cached != 0;
+
+    const char * env = getenv("LVGL_VERIFY_LITE");
+    if(env && env[0]) {
+        cached = (env[0] == '0') ? 0 : 1;
+        return cached != 0;
+    }
+
+    path_stats_cache_gl_renderer();
+    if(g_path_stats.gl_renderer[0] && strstr(g_path_stats.gl_renderer, "Mali") != NULL) {
+        cached = 1;
+    }
+    else {
+        cached = 0;
+    }
+    return cached != 0;
 }
 
 bool lv_gpu_renderer_verify_alpha(lv_display_t * disp, uint8_t * min_alpha_out, uint32_t * opaque_count_out)
@@ -513,8 +634,9 @@ bool lv_gpu_renderer_verify_stats(lv_display_t * disp, lv_gpu_renderer_verify_st
     verify_read_rgba(w, h, w / 2, h / 2, stats->center_rgba);
     stats->region_max_alpha = 0;
 
-    const int grid_x = 48;
-    const int grid_y = 27;
+    const bool lite = lv_gpu_renderer_verify_lite_enabled();
+    const int grid_x = lite ? 8 : 48;
+    const int grid_y = lite ? 5 : 27;
     int32_t x0 = w / 20;
     int32_t y0 = h / 20;
     int32_t x1 = w - 1 - x0;
@@ -547,7 +669,9 @@ bool lv_gpu_renderer_verify_stats(lv_display_t * disp, lv_gpu_renderer_verify_st
         }
     }
 
-    GL_CALL(glFinish());
+    if(!lite) {
+        GL_CALL(glFinish());
+    }
     verify_unbind_fbo(fbo);
     stats->last_flush_items = g_last_flush_item_count;
     stats->last_flush_viewports = g_last_flush_vp_count;
@@ -561,6 +685,8 @@ bool lv_gpu_renderer_verify_stats(lv_display_t * disp, lv_gpu_renderer_verify_st
     stats->fg_batch_count = g_path_stats.fg_batch_count;
     stats->fg_material_batches = g_path_stats.fg_material_batches;
     stats->fg_gl_finish_count = g_path_stats.fg_gl_finish_count;
+    stats->fg_skipped_static_3d = g_path_stats.fg_skipped_static_3d;
+    stats->fg_energy_cost = g_path_stats.fg_energy_cost;
     lv_strncpy(stats->gl_renderer, g_path_stats.gl_renderer, sizeof(stats->gl_renderer) - 1);
     stats->gl_renderer[sizeof(stats->gl_renderer) - 1] = '\0';
     if(stats->region_max_alpha < stats->flush_max_alpha) {
@@ -583,6 +709,8 @@ void lv_gpu_renderer_get_path_stats(lv_gpu_renderer_path_stats_t * stats)
     stats->fg_batch_count = g_path_stats.fg_batch_count;
     stats->fg_material_batches = g_path_stats.fg_material_batches;
     stats->fg_gl_finish_count = g_path_stats.fg_gl_finish_count;
+    stats->fg_skipped_static_3d = g_path_stats.fg_skipped_static_3d;
+    stats->fg_energy_cost = g_path_stats.fg_energy_cost;
     lv_strncpy(stats->gl_renderer, g_path_stats.gl_renderer, sizeof(stats->gl_renderer) - 1);
     stats->gl_renderer[sizeof(stats->gl_renderer) - 1] = '\0';
 }
@@ -832,9 +960,15 @@ static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * la
         }
 #endif
     }
-    else if(lv_gpu_renderer_fg_can_gpu_native_2d(t)) {
+    else if(t->type == LV_DRAW_TASK_TYPE_LAYER && lv_gpu_renderer_fg_can_gpu_layer(t)) {
+        if(!lv_gpu_renderer_fg_record_layer_task(t)) return LV_DRAW_UNIT_IDLE;
+    }
+    else if(lv_gpu_renderer_fg_can_gpu_native_2d(t)
+            || t->type == LV_DRAW_TASK_TYPE_LABEL
+            || t->type == LV_DRAW_TASK_TYPE_LETTER
+            || t->type == LV_DRAW_TASK_TYPE_IMAGE) {
         if(!lv_gpu_renderer_fg_queue_2d_task(t)) return LV_DRAW_UNIT_IDLE;
-        lv_gpu_renderer_fg_record_2d_task(t);
+        if(!lv_gpu_renderer_fg_record_2d_task(t)) return LV_DRAW_UNIT_IDLE;
     }
     else {
         return LV_DRAW_UNIT_IDLE;

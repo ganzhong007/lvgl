@@ -11,7 +11,9 @@
 #if LV_USE_DRAW_GPU_RENDERER && LV_USE_3D
 
 #include "lv_gpu_renderer_gles2_3d.h"
+#include "lv_gpu_renderer_batch_3d.h"
 #include "lv_gpu_renderer_framegraph.h"
+#include "lv_draw_gpu_renderer.h"
 
 #include "../../drivers/opengles/lv_opengles_debug.h"
 #include "../../drivers/opengles/lv_opengles_private.h"
@@ -50,33 +52,6 @@ static int g_msaa_cached_samples;
 #endif
 
 static bool g_skip_alpha_probe;
-static unsigned int g_tex_fbo;
-static unsigned int g_tex_fbo_tex;
-
-static void tex_fbo_release(void)
-{
-    if(g_tex_fbo) {
-        GL_CALL(glDeleteFramebuffers(1, &g_tex_fbo));
-        g_tex_fbo = 0;
-    }
-    g_tex_fbo_tex = 0;
-}
-
-static unsigned int tex_fbo_bind(unsigned int color_tex)
-{
-    if(!g_tex_fbo) {
-        GL_CALL(glGenFramebuffers(1, &g_tex_fbo));
-    }
-    if(g_tex_fbo_tex != color_tex) {
-        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_tex_fbo));
-        GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_tex, 0));
-        g_tex_fbo_tex = color_tex;
-    }
-    else {
-        GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_tex_fbo));
-    }
-    return g_tex_fbo;
-}
 
 static int msaa_samples_effective(void)
 {
@@ -348,7 +323,6 @@ void lv_gpu_renderer_gles2_3d_deinit(void)
         prog_tex = 0;
     }
 #endif
-    tex_fbo_release();
 #if !LV_USE_EGL
     msaa_fbo_release();
 #endif
@@ -771,18 +745,7 @@ static void render_viewport_draw(unsigned int fbo, int32_t vp_x, int32_t vp_y, i
         if(draw_item_is_transparent(&items[i])) continue;
         opaque_order[opaque_count++] = i;
     }
-    for(uint32_t a = 1; a < opaque_count; a++) {
-        uint32_t key = opaque_order[a];
-        float key_z = draw_item_view_depth(&items[key], view);
-        uint32_t b = a;
-        while(b > 0) {
-            uint32_t prev = opaque_order[b - 1];
-            if(draw_item_view_depth(&items[prev], view) <= key_z) break;
-            opaque_order[b] = prev;
-            b--;
-        }
-        opaque_order[b] = key;
-    }
+    lv_gpu_renderer_batch_3d_sort_opaque(items, item_count, opaque_order, opaque_count);
 
     GL_CALL(glUseProgram(prog));
     for(uint32_t o = 0; o < opaque_count; o++) {
@@ -845,7 +808,7 @@ void lv_gpu_renderer_gles2_render_viewport(unsigned int color_tex, unsigned int 
     }
 #endif
 
-    unsigned int fbo = tex_fbo_bind(color_tex);
+    unsigned int fbo = lv_gpu_renderer_tex_fbo_bind(color_tex);
 
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         LV_LOG_ERROR("LVGL FBO incomplete");
