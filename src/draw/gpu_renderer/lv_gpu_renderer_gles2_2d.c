@@ -135,6 +135,8 @@ static int loc_glyph_disp;
 static int loc_glyph_sampler;
 static int loc_glyph_color;
 static int loc_glyph_opa;
+static int loc_glyph_sdf;
+static int loc_glyph_smooth;
 
 static unsigned int prog_img;
 static int loc_img_disp;
@@ -510,8 +512,14 @@ static const char * fs_glyph =
     "uniform sampler2D u_tex;\n"
     "uniform vec4 u_color;\n"
     "uniform float u_opa;\n"
+    "uniform float u_sdf;\n"
+    "uniform float u_smooth;\n"
     "void main(){\n"
-    "  float a=texture2D(u_tex,v_uv).a*u_opa*u_color.a;\n"
+    "  float d=texture2D(u_tex,v_uv).a;\n"
+    "  float a;\n"
+    "  if(u_sdf>0.5){ a=smoothstep(0.5-u_smooth,0.5+u_smooth,d); }\n"
+    "  else { a=d; }\n"
+    "  a*=u_opa*u_color.a;\n"
     "  if(a<0.004) discard;\n"
     "  gl_FragColor=vec4(u_color.rgb,a);\n"
     "}\n";
@@ -793,8 +801,14 @@ static const char * fs_glyph =
     "uniform sampler2D u_tex;\n"
     "uniform vec4 u_color;\n"
     "uniform float u_opa;\n"
+    "uniform float u_sdf;\n"
+    "uniform float u_smooth;\n"
     "void main(){\n"
-    "  float a=texture2D(u_tex,v_uv).a*u_opa*u_color.a;\n"
+    "  float d=texture2D(u_tex,v_uv).a;\n"
+    "  float a;\n"
+    "  if(u_sdf>0.5){ a=smoothstep(0.5-u_smooth,0.5+u_smooth,d); }\n"
+    "  else { a=d; }\n"
+    "  a*=u_opa*u_color.a;\n"
     "  if(a<0.004) discard;\n"
     "  gl_FragColor=vec4(u_color.rgb,a);\n"
     "}\n";
@@ -928,6 +942,8 @@ void lv_gpu_renderer_gles2_2d_init(void)
         loc_glyph_sampler = glGetUniformLocation(prog_glyph, "u_tex");
         loc_glyph_color = glGetUniformLocation(prog_glyph, "u_color");
         loc_glyph_opa = glGetUniformLocation(prog_glyph, "u_opa");
+        loc_glyph_sdf = glGetUniformLocation(prog_glyph, "u_sdf");
+        loc_glyph_smooth = glGetUniformLocation(prog_glyph, "u_smooth");
         GL_CALL(glBindAttribLocation(prog_glyph, 1, "a_uv"));
     }
     prog_img = link_program(vs_tex, fs_img);
@@ -2051,10 +2067,11 @@ static void draw_glyph_quad(const lv_area_t * letter_coords, int32_t dw, int32_t
                              const lv_gpu_glyph_atlas_uv_t * uv, lv_color_t color, lv_opa_t opa)
 {
     if(!prog_glyph || !uv || uv->tex == 0) return;
-    float x1 = (float)letter_coords->x1;
-    float y1 = (float)letter_coords->y1;
-    float x2 = (float)letter_coords->x2 + 1.0f;
-    float y2 = (float)letter_coords->y2 + 1.0f;
+    const float pad = uv->sdf ? 4.0f : 0.0f;
+    float x1 = (float)letter_coords->x1 - pad;
+    float y1 = (float)letter_coords->y1 - pad;
+    float x2 = (float)letter_coords->x2 + 1.0f + pad;
+    float y2 = (float)letter_coords->y2 + 1.0f + pad;
     float pos[] = { x1, y1, x2, y1, x2, y2, x1, y1, x2, y2, x1, y2 };
     float uvs[] = { uv->u0, uv->v0, uv->u1, uv->v0, uv->u1, uv->v1,
                     uv->u0, uv->v0, uv->u1, uv->v1, uv->u0, uv->v1 };
@@ -2063,6 +2080,8 @@ static void draw_glyph_quad(const lv_area_t * letter_coords, int32_t dw, int32_t
     GL_CALL(glUniform2f(loc_glyph_disp, (float)dw, (float)dh));
     gpu_comp_uniform_rgba(loc_glyph_color, c32);
     GL_CALL(glUniform1f(loc_glyph_opa, (float)opa / (float)LV_OPA_COVER));
+    GL_CALL(glUniform1f(loc_glyph_sdf, uv->sdf ? 1.0f : 0.0f));
+    GL_CALL(glUniform1f(loc_glyph_smooth, 0.06f));
     GL_CALL(glActiveTexture(GL_TEXTURE0));
     GL_CALL(glBindTexture(GL_TEXTURE_2D, uv->tex));
     GL_CALL(glUniform1i(loc_glyph_sampler, 0));
@@ -2204,6 +2223,62 @@ static bool upload_decoded_image(const lv_draw_buf_t * decoded, unsigned int * t
     return true;
 }
 
+static bool draw_tex_transformed(unsigned int tex, int32_t img_w, int32_t img_h,
+                                  int32_t x, int32_t y, const lv_draw_image_dsc_t * dsc,
+                                  int32_t dw, int32_t dh)
+{
+    if(!prog_img || !dsc || tex == 0 || img_w < 1 || img_h < 1 || dw < 1 || dh < 1) return false;
+
+    lv_matrix_t matrix;
+    image_dsc_to_matrix(&matrix, x, y, dsc);
+
+    float x0, y0, x1, y1, x2, y2, x3, y3;
+    matrix_transform_point(&matrix, 0.f, 0.f, &x0, &y0);
+    matrix_transform_point(&matrix, (float)img_w, 0.f, &x1, &y1);
+    matrix_transform_point(&matrix, (float)img_w, (float)img_h, &x2, &y2);
+    matrix_transform_point(&matrix, 0.f, (float)img_h, &x3, &y3);
+    float pos[] = { x0, y0, x1, y1, x2, y2, x0, y0, x2, y2, x3, y3 };
+    float uv[] = {
+        0.f, 0.f, 1.f, 0.f, 1.f, 1.f,
+        0.f, 0.f, 1.f, 1.f, 0.f, 1.f,
+    };
+
+    apply_blend_mode(dsc->blend_mode);
+    const bool use_recolor = dsc->recolor_opa > LV_OPA_MIN;
+    GL_CALL(glUseProgram(prog_img));
+    GL_CALL(glUniform2f(loc_img_disp, (float)dw, (float)dh));
+    GL_CALL(glUniform1f(loc_img_opa, (float)dsc->opa / (float)LV_OPA_COVER));
+    if(use_recolor) {
+        lv_color32_t rc = lv_color_to_32(dsc->recolor, dsc->recolor_opa);
+        gpu_comp_uniform_rgba(loc_img_recolor, rc);
+        GL_CALL(glUniform1i(loc_img_use_recolor, 1));
+    }
+    else {
+        GL_CALL(glUniform1i(loc_img_use_recolor, 0));
+    }
+    draw_uv_quad(dw, dh, prog_img, loc_img_disp, loc_img_sampler, pos, uv, tex);
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    return true;
+}
+
+bool lv_gpu_renderer_gles2_2d_composite_layer(unsigned int dst_tex, unsigned int src_tex,
+                                               int32_t src_w, int32_t src_h,
+                                               const lv_draw_image_dsc_t * dsc, const lv_area_t * coords,
+                                               int32_t dw, int32_t dh)
+{
+    if(!dsc || !coords || dst_tex == 0 || src_tex == 0 || src_w < 1 || src_h < 1 || dw < 1 || dh < 1) {
+        return false;
+    }
+    if(!lv_gpu_renderer_tex_fbo_bind_complete(dst_tex)) return false;
+
+    g_gpu2d_dw = dw;
+    g_gpu2d_dh = dh;
+    lv_opengles_reinit_state();
+    const bool ok = draw_tex_transformed(src_tex, src_w, src_h, coords->x1, coords->y1, dsc, dw, dh);
+    lv_gpu_renderer_restore_default_framebuffer();
+    return ok;
+}
+
 static bool draw_image_gpu(const lv_area_t * coords, const lv_area_t * clip,
                             const lv_draw_image_dsc_t * dsc, int32_t dw, int32_t dh)
 {
@@ -2227,45 +2302,11 @@ static bool draw_image_gpu(const lv_area_t * coords, const lv_area_t * clip,
 
     const int32_t img_w = decoder_dsc.decoded->header.w;
     const int32_t img_h = decoder_dsc.decoded->header.h;
-    lv_matrix_t matrix;
-    image_dsc_to_matrix(&matrix, coords->x1, coords->y1, dsc);
-
-    float x0, y0, x1, y1, x2, y2, x3, y3;
-    matrix_transform_point(&matrix, 0.f, 0.f, &x0, &y0);
-    matrix_transform_point(&matrix, (float)img_w, 0.f, &x1, &y1);
-    matrix_transform_point(&matrix, (float)img_w, (float)img_h, &x2, &y2);
-    matrix_transform_point(&matrix, 0.f, (float)img_h, &x3, &y3);
-    float pos[] = { x0, y0, x1, y1, x2, y2, x0, y0, x2, y2, x3, y3 };
-    float uv[] = {
-        0.f, 0.f, 1.f, 0.f, 1.f, 1.f,
-        0.f, 0.f, 1.f, 1.f, 0.f, 1.f,
-    };
-
-    if(dsc->blend_mode != LV_BLEND_MODE_SUBTRACTIVE && dsc->blend_mode != LV_BLEND_MODE_DIFFERENCE) {
-        apply_blend_mode(dsc->blend_mode);
-    }
-    else {
-        GL_CALL(glEnable(GL_BLEND));
-        GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
-    }
-    const bool use_recolor = dsc->recolor_opa > LV_OPA_MIN;
-    GL_CALL(glUseProgram(prog_img));
-    GL_CALL(glUniform2f(loc_img_disp, (float)dw, (float)dh));
-    GL_CALL(glUniform1f(loc_img_opa, (float)dsc->opa / (float)LV_OPA_COVER));
-    if(use_recolor) {
-        lv_color32_t rc = lv_color_to_32(dsc->recolor, dsc->recolor_opa);
-        gpu_comp_uniform_rgba(loc_img_recolor, rc);
-        GL_CALL(glUniform1i(loc_img_use_recolor, 1));
-    }
-    else {
-        GL_CALL(glUniform1i(loc_img_use_recolor, 0));
-    }
-    draw_uv_quad(dw, dh, prog_img, loc_img_disp, loc_img_sampler, pos, uv, tex);
-    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    const bool ok = draw_tex_transformed(tex, img_w, img_h, coords->x1, coords->y1, dsc, dw, dh);
 
     GL_CALL(glDeleteTextures(1, &tex));
     lv_image_decoder_close(&decoder_dsc);
-    return true;
+    return ok;
 }
 
 #if LV_USE_VECTOR_GRAPHIC && LV_USE_THORVG

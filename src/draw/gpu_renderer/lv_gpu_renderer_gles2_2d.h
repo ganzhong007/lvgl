@@ -136,6 +136,12 @@ uint32_t lv_gpu_renderer_gles2_2d_render_cmd_list(const lv_gpu_renderer_gles2_cm
                                                    unsigned int color_tex, int32_t dw, int32_t dh,
                                                    uint32_t * sw_raster_out);
 
+/** GPU blit layer/source texture onto dst FBO with image_dsc transform (rotation/scale/skew). */
+bool lv_gpu_renderer_gles2_2d_composite_layer(unsigned int dst_tex, unsigned int src_tex,
+                                               int32_t src_w, int32_t src_h,
+                                               const lv_draw_image_dsc_t * dsc, const lv_area_t * coords,
+                                               int32_t dw, int32_t dh);
+
 #endif /*LV_USE_DRAW_GPU_RENDERER*/
 
 #ifdef __cplusplus

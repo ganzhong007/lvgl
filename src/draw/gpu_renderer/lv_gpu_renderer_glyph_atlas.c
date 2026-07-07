@@ -13,11 +13,14 @@
 #include "lv_gpu_renderer_glyph_atlas.h"
 #include "../../drivers/opengles/lv_opengles_debug.h"
 #include "../../drivers/opengles/lv_opengles_private.h"
+#include "../../stdlib/lv_mem.h"
 #include <string.h>
 
 #define LV_GPU_GLYPH_ATLAS_SIZE 1024
 #define LV_GPU_GLYPH_CACHE_MAX  512
-#define LV_GPU_GLYPH_PAD        1
+#define LV_GPU_GLYPH_PAD        4
+#define LV_GPU_GLYPH_SDF_PAD    4
+#define LV_GPU_GLYPH_SDF_INF    65535u
 
 typedef struct {
     const lv_font_t * font;
@@ -53,7 +56,7 @@ void lv_gpu_glyph_atlas_init(void)
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
     GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
 
-    uint8_t clear_px = 0;
+    uint8_t clear_px = 128;
     for(int32_t y = 0; y < LV_GPU_GLYPH_ATLAS_SIZE; y++) {
         GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, LV_GPU_GLYPH_ATLAS_SIZE, 1, 0, GL_ALPHA, GL_UNSIGNED_BYTE, &clear_px));
     }
@@ -80,6 +83,91 @@ static const lv_gpu_glyph_cache_entry_t * cache_find(const lv_font_t * font, uin
     return NULL;
 }
 
+static uint16_t chamfer_min(uint16_t a, uint16_t b, uint16_t cost)
+{
+    const uint32_t sum = (uint32_t)a + (uint32_t)cost + (uint32_t)b;
+    return sum >= LV_GPU_GLYPH_SDF_INF ? LV_GPU_GLYPH_SDF_INF : (uint16_t)sum;
+}
+
+/** 8-bit SDF (128=edge) from A8 alpha using chamfer distance transform. */
+static bool a8_to_sdf(const uint8_t * src, int32_t w, int32_t h, int32_t src_stride,
+                      uint8_t * dst, int32_t dw, int32_t dh, int32_t dst_stride)
+{
+    if(w < 1 || h < 1 || dw < w || dh < h) return false;
+
+    const int32_t pad = LV_GPU_GLYPH_SDF_PAD;
+    uint16_t * dist_in = lv_malloc((uint32_t)dw * (uint32_t)dh * sizeof(uint16_t));
+    uint16_t * dist_out = lv_malloc((uint32_t)dw * (uint32_t)dh * sizeof(uint16_t));
+    if(!dist_in || !dist_out) {
+        lv_free(dist_in);
+        lv_free(dist_out);
+        return false;
+    }
+
+    for(int32_t y = 0; y < dh; y++) {
+        for(int32_t x = 0; x < dw; x++) {
+            const int32_t idx = y * dw + x;
+            uint8_t a = 0;
+            if(x >= pad && y >= pad && x < pad + w && y < pad + h) {
+                a = src[(y - pad) * src_stride + (x - pad)];
+            }
+            const bool inside = a > 127;
+            dist_in[idx] = inside ? 0 : LV_GPU_GLYPH_SDF_INF;
+            dist_out[idx] = inside ? LV_GPU_GLYPH_SDF_INF : 0;
+        }
+    }
+
+    /* Forward pass */
+    for(int32_t y = 0; y < dh; y++) {
+        for(int32_t x = 0; x < dw; x++) {
+            const int32_t idx = y * dw + x;
+            if(x > 0) dist_in[idx] = chamfer_min(dist_in[idx], dist_in[idx - 1], 3);
+            if(y > 0) dist_in[idx] = chamfer_min(dist_in[idx], dist_in[idx - dw], 3);
+            if(x > 0 && y > 0) dist_in[idx] = chamfer_min(dist_in[idx], dist_in[idx - dw - 1], 4);
+            if(x + 1 < dw && y > 0) dist_in[idx] = chamfer_min(dist_in[idx], dist_in[idx - dw + 1], 4);
+
+            if(x > 0) dist_out[idx] = chamfer_min(dist_out[idx], dist_out[idx - 1], 3);
+            if(y > 0) dist_out[idx] = chamfer_min(dist_out[idx], dist_out[idx - dw], 3);
+            if(x > 0 && y > 0) dist_out[idx] = chamfer_min(dist_out[idx], dist_out[idx - dw - 1], 4);
+            if(x + 1 < dw && y > 0) dist_out[idx] = chamfer_min(dist_out[idx], dist_out[idx - dw + 1], 4);
+        }
+    }
+
+    /* Backward pass */
+    for(int32_t y = dh - 1; y >= 0; y--) {
+        for(int32_t x = dw - 1; x >= 0; x--) {
+            const int32_t idx = y * dw + x;
+            if(x + 1 < dw) dist_in[idx] = chamfer_min(dist_in[idx], dist_in[idx + 1], 3);
+            if(y + 1 < dh) dist_in[idx] = chamfer_min(dist_in[idx], dist_in[idx + dw], 3);
+            if(x + 1 < dw && y + 1 < dh) dist_in[idx] = chamfer_min(dist_in[idx], dist_in[idx + dw + 1], 4);
+            if(x > 0 && y + 1 < dh) dist_in[idx] = chamfer_min(dist_in[idx], dist_in[idx + dw - 1], 4);
+
+            if(x + 1 < dw) dist_out[idx] = chamfer_min(dist_out[idx], dist_out[idx + 1], 3);
+            if(y + 1 < dh) dist_out[idx] = chamfer_min(dist_out[idx], dist_out[idx + dw], 3);
+            if(x + 1 < dw && y + 1 < dh) dist_out[idx] = chamfer_min(dist_out[idx], dist_out[idx + dw + 1], 4);
+            if(x > 0 && y + 1 < dh) dist_out[idx] = chamfer_min(dist_out[idx], dist_out[idx + dw - 1], 4);
+        }
+    }
+
+    for(int32_t y = 0; y < dh; y++) {
+        uint8_t * row = dst + (uint32_t)y * (uint32_t)dst_stride;
+        for(int32_t x = 0; x < dw; x++) {
+            const int32_t idx = y * dw + x;
+            const float din = (float)dist_in[idx] / 4.0f;
+            const float dout = (float)dist_out[idx] / 4.0f;
+            float sd = dout - din;
+            if(sd < -32.0f) sd = -32.0f;
+            if(sd > 32.0f) sd = 32.0f;
+            const int32_t v = 128 + (int32_t)(sd * 4.0f);
+            row[x] = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+        }
+    }
+
+    lv_free(dist_in);
+    lv_free(dist_out);
+    return true;
+}
+
 bool lv_gpu_glyph_atlas_acquire(const lv_font_t * font, uint32_t glyph_id,
                                  const uint8_t * bitmap, int32_t bw, int32_t bh, int32_t stride,
                                  lv_gpu_glyph_atlas_uv_t * out)
@@ -93,8 +181,11 @@ bool lv_gpu_glyph_atlas_acquire(const lv_font_t * font, uint32_t glyph_id,
         return true;
     }
 
-    const int32_t need_w = bw + LV_GPU_GLYPH_PAD * 2;
-    const int32_t need_h = bh + LV_GPU_GLYPH_PAD * 2;
+    const int32_t pad = LV_GPU_GLYPH_SDF_PAD;
+    const int32_t sdf_w = bw + pad * 2;
+    const int32_t sdf_h = bh + pad * 2;
+    const int32_t need_w = sdf_w + LV_GPU_GLYPH_PAD * 2;
+    const int32_t need_h = sdf_h + LV_GPU_GLYPH_PAD * 2;
 
     if(need_w >= LV_GPU_GLYPH_ATLAS_SIZE - LV_GPU_GLYPH_PAD) return false;
 
@@ -111,16 +202,24 @@ bool lv_gpu_glyph_atlas_acquire(const lv_font_t * font, uint32_t glyph_id,
         g_shelf_h = 0;
     }
 
+    uint8_t * sdf_buf = lv_malloc((uint32_t)sdf_w * (uint32_t)sdf_h);
+    if(!sdf_buf) return false;
+    if(!a8_to_sdf(bitmap, bw, bh, stride, sdf_buf, sdf_w, sdf_h, sdf_w)) {
+        lv_free(sdf_buf);
+        return false;
+    }
+
     const int32_t dst_x = g_shelf_x + LV_GPU_GLYPH_PAD;
     const int32_t dst_y = g_shelf_y + LV_GPU_GLYPH_PAD;
 
     GL_CALL(glBindTexture(GL_TEXTURE_2D, g_atlas_tex));
     GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-    for(int32_t row = 0; row < bh; row++) {
-        GL_CALL(glTexSubImage2D(GL_TEXTURE_2D, 0, dst_x, dst_y + row, bw, 1, GL_ALPHA, GL_UNSIGNED_BYTE,
-                                bitmap + (uint32_t)row * (uint32_t)stride));
+    for(int32_t row = 0; row < sdf_h; row++) {
+        GL_CALL(glTexSubImage2D(GL_TEXTURE_2D, 0, dst_x, dst_y + row, sdf_w, 1, GL_ALPHA, GL_UNSIGNED_BYTE,
+                                sdf_buf + (uint32_t)row * (uint32_t)sdf_w));
     }
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    lv_free(sdf_buf);
 
     g_shelf_x += need_w;
     if(need_h > g_shelf_h) g_shelf_h = need_h;
@@ -130,8 +229,9 @@ bool lv_gpu_glyph_atlas_acquire(const lv_font_t * font, uint32_t glyph_id,
     const float inv = 1.0f / (float)LV_GPU_GLYPH_ATLAS_SIZE;
     uv.u0 = (float)dst_x * inv;
     uv.v0 = (float)dst_y * inv;
-    uv.u1 = (float)(dst_x + bw) * inv;
-    uv.v1 = (float)(dst_y + bh) * inv;
+    uv.u1 = (float)(dst_x + sdf_w) * inv;
+    uv.v1 = (float)(dst_y + sdf_h) * inv;
+    uv.sdf = 1;
     *out = uv;
 
     if(g_cache_count < LV_GPU_GLYPH_CACHE_MAX) {

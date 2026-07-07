@@ -19,6 +19,8 @@ typedef struct {
     float v0;
     float u1;
     float v1;
+    /** 1 when atlas stores 8-bit SDF (128=edge), 0 for raw A8 alpha. */
+    uint8_t sdf;
 } lv_gpu_glyph_atlas_uv_t;
 
 void lv_gpu_glyph_atlas_init(void);

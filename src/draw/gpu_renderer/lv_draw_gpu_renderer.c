@@ -581,21 +581,21 @@ bool lv_gpu_renderer_composite_layer_to_tex(unsigned int tex_id, const lv_draw_i
     if(!layer_to_draw) return false;
 
     const unsigned int layer_tex_gpu = lv_gpu_renderer_layer_tex(layer_to_draw);
+    int32_t lw = lv_area_get_width(&layer_to_draw->buf_area);
+    int32_t lh = lv_area_get_height(&layer_to_draw->buf_area);
+    if(lw < 1 || lh < 1) {
+        lw = lv_area_get_width(coords);
+        lh = lv_area_get_height(coords);
+    }
+
     if(layer_tex_gpu != 0) {
-        if(!lv_gpu_renderer_tex_fbo_bind_complete(tex_id)) {
-            return false;
-        }
-        lv_opengles_reinit_state();
-        lv_opengles_render_texture_rbswap(layer_tex_gpu, coords, draw_dsc->opa, dw, dh, &draw_area, false, false);
-        lv_gpu_renderer_restore_default_framebuffer();
-        return true;
+        return lv_gpu_renderer_gles2_2d_composite_layer(tex_id, layer_tex_gpu, lw, lh,
+                                                         draw_dsc, coords, dw, dh);
     }
 
     if(!layer_to_draw->draw_buf || !layer_to_draw->draw_buf->data) return false;
 
     lv_draw_buf_t * buf = layer_to_draw->draw_buf;
-    int32_t lw = lv_area_get_width(&layer_to_draw->buf_area);
-    int32_t lh = lv_area_get_height(&layer_to_draw->buf_area);
     if(lw < 1 || lh < 1) return false;
 
     lv_color_format_t cf = buf->header.cf;
@@ -617,13 +617,12 @@ bool lv_gpu_renderer_composite_layer_to_tex(unsigned int tex_id, const lv_draw_i
         return false;
     }
 
-    lv_opengles_reinit_state();
-    lv_opengles_render_texture_rbswap(layer_tex, coords, draw_dsc->opa, dw, dh, &draw_area, false, false);
+    const bool ok = lv_gpu_renderer_gles2_2d_composite_layer(tex_id, layer_tex, lw, lh,
+                                                                draw_dsc, coords, dw, dh);
 
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
     GL_CALL(glDeleteTextures(1, &layer_tex));
-    lv_gpu_renderer_restore_default_framebuffer();
-    return true;
+    return ok;
 #endif
 }
 
