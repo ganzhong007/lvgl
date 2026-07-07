@@ -28,6 +28,8 @@
 #include "../../include/lvgl/draw/lv_draw_label.h"
 #include "../../include/lvgl/draw/lv_draw_image.h"
 #include "../../include/lvgl/draw/lv_draw_rect.h"
+#include "../../include/lvgl/draw/lv_draw_line.h"
+#include "../../include/lvgl/draw/lv_draw_arc.h"
 #include "../../3d/lv_3d_internal.h"
 
 #if LV_USE_3D && LV_USE_SNAPSHOT
@@ -100,7 +102,7 @@ static bool fg_space_enabled(lv_gpu_fg_space_t space)
         case LV_GPU_UI_MODE_APP_FULLSCREEN:
             return space == LV_GPU_FG_FULLSCREEN_APP || space == LV_GPU_FG_SCREEN;
         case LV_GPU_UI_MODE_WIREFRAME_BENCH:
-            return space == LV_GPU_FG_VIEWPORT_3D;
+            return space == LV_GPU_FG_VIEWPORT_3D || space == LV_GPU_FG_OVERLAY;
         case LV_GPU_UI_MODE_AR_LAUNCHER:
         case LV_GPU_UI_MODE_NAV_AR:
             return space != LV_GPU_FG_FULLSCREEN_APP;
@@ -126,6 +128,20 @@ static int fg_pass_rank(lv_gpu_fg_space_t space)
         default:
             return 60;
     }
+}
+
+static bool fg_unified_pass_active(void)
+{
+    if(!lv_gpu_renderer_unified_pass_enabled()) return false;
+    const lv_gpu_ui_mode_t mode = lv_gpu_renderer_fg_get_ui_mode();
+    return mode == LV_GPU_UI_MODE_NAV_AR;
+}
+
+static bool fg_rank_is_overlay_only(int min_rank, int max_rank)
+{
+    if(min_rank < 0 || max_rank < 0) return false;
+    const int overlay_rank = fg_pass_rank(LV_GPU_FG_OVERLAY);
+    return min_rank >= overlay_rank && max_rank <= overlay_rank;
 }
 
 static uint32_t fg_shader_key_2d(const lv_gpu_renderer_gles2_cmd_t * cmd)
@@ -269,12 +285,16 @@ bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
     switch(task->type) {
         case LV_DRAW_TASK_TYPE_FILL: {
             lv_draw_fill_dsc_t * fd = lv_draw_task_get_fill_dsc(t);
-            if(!fd || fd->grad.dir != LV_GRAD_DIR_NONE) return false;
-            if(fd->opa > LV_OPA_80) {
-                lv_color32_t c = lv_color_to_32(fd->color, fd->opa);
-                if(c.red > 240 && c.green > 240 && c.blue > 240) return false;
+            if(!fd) return false;
+            if(fd->grad.dir == LV_GRAD_DIR_NONE) {
+                if(fd->opa > LV_OPA_80) {
+                    lv_color32_t c = lv_color_to_32(fd->color, fd->opa);
+                    if(c.red > 240 && c.green > 240 && c.blue > 240) return false;
+                }
+                return true;
             }
-            return true;
+            if(fd->grad.dir == LV_GRAD_DIR_RADIAL || fd->grad.dir == LV_GRAD_DIR_CONICAL) return true;
+            return fd->grad.stops_count >= 1;
         }
         case LV_DRAW_TASK_TYPE_BORDER: {
             lv_draw_border_dsc_t * bd = lv_draw_task_get_border_dsc(t);
@@ -292,6 +312,30 @@ bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
             lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(t);
             return id && id->rotation == 0 && id->scale_x == LV_SCALE_NONE && id->scale_y == LV_SCALE_NONE
                    && id->skew_x == 0 && id->skew_y == 0 && id->blend_mode == LV_BLEND_MODE_NORMAL;
+        }
+        case LV_DRAW_TASK_TYPE_LINE: {
+            lv_draw_line_dsc_t * ld = lv_draw_task_get_line_dsc(t);
+            return ld && ld->width > 0 && ld->opa > LV_OPA_MIN;
+        }
+        case LV_DRAW_TASK_TYPE_ARC: {
+            lv_draw_arc_dsc_t * ad = lv_draw_task_get_arc_dsc(t);
+            return ad && ad->width > 0 && ad->opa > LV_OPA_MIN;
+        }
+        case LV_DRAW_TASK_TYPE_BOX_SHADOW: {
+            lv_draw_box_shadow_dsc_t * sd = lv_draw_task_get_box_shadow_dsc(t);
+            return sd && sd->width > 0 && sd->opa > LV_OPA_MIN;
+        }
+        case LV_DRAW_TASK_TYPE_TRIANGLE: {
+            lv_draw_triangle_dsc_t * td = lv_draw_task_get_triangle_dsc(t);
+            return td && td->opa > LV_OPA_MIN;
+        }
+        case LV_DRAW_TASK_TYPE_MASK_RECTANGLE: {
+            lv_draw_mask_rect_dsc_t * md = lv_draw_task_get_mask_rect_dsc(t);
+            return md && lv_color_format_has_alpha(task->target_layer->color_format);
+        }
+        case LV_DRAW_TASK_TYPE_BLUR: {
+            lv_draw_blur_dsc_t * bd = lv_draw_task_get_blur_dsc(t);
+            return bd && bd->blur_radius > 0;
         }
         default:
             return false;
@@ -387,7 +431,7 @@ bool lv_gpu_renderer_fg_queue_2d_task(lv_draw_task_t * t)
         case LV_DRAW_TASK_TYPE_FILL: {
             lv_draw_fill_dsc_t * fd = lv_draw_task_get_fill_dsc(t);
             if(!fd) return false;
-            return lv_gpu_renderer_gles2_2d_queue_fill(&t->area, &t->clip_area, fd->color, fd->opa, fd->radius);
+            return lv_gpu_renderer_gles2_2d_queue_fill_dsc(&t->area, &t->clip_area, fd);
         }
         case LV_DRAW_TASK_TYPE_BORDER: {
             lv_draw_border_dsc_t * bd = lv_draw_task_get_border_dsc(t);
@@ -409,6 +453,36 @@ bool lv_gpu_renderer_fg_queue_2d_task(lv_draw_task_t * t)
             lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(t);
             if(!id) return false;
             return lv_gpu_renderer_gles2_2d_queue_image(&t->area, &t->clip_area, id);
+        }
+        case LV_DRAW_TASK_TYPE_LINE: {
+            lv_draw_line_dsc_t * ld = lv_draw_task_get_line_dsc(t);
+            if(!ld) return false;
+            return lv_gpu_renderer_gles2_2d_queue_line(&t->area, &t->clip_area, ld);
+        }
+        case LV_DRAW_TASK_TYPE_ARC: {
+            lv_draw_arc_dsc_t * ad = lv_draw_task_get_arc_dsc(t);
+            if(!ad) return false;
+            return lv_gpu_renderer_gles2_2d_queue_arc(&t->area, &t->clip_area, ad);
+        }
+        case LV_DRAW_TASK_TYPE_BOX_SHADOW: {
+            lv_draw_box_shadow_dsc_t * sd = lv_draw_task_get_box_shadow_dsc(t);
+            if(!sd) return false;
+            return lv_gpu_renderer_gles2_2d_queue_box_shadow(&t->area, &t->clip_area, sd);
+        }
+        case LV_DRAW_TASK_TYPE_TRIANGLE: {
+            lv_draw_triangle_dsc_t * td = lv_draw_task_get_triangle_dsc(t);
+            if(!td) return false;
+            return lv_gpu_renderer_gles2_2d_queue_triangle(&t->area, &t->clip_area, td);
+        }
+        case LV_DRAW_TASK_TYPE_MASK_RECTANGLE: {
+            lv_draw_mask_rect_dsc_t * md = lv_draw_task_get_mask_rect_dsc(t);
+            if(!md) return false;
+            return lv_gpu_renderer_gles2_2d_queue_mask_rect(&t->area, &t->clip_area, md);
+        }
+        case LV_DRAW_TASK_TYPE_BLUR: {
+            lv_draw_blur_dsc_t * bd = lv_draw_task_get_blur_dsc(t);
+            if(!bd) return false;
+            return lv_gpu_renderer_gles2_2d_queue_blur(&t->area, &t->clip_area, bd, &t->area);
         }
         default:
             return false;
@@ -479,6 +553,7 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     g_fg_stats.sw_upload_bytes = 0;
     g_fg_stats.overdraw_pixels = 0;
     g_fg_stats.skipped_static_3d = 0;
+    g_fg_stats.unified_overlay_merged = 0;
 
     if(g_node_count == 0) {
         lv_gpu_renderer_fg_restore_last_viewport();
@@ -498,6 +573,10 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     lv_3d_plane_upload_all();
 #endif
 
+    if(fg_unified_pass_active()) {
+        lv_gpu_renderer_tex_fbo_attach_depth(dw, dh);
+    }
+
 #if !LV_USE_EGL
     GL_CALL(glBindVertexArray(0));
     GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
@@ -514,6 +593,9 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     lv_gpu_renderer_gles2_cmd_t cmd_batch[LV_GPU_FG_MAX_NODES];
     uint32_t cmd_batch_count = 0;
     int active_2d_rank = -1;
+    int cmd_batch_min_rank = -1;
+    int cmd_batch_max_rank = -1;
+    bool viewport_drawn = false;
 
     for(uint32_t si = 0; si < g_sorted_count; si++) {
         const lv_gpu_fg_node_t * node = &g_nodes[g_sorted_idx[si]];
@@ -533,8 +615,12 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
                 g_fg_stats.fbo_switches++;
                 g_fg_stats.batch_count++;
                 cmd_batch_count = 0;
+                cmd_batch_min_rank = -1;
+                cmd_batch_max_rank = -1;
             }
             active_2d_rank = rank;
+            if(cmd_batch_min_rank < 0 || rank < cmd_batch_min_rank) cmd_batch_min_rank = rank;
+            if(rank > cmd_batch_max_rank) cmd_batch_max_rank = rank;
             if(cmd_batch_count < LV_GPU_FG_MAX_NODES) {
                 cmd_batch[cmd_batch_count++] = node->u.cmd_2d;
             }
@@ -603,6 +689,7 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
             item_total += n;
             g_fg_stats.draw_calls += n;
             g_fg_stats.fbo_switches++;
+            viewport_drawn = true;
 
             lv_3d_scene_clear_dirty((lv_obj_t *)scene);
             lv_3d_camera_clear_dirty((lv_obj_t *)camera);
@@ -636,13 +723,25 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
     }
 
     if(cmd_batch_count > 0) {
-        g_fg_stats.pass_count++;
+        const bool merge_overlay = fg_unified_pass_active() && viewport_drawn
+                                   && fg_rank_is_overlay_only(cmd_batch_min_rank, cmd_batch_max_rank);
+        if(!merge_overlay) {
+            g_fg_stats.pass_count++;
+        }
+        else {
+            g_fg_stats.unified_overlay_merged = 1;
+        }
         uint32_t sw_r = 0;
         uint32_t rendered = lv_gpu_renderer_gles2_2d_render_cmd_list(cmd_batch, cmd_batch_count, tex_id, dw, dh, &sw_r);
-        if(gpu_2d_out) *gpu_2d_out = rendered;
-        if(sw_raster_out) *sw_raster_out = sw_r;
+        if(gpu_2d_out) {
+            if(*gpu_2d_out == 0) *gpu_2d_out = rendered;
+            else *gpu_2d_out += rendered;
+        }
+        if(sw_raster_out) *sw_raster_out += sw_r;
         g_fg_stats.draw_calls += rendered;
-        g_fg_stats.fbo_switches++;
+        if(!merge_overlay) {
+            g_fg_stats.fbo_switches++;
+        }
         g_fg_stats.batch_count++;
     }
 

@@ -287,7 +287,6 @@ static void flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_m
 #else
         lv_gpu_renderer_flush_3d(disp);
         lv_gpu_renderer_notify_frame_ready(disp);
-        lv_gpu_renderer_overlay_2d_fb(disp);
 #endif
 #else
         lv_color_format_t cf = lv_display_get_color_format(disp);

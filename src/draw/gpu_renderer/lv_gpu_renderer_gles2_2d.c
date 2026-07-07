@@ -22,8 +22,16 @@
 #include "../../include/lvgl/draw/lv_draw_label.h"
 #include "../../include/lvgl/draw/lv_draw_image.h"
 #include "../../include/lvgl/draw/lv_draw_rect.h"
+#include "../../include/lvgl/draw/lv_draw_line.h"
+#include "../../include/lvgl/draw/lv_draw_arc.h"
+#include "../../include/lvgl/draw/lv_draw_triangle.h"
+#include "../../include/lvgl/draw/lv_draw_mask.h"
+#include "../../include/lvgl/draw/lv_draw_blur.h"
+#include "../../include/lvgl/draw/lv_grad.h"
 #include "../../misc/lv_color.h"
 #include "../../misc/lv_area_private.h"
+#include "../../misc/lv_math.h"
+#include "../../draw/sw/lv_draw_sw_grad.h"
 #include <math.h>
 #include <string.h>
 
@@ -38,14 +46,101 @@ static uint32_t g_raster_nest;
 static unsigned int prog_fill;
 static int loc_fill_disp;
 static int loc_fill_color;
+static int loc_fill_color1;
 static int loc_fill_rect;
 static int loc_fill_radius;
+static int loc_fill_grad_mode;
+static int loc_fill_grad_p0;
+static int loc_fill_grad_p1;
+
+static unsigned int prog_line;
+static int loc_line_disp;
+static int loc_line_p1;
+static int loc_line_p2;
+static int loc_line_width;
+static int loc_line_color;
+static int loc_line_round;
+static int loc_line_dash_on;
+static int loc_line_dash_gap;
+static int loc_line_has_dash;
+
+static unsigned int prog_arc;
+static int loc_arc_disp;
+static int loc_arc_center;
+static int loc_arc_radius;
+static int loc_arc_width;
+static int loc_arc_angles;
+static int loc_arc_color;
+static int loc_arc_round;
+
+static unsigned int prog_shadow;
+static int loc_shadow_disp;
+static int loc_shadow_core;
+static int loc_shadow_radius;
+static int loc_shadow_color;
+static int loc_shadow_blur;
+static int loc_shadow_bg_cover;
+
+static unsigned int prog_tri;
+static int loc_tri_disp;
+static int loc_tri_p0;
+static int loc_tri_p1;
+static int loc_tri_p2;
+static int loc_tri_color;
+static int loc_tri_color1;
+static int loc_tri_grad_mode;
+static int loc_tri_grad_p0;
+static int loc_tri_grad_p1;
+static int loc_tri_grad_lut;
+static int loc_tri_grad_extend;
+static int loc_tri_rad_x0;
+static int loc_tri_rad_y0;
+static int loc_tri_rad_r0;
+static int loc_tri_rad_a4;
+static int loc_tri_rad_bpx;
+static int loc_tri_rad_bpy;
+static int loc_tri_rad_bc;
+static int loc_tri_rad_inv_dr;
+static int loc_tri_con_cx;
+static int loc_tri_con_cy;
+static int loc_tri_con_start;
+static int loc_tri_con_span;
+
+static unsigned int g_tri_grad_lut;
+
+static unsigned int prog_mask;
+static int loc_mask_disp;
+static int loc_mask_rect;
+static int loc_mask_radius;
+static int loc_mask_keep_out;
+
+static unsigned int prog_blur;
+static int loc_blur_disp;
+static int loc_blur_src;
+static int loc_blur_dir;
+static int loc_blur_radius;
+static int loc_blur_step;
+static int loc_blur_rect;
+static int loc_blur_corner;
+static int loc_blur_use_corner;
+
+static unsigned int g_blur_temp_tex;
+static unsigned int g_blur_temp_fbo;
+static int32_t g_blur_temp_w;
+static int32_t g_blur_temp_h;
 
 static unsigned int prog_tex;
 static int loc_tex_disp;
 static int loc_tex_sampler;
 
 static lv_draw_buf_t g_raster_buf;
+
+typedef struct {
+    const lv_draw_box_shadow_dsc_t * sd;
+    lv_area_t coords;
+} shadow_raster_ctx_t;
+
+static shadow_raster_ctx_t g_shadow_ctx;
 
 static bool shader_ok(unsigned int sh)
 {
@@ -100,18 +195,228 @@ static const char * vs_fill =
 static const char * fs_fill =
     "precision mediump float;\n"
     "uniform vec4 u_color;\n"
+    "uniform vec4 u_color1;\n"
     "uniform vec4 u_rect;\n"
     "uniform float u_radius;\n"
+    "uniform int u_grad_mode;\n"
+    "uniform vec2 u_grad_p0;\n"
+    "uniform vec2 u_grad_p1;\n"
     "varying vec2 v_p;\n"
     "void main(){\n"
-    "  vec2 h=u_rect.zw*0.5;\n"
-    "  vec2 c=u_rect.xy+h;\n"
+    "  vec4 base=u_color;\n"
+    "  if(u_grad_mode==1){ float t=clamp((v_p.y-u_rect.y)/max(u_rect.w,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==2){ float t=clamp((v_p.x-u_rect.x)/max(u_rect.z,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==3){\n"
+    "    vec2 se=u_grad_p1-u_grad_p0; float len2=dot(se,se);\n"
+    "    float t=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; base=mix(u_color,u_color1,t); }\n"
+    "  vec2 h=u_rect.zw*0.5; vec2 c=u_rect.xy+h;\n"
     "  vec2 q=abs(v_p-c)-h+u_radius;\n"
     "  float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-u_radius;\n"
-    "  float a=u_color.a*(1.0-smoothstep(-1.0,1.0,d));\n"
+    "  float a=base.a*(1.0-smoothstep(-1.0,1.0,d));\n"
+    "  if(a<0.004) discard;\n"
+    "  gl_FragColor=vec4(base.rgb,a);\n"
+    "}\n";
+static const char * fs_line =
+    "precision mediump float;\n"
+    "uniform vec4 u_color;\n"
+    "uniform vec2 u_p1;\n"
+    "uniform vec2 u_p2;\n"
+    "uniform float u_width;\n"
+    "uniform float u_round;\n"
+    "uniform float u_dash_on;\n"
+    "uniform float u_dash_gap;\n"
+    "uniform int u_has_dash;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  vec2 pa=v_p-u_p1; vec2 ba=u_p2-u_p1;\n"
+    "  float h=clamp(dot(pa,ba)/max(dot(ba,ba),0.0001),0.0,1.0);\n"
+    "  if(u_has_dash>0){\n"
+    "    float period=u_dash_on+u_dash_gap;\n"
+    "    if(period>0.0){ float along=h*length(ba); if(mod(along,period)>u_dash_on) discard; }\n"
+    "  }\n"
+    "  float dist=length(pa-ba*h);\n"
+    "  float half_w=u_width*0.5;\n"
+    "  float a=u_color.a*(1.0-smoothstep(half_w-0.75,half_w+0.25,dist));\n"
+    "  if(u_round>0.5){\n"
+    "    float d1=length(v_p-u_p1); float d2=length(v_p-u_p2);\n"
+    "    float ra=u_color.a*(1.0-smoothstep(half_w-0.75,half_w+0.25,min(d1,d2)));\n"
+    "    a=max(a,ra);\n"
+    "  }\n"
     "  if(a<0.004) discard;\n"
     "  gl_FragColor=vec4(u_color.rgb,a);\n"
     "}\n";
+static const char * fs_arc =
+    "precision mediump float;\n"
+    "uniform vec4 u_color;\n"
+    "uniform vec2 u_center;\n"
+    "uniform float u_radius;\n"
+    "uniform float u_width;\n"
+    "uniform vec2 u_angles;\n"
+    "uniform float u_round;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  vec2 d=v_p-u_center;\n"
+    "  float dist=length(d);\n"
+    "  float half_w=u_width*0.5;\n"
+    "  float ring=1.0-smoothstep(half_w-0.75,half_w+0.25,abs(dist-u_radius));\n"
+    "  if(ring<0.004) discard;\n"
+    "  float ang=degrees(atan(d.y,d.x)); if(ang<0.0) ang+=360.0;\n"
+    "  float a0=u_angles.x; float a1=u_angles.y;\n"
+    "  float in_arc=0.0;\n"
+    "  if(a0<=a1){ in_arc=step(a0,ang)*step(ang,a1); }\n"
+    "  else { in_arc=step(a0,ang)+step(ang,a1); in_arc=clamp(in_arc,0.0,1.0); }\n"
+    "  float a=u_color.a*ring*in_arc;\n"
+    "  if(u_round>0.5 && in_arc<0.5){\n"
+    "    vec2 p0=u_center+vec2(cos(radians(a0)),sin(radians(a0)))*u_radius;\n"
+    "    vec2 p1=u_center+vec2(cos(radians(a1)),sin(radians(a1)))*u_radius;\n"
+    "    float cap=1.0-smoothstep(half_w-0.75,half_w+0.25,min(length(v_p-p0),length(v_p-p1)));\n"
+    "    a=max(a,u_color.a*cap);\n"
+    "  }\n"
+    "  if(a<0.004) discard;\n"
+    "  gl_FragColor=vec4(u_color.rgb,a);\n"
+    "}\n";
+static const char * fs_shadow =
+    "precision mediump float;\n"
+    "uniform vec4 u_color;\n"
+    "uniform vec4 u_core;\n"
+    "uniform float u_radius;\n"
+    "uniform float u_blur;\n"
+    "uniform float u_bg_cover;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  vec2 c=u_core.xy+u_core.zw*0.5;\n"
+    "  vec2 h=u_core.zw*0.5; float r=min(u_radius,min(h.x,h.y));\n"
+    "  vec2 q=abs(v_p-c)-h+r; float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-r;\n"
+    "  if(u_bg_cover>0.5 && d<0.0) discard;\n"
+    "  float blur=max(u_blur,1.0);\n"
+    "  float a=u_color.a*(1.0-smoothstep(0.0,blur,d));\n"
+    "  if(a<0.004) discard;\n"
+    "  gl_FragColor=vec4(u_color.rgb,a);\n"
+    "}\n";
+static const char * fs_tri =
+    "precision mediump float;\n"
+    "uniform vec4 u_color;\n"
+    "uniform vec4 u_color1;\n"
+    "uniform vec2 u_p0;\n"
+    "uniform vec2 u_p1;\n"
+    "uniform vec2 u_p2;\n"
+    "uniform int u_grad_mode;\n"
+    "uniform vec2 u_grad_p0;\n"
+    "uniform vec2 u_grad_p1;\n"
+    "uniform sampler2D u_grad_lut;\n"
+    "uniform int u_grad_extend;\n"
+    "uniform float u_rad_x0;\n"
+    "uniform float u_rad_y0;\n"
+    "uniform float u_rad_r0;\n"
+    "uniform float u_rad_a4;\n"
+    "uniform float u_rad_bpx;\n"
+    "uniform float u_rad_bpy;\n"
+    "uniform float u_rad_bc;\n"
+    "uniform float u_rad_inv_dr;\n"
+    "uniform float u_con_cx;\n"
+    "uniform float u_con_cy;\n"
+    "uniform float u_con_start;\n"
+    "uniform float u_con_span;\n"
+    "varying vec2 v_p;\n"
+    "float tri_grad_extend(float t){\n"
+    "  if(u_grad_extend==0) return clamp(t,0.0,1.0);\n"
+    "  if(u_grad_extend==1){ float f=fract(t); return f<0.0?f+1.0:f; }\n"
+    "  float f=mod(t,2.0); return f>1.0?2.0-f:f;\n"
+    "}\n"
+    "void main(){\n"
+    "  vec2 v0=u_p2-u_p0; vec2 v1=u_p1-u_p0; vec2 v2=v_p-u_p0;\n"
+    "  float dot00=dot(v0,v0); float dot01=dot(v0,v1); float dot02=dot(v0,v2);\n"
+    "  float dot11=dot(v1,v1); float dot12=dot(v1,v2);\n"
+    "  float inv=1.0/(dot00*dot11-dot01*dot01);\n"
+    "  float u=(dot11*dot02-dot01*dot12)*inv; float v=(dot00*dot12-dot01*dot02)*inv;\n"
+    "  if(u<0.0||v<0.0||u+v>1.0) discard;\n"
+    "  vec4 base=u_color;\n"
+    "  if(u_grad_mode==1){ float t=clamp((v_p.y-u_grad_p0.y)/max(u_grad_p1.y-u_grad_p0.y,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==2){ float t=clamp((v_p.x-u_grad_p0.x)/max(u_grad_p1.x-u_grad_p0.x,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==3){\n"
+    "    vec2 se=u_grad_p1-u_grad_p0; float len2=dot(se,se);\n"
+    "    float t=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==4){\n"
+    "    float xp=v_p.x; float yp=v_p.y;\n"
+    "    float b=xp*u_rad_bpx+yp*u_rad_bpy+u_rad_bc;\n"
+    "    float c=u_rad_r0*u_rad_r0-(xp-u_rad_x0)*(xp-u_rad_x0)-(yp-u_rad_y0)*(yp-u_rad_y0);\n"
+    "    float t=0.0;\n"
+    "    if(abs(u_rad_a4)<0.000001){ t=abs(b)<0.000001?0.0:-c/b; }\n"
+    "    else if(abs(u_rad_bpx)>0.000001||abs(u_rad_bpy)>0.000001){\n"
+    "      float det=b*b-u_rad_a4*c; t=det<0.0?0.0:(-b+sqrt(det))/u_rad_a4; }\n"
+    "    else { t=(length(v_p-vec2(u_rad_x0,u_rad_y0))-u_rad_r0)*u_rad_inv_dr; }\n"
+    "    t=tri_grad_extend(t); base=texture2D(u_grad_lut,vec2(t,0.5)); }\n"
+    "  else if(u_grad_mode==5){\n"
+    "    float ang=degrees(atan(v_p.y-u_con_cy,v_p.x-u_con_cx)); if(ang<0.0) ang+=360.0;\n"
+    "    float t=tri_grad_extend((ang-u_con_start)/max(u_con_span,0.001));\n"
+    "    base=texture2D(u_grad_lut,vec2(t,0.5)); }\n"
+    "  if(base.a<0.004) discard;\n"
+    "  gl_FragColor=base;\n"
+    "}\n";
+static const char * fs_mask =
+    "precision mediump float;\n"
+    "uniform vec4 u_rect;\n"
+    "uniform float u_radius;\n"
+    "uniform float u_keep_out;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  float rx=u_rect.x; float ry=u_rect.y; float rw=u_rect.z; float rh=u_rect.w;\n"
+    "  vec2 c=vec2(rx,ry)+vec2(rw,rh)*0.5; vec2 h=vec2(rw,rh)*0.5; float r=u_radius;\n"
+    "  vec2 q=abs(v_p-c)-h+r; float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-r;\n"
+    "  float m=0.0;\n"
+    "  if(u_keep_out<0.5){\n"
+    "    if(v_p.x<rx||v_p.y<ry||v_p.x>rx+rw||v_p.y>ry+rh) m=1.0;\n"
+    "    else m=smoothstep(-1.0,1.0,d);\n"
+    "  } else {\n"
+    "    if(v_p.x>=rx&&v_p.y>=ry&&v_p.x<=rx+rw&&v_p.y<=ry+rh) m=1.0-smoothstep(-1.0,1.0,-d);\n"
+    "  }\n"
+    "  if(m<0.004) discard;\n"
+    "  gl_FragColor=vec4(0.0,0.0,0.0,m);\n"
+    "}\n";
+static const char * fs_blur =
+    "precision mediump float;\n"
+    "uniform sampler2D u_src;\n"
+    "uniform vec2 u_disp;\n"
+    "uniform vec2 u_dir;\n"
+    "uniform float u_radius;\n"
+    "uniform float u_step;\n"
+    "uniform vec4 u_rect;\n"
+    "uniform float u_corner_r;\n"
+    "uniform int u_use_corner;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  vec2 texel=1.0/u_disp; vec2 uv=v_p/u_disp;\n"
+    "  float step=max(u_step,1.0); float r=u_radius;\n"
+    "  int cnt=int(ceil(r/step)); if(cnt>32) cnt=32;\n"
+    "  vec4 acc=vec4(0.0); float wsum=0.0;\n"
+    "  for(int i=-32;i<=32;i++){\n"
+    "    if(i<-cnt||i>cnt) continue;\n"
+    "    acc+=texture2D(u_src,uv+u_dir*texel*float(i)*step); wsum+=1.0;\n"
+    "  }\n"
+    "  if(wsum<0.5) discard;\n"
+    "  gl_FragColor=acc/wsum;\n"
+    "  if(u_use_corner>0){\n"
+    "    vec2 c=u_rect.xy+u_rect.zw*0.5; vec2 h=u_rect.zw*0.5; float cr=u_corner_r;\n"
+    "    vec2 q=abs(v_p-c)-h+cr; float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-cr;\n"
+    "    if(d>0.5) discard;\n"
+    "    gl_FragColor.a*=1.0-smoothstep(-1.0,1.0,d);\n"
+    "  }\n"
+    "}\n";
+static const char * vs_line =
+    "attribute vec2 a_pos;\n"
+    "uniform vec2 u_disp;\n"
+    "varying vec2 v_p;\n"
+    "void main(){ v_p=a_pos; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
+static const char * vs_arc =
+    "attribute vec2 a_pos;\n"
+    "uniform vec2 u_disp;\n"
+    "varying vec2 v_p;\n"
+    "void main(){ v_p=a_pos; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
+static const char * vs_shadow =
+    "attribute vec2 a_pos;\n"
+    "uniform vec2 u_disp;\n"
+    "varying vec2 v_p;\n"
+    "void main(){ v_p=a_pos; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
 static const char * vs_tex =
     "attribute vec2 a_pos;\n"
     "attribute vec2 a_uv;\n"
@@ -133,18 +438,209 @@ static const char * vs_fill =
 static const char * fs_fill =
     "#version 120\n"
     "uniform vec4 u_color;\n"
+    "uniform vec4 u_color1;\n"
     "uniform vec4 u_rect;\n"
     "uniform float u_radius;\n"
+    "uniform int u_grad_mode;\n"
+    "uniform vec2 u_grad_p0;\n"
+    "uniform vec2 u_grad_p1;\n"
     "varying vec2 v_p;\n"
     "void main(){\n"
-    "  vec2 h=u_rect.zw*0.5;\n"
-    "  vec2 c=u_rect.xy+h;\n"
+    "  vec4 base=u_color;\n"
+    "  if(u_grad_mode==1){ float t=clamp((v_p.y-u_rect.y)/max(u_rect.w,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==2){ float t=clamp((v_p.x-u_rect.x)/max(u_rect.z,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==3){\n"
+    "    vec2 se=u_grad_p1-u_grad_p0; float len2=dot(se,se);\n"
+    "    float t=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; base=mix(u_color,u_color1,t); }\n"
+    "  vec2 h=u_rect.zw*0.5; vec2 c=u_rect.xy+h;\n"
     "  vec2 q=abs(v_p-c)-h+u_radius;\n"
     "  float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-u_radius;\n"
-    "  float a=u_color.a*(1.0-smoothstep(-1.0,1.0,d));\n"
+    "  float a=base.a*(1.0-smoothstep(-1.0,1.0,d));\n"
     "  if(a<0.004) discard;\n"
-    "  gl_FragColor=vec4(u_color.rgb,a);\n"
+    "  gl_FragColor=vec4(base.rgb,a);\n"
     "}\n";
+static const char * fs_line =
+    "#version 120\n"
+    "uniform vec4 u_color;\n"
+    "uniform vec2 u_p1;\n"
+    "uniform vec2 u_p2;\n"
+    "uniform float u_width;\n"
+    "uniform float u_round;\n"
+    "uniform float u_dash_on;\n"
+    "uniform float u_dash_gap;\n"
+    "uniform int u_has_dash;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  vec2 pa=v_p-u_p1; vec2 ba=u_p2-u_p1;\n"
+    "  float h=clamp(dot(pa,ba)/max(dot(ba,ba),0.0001),0.0,1.0);\n"
+    "  if(u_has_dash>0){ float period=u_dash_on+u_dash_gap;\n"
+    "    if(period>0.0){ float along=h*length(ba); if(mod(along,period)>u_dash_on) discard; } }\n"
+    "  float dist=length(pa-ba*h); float half_w=u_width*0.5;\n"
+    "  float a=u_color.a*(1.0-smoothstep(half_w-0.75,half_w+0.25,dist));\n"
+    "  if(u_round>0.5){ float d1=length(v_p-u_p1); float d2=length(v_p-u_p2);\n"
+    "    a=max(a,u_color.a*(1.0-smoothstep(half_w-0.75,half_w+0.25,min(d1,d2)))); }\n"
+    "  if(a<0.004) discard; gl_FragColor=vec4(u_color.rgb,a);\n"
+    "}\n";
+static const char * fs_arc =
+    "#version 120\n"
+    "uniform vec4 u_color;\n"
+    "uniform vec2 u_center;\n"
+    "uniform float u_radius;\n"
+    "uniform float u_width;\n"
+    "uniform vec2 u_angles;\n"
+    "uniform float u_round;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  vec2 d=v_p-u_center; float dist=length(d); float half_w=u_width*0.5;\n"
+    "  float ring=1.0-smoothstep(half_w-0.75,half_w+0.25,abs(dist-u_radius));\n"
+    "  if(ring<0.004) discard;\n"
+    "  float ang=degrees(atan(d.y,d.x)); if(ang<0.0) ang+=360.0;\n"
+    "  float a0=u_angles.x; float a1=u_angles.y; float in_arc=0.0;\n"
+    "  if(a0<=a1) in_arc=step(a0,ang)*step(ang,a1); else in_arc=clamp(step(a0,ang)+step(ang,a1),0.0,1.0);\n"
+    "  float a=u_color.a*ring*in_arc;\n"
+    "  if(u_round>0.5 && in_arc<0.5){\n"
+    "    vec2 p0=u_center+vec2(cos(radians(a0)),sin(radians(a0)))*u_radius;\n"
+    "    vec2 p1=u_center+vec2(cos(radians(a1)),sin(radians(a1)))*u_radius;\n"
+    "    a=max(a,u_color.a*(1.0-smoothstep(half_w-0.75,half_w+0.25,min(length(v_p-p0),length(v_p-p1))))); }\n"
+    "  if(a<0.004) discard; gl_FragColor=vec4(u_color.rgb,a);\n"
+    "}\n";
+static const char * fs_shadow =
+    "#version 120\n"
+    "uniform vec4 u_color;\n"
+    "uniform vec4 u_core;\n"
+    "uniform float u_radius;\n"
+    "uniform float u_blur;\n"
+    "uniform float u_bg_cover;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  vec2 c=u_core.xy+u_core.zw*0.5; vec2 h=u_core.zw*0.5; float r=min(u_radius,min(h.x,h.y));\n"
+    "  vec2 q=abs(v_p-c)-h+r; float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-r;\n"
+    "  if(u_bg_cover>0.5 && d<0.0) discard;\n"
+    "  float a=u_color.a*(1.0-smoothstep(0.0,max(u_blur,1.0),d));\n"
+    "  if(a<0.004) discard; gl_FragColor=vec4(u_color.rgb,a);\n"
+    "}\n";
+static const char * fs_tri =
+    "#version 120\n"
+    "uniform vec4 u_color;\n"
+    "uniform vec4 u_color1;\n"
+    "uniform vec2 u_p0;\n"
+    "uniform vec2 u_p1;\n"
+    "uniform vec2 u_p2;\n"
+    "uniform int u_grad_mode;\n"
+    "uniform vec2 u_grad_p0;\n"
+    "uniform vec2 u_grad_p1;\n"
+    "uniform sampler2D u_grad_lut;\n"
+    "uniform int u_grad_extend;\n"
+    "uniform float u_rad_x0;\n"
+    "uniform float u_rad_y0;\n"
+    "uniform float u_rad_r0;\n"
+    "uniform float u_rad_a4;\n"
+    "uniform float u_rad_bpx;\n"
+    "uniform float u_rad_bpy;\n"
+    "uniform float u_rad_bc;\n"
+    "uniform float u_rad_inv_dr;\n"
+    "uniform float u_con_cx;\n"
+    "uniform float u_con_cy;\n"
+    "uniform float u_con_start;\n"
+    "uniform float u_con_span;\n"
+    "varying vec2 v_p;\n"
+    "float tri_grad_extend(float t){\n"
+    "  if(u_grad_extend==0) return clamp(t,0.0,1.0);\n"
+    "  if(u_grad_extend==1){ float f=fract(t); return f<0.0?f+1.0:f; }\n"
+    "  float f=mod(t,2.0); return f>1.0?2.0-f:f;\n"
+    "}\n"
+    "void main(){\n"
+    "  vec2 v0=u_p2-u_p0; vec2 v1=u_p1-u_p0; vec2 v2=v_p-u_p0;\n"
+    "  float dot00=dot(v0,v0); float dot01=dot(v0,v1); float dot02=dot(v0,v2);\n"
+    "  float dot11=dot(v1,v1); float dot12=dot(v1,v2);\n"
+    "  float inv=1.0/(dot00*dot11-dot01*dot01);\n"
+    "  float u=(dot11*dot02-dot01*dot12)*inv; float v=(dot00*dot12-dot01*dot02)*inv;\n"
+    "  if(u<0.0||v<0.0||u+v>1.0) discard;\n"
+    "  vec4 base=u_color;\n"
+    "  if(u_grad_mode==1){ float t=clamp((v_p.y-u_grad_p0.y)/max(u_grad_p1.y-u_grad_p0.y,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==2){ float t=clamp((v_p.x-u_grad_p0.x)/max(u_grad_p1.x-u_grad_p0.x,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==3){\n"
+    "    vec2 se=u_grad_p1-u_grad_p0; float len2=dot(se,se);\n"
+    "    float t=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; base=mix(u_color,u_color1,t); }\n"
+    "  else if(u_grad_mode==4){\n"
+    "    float xp=v_p.x; float yp=v_p.y;\n"
+    "    float b=xp*u_rad_bpx+yp*u_rad_bpy+u_rad_bc;\n"
+    "    float c=u_rad_r0*u_rad_r0-(xp-u_rad_x0)*(xp-u_rad_x0)-(yp-u_rad_y0)*(yp-u_rad_y0);\n"
+    "    float t=0.0;\n"
+    "    if(abs(u_rad_a4)<0.000001) t=abs(b)<0.000001?0.0:-c/b;\n"
+    "    else if(abs(u_rad_bpx)>0.000001||abs(u_rad_bpy)>0.000001){\n"
+    "      float det=b*b-u_rad_a4*c; t=det<0.0?0.0:(-b+sqrt(det))/u_rad_a4; }\n"
+    "    else t=(length(v_p-vec2(u_rad_x0,u_rad_y0))-u_rad_r0)*u_rad_inv_dr;\n"
+    "    t=tri_grad_extend(t); base=texture2D(u_grad_lut,vec2(t,0.5)); }\n"
+    "  else if(u_grad_mode==5){\n"
+    "    float ang=degrees(atan(v_p.y-u_con_cy,v_p.x-u_con_cx)); if(ang<0.0) ang+=360.0;\n"
+    "    float t=tri_grad_extend((ang-u_con_start)/max(u_con_span,0.001));\n"
+    "    base=texture2D(u_grad_lut,vec2(t,0.5)); }\n"
+    "  if(base.a<0.004) discard; gl_FragColor=base;\n"
+    "}\n";
+static const char * fs_mask =
+    "#version 120\n"
+    "uniform vec4 u_rect;\n"
+    "uniform float u_radius;\n"
+    "uniform float u_keep_out;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  float rx=u_rect.x; float ry=u_rect.y; float rw=u_rect.z; float rh=u_rect.w;\n"
+    "  vec2 c=vec2(rx,ry)+vec2(rw,rh)*0.5; vec2 h=vec2(rw,rh)*0.5; float r=u_radius;\n"
+    "  vec2 q=abs(v_p-c)-h+r; float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-r;\n"
+    "  float m=0.0;\n"
+    "  if(u_keep_out<0.5){\n"
+    "    if(v_p.x<rx||v_p.y<ry||v_p.x>rx+rw||v_p.y>ry+rh) m=1.0;\n"
+    "    else m=smoothstep(-1.0,1.0,d);\n"
+    "  } else if(v_p.x>=rx&&v_p.y>=ry&&v_p.x<=rx+rw&&v_p.y<=ry+rh) m=1.0-smoothstep(-1.0,1.0,-d);\n"
+    "  if(m<0.004) discard; gl_FragColor=vec4(0.0,0.0,0.0,m);\n"
+    "}\n";
+static const char * fs_blur =
+    "#version 120\n"
+    "uniform sampler2D u_src;\n"
+    "uniform vec2 u_disp;\n"
+    "uniform vec2 u_dir;\n"
+    "uniform float u_radius;\n"
+    "uniform float u_step;\n"
+    "uniform vec4 u_rect;\n"
+    "uniform float u_corner_r;\n"
+    "uniform int u_use_corner;\n"
+    "varying vec2 v_p;\n"
+    "void main(){\n"
+    "  vec2 texel=1.0/u_disp; vec2 uv=v_p/u_disp;\n"
+    "  float step=max(u_step,1.0); float r=u_radius;\n"
+    "  int cnt=int(ceil(r/step)); if(cnt>32) cnt=32;\n"
+    "  vec4 acc=vec4(0.0); float wsum=0.0;\n"
+    "  for(int i=-32;i<=32;i++){\n"
+    "    if(i<-cnt||i>cnt) continue;\n"
+    "    acc+=texture2D(u_src,uv+u_dir*texel*float(i)*step); wsum+=1.0;\n"
+    "  }\n"
+    "  if(wsum<0.5) discard;\n"
+    "  gl_FragColor=acc/wsum;\n"
+    "  if(u_use_corner>0){\n"
+    "    vec2 c=u_rect.xy+u_rect.zw*0.5; vec2 h=u_rect.zw*0.5; float cr=u_corner_r;\n"
+    "    vec2 q=abs(v_p-c)-h+cr; float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-cr;\n"
+    "    if(d>0.5) discard; gl_FragColor.a*=1.0-smoothstep(-1.0,1.0,d);\n"
+    "  }\n"
+    "}\n";
+static const char * vs_line =
+    "#version 120\n"
+    "attribute vec2 a_pos;\n"
+    "uniform vec2 u_disp;\n"
+    "varying vec2 v_p;\n"
+    "void main(){ v_p=a_pos; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
+static const char * vs_arc =
+    "#version 120\n"
+    "attribute vec2 a_pos;\n"
+    "uniform vec2 u_disp;\n"
+    "varying vec2 v_p;\n"
+    "void main(){ v_p=a_pos; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
+static const char * vs_shadow =
+    "#version 120\n"
+    "attribute vec2 a_pos;\n"
+    "uniform vec2 u_disp;\n"
+    "varying vec2 v_p;\n"
+    "void main(){ v_p=a_pos; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
 static const char * vs_tex =
     "#version 120\n"
     "attribute vec2 a_pos;\n"
@@ -166,8 +662,87 @@ void lv_gpu_renderer_gles2_2d_init(void)
     if(prog_fill) {
         loc_fill_disp = glGetUniformLocation(prog_fill, "u_disp");
         loc_fill_color = glGetUniformLocation(prog_fill, "u_color");
+        loc_fill_color1 = glGetUniformLocation(prog_fill, "u_color1");
         loc_fill_rect = glGetUniformLocation(prog_fill, "u_rect");
         loc_fill_radius = glGetUniformLocation(prog_fill, "u_radius");
+        loc_fill_grad_mode = glGetUniformLocation(prog_fill, "u_grad_mode");
+        loc_fill_grad_p0 = glGetUniformLocation(prog_fill, "u_grad_p0");
+        loc_fill_grad_p1 = glGetUniformLocation(prog_fill, "u_grad_p1");
+    }
+    prog_line = link_program(vs_line, fs_line);
+    if(prog_line) {
+        loc_line_disp = glGetUniformLocation(prog_line, "u_disp");
+        loc_line_p1 = glGetUniformLocation(prog_line, "u_p1");
+        loc_line_p2 = glGetUniformLocation(prog_line, "u_p2");
+        loc_line_width = glGetUniformLocation(prog_line, "u_width");
+        loc_line_color = glGetUniformLocation(prog_line, "u_color");
+        loc_line_round = glGetUniformLocation(prog_line, "u_round");
+        loc_line_dash_on = glGetUniformLocation(prog_line, "u_dash_on");
+        loc_line_dash_gap = glGetUniformLocation(prog_line, "u_dash_gap");
+        loc_line_has_dash = glGetUniformLocation(prog_line, "u_has_dash");
+    }
+    prog_arc = link_program(vs_arc, fs_arc);
+    if(prog_arc) {
+        loc_arc_disp = glGetUniformLocation(prog_arc, "u_disp");
+        loc_arc_center = glGetUniformLocation(prog_arc, "u_center");
+        loc_arc_radius = glGetUniformLocation(prog_arc, "u_radius");
+        loc_arc_width = glGetUniformLocation(prog_arc, "u_width");
+        loc_arc_angles = glGetUniformLocation(prog_arc, "u_angles");
+        loc_arc_color = glGetUniformLocation(prog_arc, "u_color");
+        loc_arc_round = glGetUniformLocation(prog_arc, "u_round");
+    }
+    prog_shadow = link_program(vs_shadow, fs_shadow);
+    if(prog_shadow) {
+        loc_shadow_disp = glGetUniformLocation(prog_shadow, "u_disp");
+        loc_shadow_core = glGetUniformLocation(prog_shadow, "u_core");
+        loc_shadow_radius = glGetUniformLocation(prog_shadow, "u_radius");
+        loc_shadow_color = glGetUniformLocation(prog_shadow, "u_color");
+        loc_shadow_blur = glGetUniformLocation(prog_shadow, "u_blur");
+        loc_shadow_bg_cover = glGetUniformLocation(prog_shadow, "u_bg_cover");
+    }
+    prog_tri = link_program(vs_line, fs_tri);
+    if(prog_tri) {
+        loc_tri_disp = glGetUniformLocation(prog_tri, "u_disp");
+        loc_tri_p0 = glGetUniformLocation(prog_tri, "u_p0");
+        loc_tri_p1 = glGetUniformLocation(prog_tri, "u_p1");
+        loc_tri_p2 = glGetUniformLocation(prog_tri, "u_p2");
+        loc_tri_color = glGetUniformLocation(prog_tri, "u_color");
+        loc_tri_color1 = glGetUniformLocation(prog_tri, "u_color1");
+        loc_tri_grad_mode = glGetUniformLocation(prog_tri, "u_grad_mode");
+        loc_tri_grad_p0 = glGetUniformLocation(prog_tri, "u_grad_p0");
+        loc_tri_grad_p1 = glGetUniformLocation(prog_tri, "u_grad_p1");
+        loc_tri_grad_lut = glGetUniformLocation(prog_tri, "u_grad_lut");
+        loc_tri_grad_extend = glGetUniformLocation(prog_tri, "u_grad_extend");
+        loc_tri_rad_x0 = glGetUniformLocation(prog_tri, "u_rad_x0");
+        loc_tri_rad_y0 = glGetUniformLocation(prog_tri, "u_rad_y0");
+        loc_tri_rad_r0 = glGetUniformLocation(prog_tri, "u_rad_r0");
+        loc_tri_rad_a4 = glGetUniformLocation(prog_tri, "u_rad_a4");
+        loc_tri_rad_bpx = glGetUniformLocation(prog_tri, "u_rad_bpx");
+        loc_tri_rad_bpy = glGetUniformLocation(prog_tri, "u_rad_bpy");
+        loc_tri_rad_bc = glGetUniformLocation(prog_tri, "u_rad_bc");
+        loc_tri_rad_inv_dr = glGetUniformLocation(prog_tri, "u_rad_inv_dr");
+        loc_tri_con_cx = glGetUniformLocation(prog_tri, "u_con_cx");
+        loc_tri_con_cy = glGetUniformLocation(prog_tri, "u_con_cy");
+        loc_tri_con_start = glGetUniformLocation(prog_tri, "u_con_start");
+        loc_tri_con_span = glGetUniformLocation(prog_tri, "u_con_span");
+    }
+    prog_mask = link_program(vs_line, fs_mask);
+    if(prog_mask) {
+        loc_mask_disp = glGetUniformLocation(prog_mask, "u_disp");
+        loc_mask_rect = glGetUniformLocation(prog_mask, "u_rect");
+        loc_mask_radius = glGetUniformLocation(prog_mask, "u_radius");
+        loc_mask_keep_out = glGetUniformLocation(prog_mask, "u_keep_out");
+    }
+    prog_blur = link_program(vs_line, fs_blur);
+    if(prog_blur) {
+        loc_blur_disp = glGetUniformLocation(prog_blur, "u_disp");
+        loc_blur_src = glGetUniformLocation(prog_blur, "u_src");
+        loc_blur_dir = glGetUniformLocation(prog_blur, "u_dir");
+        loc_blur_radius = glGetUniformLocation(prog_blur, "u_radius");
+        loc_blur_step = glGetUniformLocation(prog_blur, "u_step");
+        loc_blur_rect = glGetUniformLocation(prog_blur, "u_rect");
+        loc_blur_corner = glGetUniformLocation(prog_blur, "u_corner_r");
+        loc_blur_use_corner = glGetUniformLocation(prog_blur, "u_use_corner");
     }
     prog_tex = link_program(vs_tex, fs_tex);
     if(prog_tex) {
@@ -180,8 +755,27 @@ void lv_gpu_renderer_gles2_2d_init(void)
 void lv_gpu_renderer_gles2_2d_deinit(void)
 {
     if(prog_fill) GL_CALL(glDeleteProgram(prog_fill));
+    if(prog_line) GL_CALL(glDeleteProgram(prog_line));
+    if(prog_arc) GL_CALL(glDeleteProgram(prog_arc));
+    if(prog_shadow) GL_CALL(glDeleteProgram(prog_shadow));
+    if(prog_tri) GL_CALL(glDeleteProgram(prog_tri));
+    if(prog_mask) GL_CALL(glDeleteProgram(prog_mask));
+    if(prog_blur) GL_CALL(glDeleteProgram(prog_blur));
     if(prog_tex) GL_CALL(glDeleteProgram(prog_tex));
-    prog_fill = prog_tex = 0;
+    prog_fill = prog_line = prog_arc = prog_shadow = prog_tri = prog_mask = prog_blur = prog_tex = 0;
+    if(g_blur_temp_tex) {
+        GL_CALL(glDeleteTextures(1, &g_blur_temp_tex));
+        g_blur_temp_tex = 0;
+    }
+    if(g_blur_temp_fbo) {
+        GL_CALL(glDeleteFramebuffers(1, &g_blur_temp_fbo));
+        g_blur_temp_fbo = 0;
+    }
+    if(g_tri_grad_lut) {
+        GL_CALL(glDeleteTextures(1, &g_tri_grad_lut));
+        g_tri_grad_lut = 0;
+    }
+    g_blur_temp_w = g_blur_temp_h = 0;
     if(g_raster_buf.unaligned_data) lv_free(g_raster_buf.unaligned_data);
     lv_memzero(&g_raster_buf, sizeof(g_raster_buf));
     g_queue_count = 0;
@@ -231,14 +825,112 @@ static bool queue_push(const lv_gpu2d_cmd_t * cmd)
 bool lv_gpu_renderer_gles2_2d_queue_fill(const lv_area_t * area, const lv_area_t * clip,
                                           lv_color_t color, lv_opa_t opa, int32_t radius)
 {
+    lv_draw_fill_dsc_t dsc;
+    lv_draw_fill_dsc_init(&dsc);
+    dsc.color = color;
+    dsc.opa = opa;
+    dsc.radius = radius;
+    return lv_gpu_renderer_gles2_2d_queue_fill_dsc(area, clip, &dsc);
+}
+
+bool lv_gpu_renderer_gles2_2d_queue_fill_dsc(const lv_area_t * area, const lv_area_t * clip,
+                                              const lv_draw_fill_dsc_t * dsc)
+{
+    if(!dsc) return false;
     lv_gpu2d_cmd_t cmd;
     lv_memzero(&cmd, sizeof(cmd));
     cmd.type = LV_GPU_RENDERER_GLES2_CMD_FILL;
     cmd.area = *area;
     cmd.clip = *clip;
-    cmd.u.fill.color = color;
-    cmd.u.fill.opa = opa;
-    cmd.u.fill.radius = radius;
+    cmd.u.fill = *dsc;
+    return queue_push(&cmd);
+}
+
+bool lv_gpu_renderer_gles2_2d_queue_line(const lv_area_t * area, const lv_area_t * clip,
+                                          const lv_draw_line_dsc_t * dsc)
+{
+    if(!dsc) return false;
+    lv_gpu2d_cmd_t cmd;
+    lv_memzero(&cmd, sizeof(cmd));
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_LINE;
+    cmd.area = *area;
+    cmd.clip = *clip;
+    cmd.u.line = *dsc;
+    cmd.line_pts_n = 0;
+    if(dsc->points && dsc->point_cnt >= 2) {
+        int32_t n = dsc->point_cnt;
+        if(n > LV_GPU_RENDERER_GLES2_LINE_PT_MAX) n = LV_GPU_RENDERER_GLES2_LINE_PT_MAX;
+        lv_memcpy(cmd.line_pts, dsc->points, (size_t)n * sizeof(lv_point_precise_t));
+        cmd.line_pts_n = (uint8_t)n;
+        cmd.u.line.points = NULL;
+        cmd.u.line.point_cnt = n;
+    }
+    return queue_push(&cmd);
+}
+
+bool lv_gpu_renderer_gles2_2d_queue_arc(const lv_area_t * area, const lv_area_t * clip,
+                                         const lv_draw_arc_dsc_t * dsc)
+{
+    if(!dsc) return false;
+    lv_gpu2d_cmd_t cmd;
+    lv_memzero(&cmd, sizeof(cmd));
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_ARC;
+    cmd.area = *area;
+    cmd.clip = *clip;
+    cmd.u.arc = *dsc;
+    return queue_push(&cmd);
+}
+
+bool lv_gpu_renderer_gles2_2d_queue_box_shadow(const lv_area_t * area, const lv_area_t * clip,
+                                                const lv_draw_box_shadow_dsc_t * dsc)
+{
+    if(!dsc) return false;
+    lv_gpu2d_cmd_t cmd;
+    lv_memzero(&cmd, sizeof(cmd));
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_BOX_SHADOW;
+    cmd.area = *area;
+    cmd.clip = *clip;
+    cmd.u.box_shadow = *dsc;
+    return queue_push(&cmd);
+}
+
+bool lv_gpu_renderer_gles2_2d_queue_triangle(const lv_area_t * area, const lv_area_t * clip,
+                                                const lv_draw_triangle_dsc_t * dsc)
+{
+    if(!dsc) return false;
+    lv_gpu2d_cmd_t cmd;
+    lv_memzero(&cmd, sizeof(cmd));
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_TRIANGLE;
+    cmd.area = *area;
+    cmd.clip = *clip;
+    cmd.u.triangle = *dsc;
+    return queue_push(&cmd);
+}
+
+bool lv_gpu_renderer_gles2_2d_queue_mask_rect(const lv_area_t * area, const lv_area_t * clip,
+                                               const lv_draw_mask_rect_dsc_t * dsc)
+{
+    if(!dsc) return false;
+    lv_gpu2d_cmd_t cmd;
+    lv_memzero(&cmd, sizeof(cmd));
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_MASK_RECT;
+    cmd.area = *area;
+    cmd.clip = *clip;
+    cmd.u.mask_rect = *dsc;
+    return queue_push(&cmd);
+}
+
+bool lv_gpu_renderer_gles2_2d_queue_blur(const lv_area_t * area, const lv_area_t * clip,
+                                          const lv_draw_blur_dsc_t * dsc, const lv_area_t * coords)
+{
+    if(!dsc || !coords) return false;
+    lv_gpu2d_cmd_t cmd;
+    lv_memzero(&cmd, sizeof(cmd));
+    cmd.type = LV_GPU_RENDERER_GLES2_CMD_BLUR;
+    cmd.area = *area;
+    cmd.clip = *clip;
+    cmd.u.blur.blur = *dsc;
+    cmd.u.blur.coords = *coords;
     return queue_push(&cmd);
 }
 
@@ -319,34 +1011,563 @@ static void apply_scissor(const lv_area_t * clip, int32_t dh)
     GL_CALL(glScissor(clip->x1, y, w, h));
 }
 
-static void draw_fill_quad(const lv_area_t * area, int32_t dw, int32_t dh,
-                           lv_color_t color, lv_opa_t opa, int32_t radius)
+static void area_to_verts(const lv_area_t * area, float * verts)
 {
-    if(!prog_fill) return;
-    lv_color32_t c32 = lv_color_to_32(color, opa);
     float x1 = (float)area->x1;
     float y1 = (float)area->y1;
     float x2 = (float)area->x2 + 1.0f;
     float y2 = (float)area->y2 + 1.0f;
-    float verts[] = {
-        x1, y1,  x2, y1,  x2, y2,
-        x1, y1,  x2, y2,  x1, y2,
-    };
+    verts[0] = x1; verts[1] = y1;
+    verts[2] = x2; verts[3] = y1;
+    verts[4] = x2; verts[5] = y2;
+    verts[6] = x1; verts[7] = y1;
+    verts[8] = x2; verts[9] = y2;
+    verts[10] = x1; verts[11] = y2;
+}
+
+static int fill_grad_mode(const lv_draw_fill_dsc_t * fd)
+{
+    if(!fd || fd->grad.dir == LV_GRAD_DIR_NONE) return 0;
+    if(fd->grad.dir == LV_GRAD_DIR_VER) return 1;
+    if(fd->grad.dir == LV_GRAD_DIR_HOR) return 2;
+    if(fd->grad.dir == LV_GRAD_DIR_LINEAR) return 3;
+    return -1;
+}
+
+static lv_color32_t grad_stop_color32(const lv_grad_dsc_t * grad, uint32_t idx, lv_opa_t fill_opa)
+{
+    if(idx >= grad->stops_count) return lv_color_to_32(lv_color_black(), fill_opa);
+    const lv_grad_stop_t * s = &grad->stops[idx];
+    lv_opa_t opa = LV_OPA_MIX2(fill_opa, s->opa);
+    return lv_color_to_32(s->color, opa);
+}
+
+static bool draw_fill_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const lv_draw_fill_dsc_t * fd)
+{
+    if(!prog_fill || !fd) return false;
+    const int grad_mode = fill_grad_mode(fd);
+    if(grad_mode < 0) return false;
+
+    float verts[12];
+    area_to_verts(area, verts);
+    float x1 = verts[0];
+    float y1 = verts[1];
+    float x2 = verts[4];
+    float y2 = verts[11];
     float rw = x2 - x1;
     float rh = y2 - y1;
-    float rad = (float)radius;
+    float rad = (float)fd->radius;
     if(rad > rw * 0.5f) rad = rw * 0.5f;
     if(rad > rh * 0.5f) rad = rh * 0.5f;
 
+    lv_color32_t c0 = grad_mode == 0 ? lv_color_to_32(fd->color, fd->opa) : grad_stop_color32(&fd->grad, 0, fd->opa);
+    lv_color32_t c1 = grad_mode == 0 ? c0 : grad_stop_color32(&fd->grad, grad_mode == 0 ? 0 : 1, fd->opa);
+
     GL_CALL(glUseProgram(prog_fill));
     GL_CALL(glUniform2f(loc_fill_disp, (float)dw, (float)dh));
-    gpu_comp_uniform_rgba(loc_fill_color, c32);
+    gpu_comp_uniform_rgba(loc_fill_color, c0);
+    gpu_comp_uniform_rgba(loc_fill_color1, c1);
     GL_CALL(glUniform4f(loc_fill_rect, x1, y1, rw, rh));
     GL_CALL(glUniform1f(loc_fill_radius, rad));
+    GL_CALL(glUniform1i(loc_fill_grad_mode, grad_mode));
+    if(grad_mode == 3) {
+        const lv_area_t rel = *area;
+        float gx0 = (float)(rel.x1 + fd->grad.params.linear.start.x);
+        float gy0 = (float)(rel.y1 + fd->grad.params.linear.start.y);
+        float gx1 = (float)(rel.x1 + fd->grad.params.linear.end.x);
+        float gy1 = (float)(rel.y1 + fd->grad.params.linear.end.y);
+        GL_CALL(glUniform2f(loc_fill_grad_p0, gx0, gy0));
+        GL_CALL(glUniform2f(loc_fill_grad_p1, gx1, gy1));
+    }
+    else {
+        GL_CALL(glUniform2f(loc_fill_grad_p0, 0.0f, 0.0f));
+        GL_CALL(glUniform2f(loc_fill_grad_p1, 0.0f, 0.0f));
+    }
     GL_CALL(glEnableVertexAttribArray(0));
     GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, verts));
     GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
     GL_CALL(glDisableVertexAttribArray(0));
+    return true;
+}
+
+static bool draw_line_segment_gpu(const lv_area_t * area, int32_t dw, int32_t dh,
+                                   const lv_draw_line_dsc_t * ld, bool round_start, bool round_end)
+{
+    if(!prog_line || !ld || ld->width < 1 || ld->opa <= LV_OPA_MIN) return false;
+
+    float verts[12];
+    area_to_verts(area, verts);
+    lv_color32_t c32 = lv_color_to_32(ld->color, ld->opa);
+    const bool has_dash = ld->dash_width > 0 && ld->dash_gap > 0;
+
+    GL_CALL(glUseProgram(prog_line));
+    GL_CALL(glUniform2f(loc_line_disp, (float)dw, (float)dh));
+    gpu_comp_uniform_rgba(loc_line_color, c32);
+    GL_CALL(glUniform2f(loc_line_p1, (float)ld->p1.x, (float)ld->p1.y));
+    GL_CALL(glUniform2f(loc_line_p2, (float)ld->p2.x, (float)ld->p2.y));
+    GL_CALL(glUniform1f(loc_line_width, (float)ld->width));
+    GL_CALL(glUniform1f(loc_line_round, (round_start || round_end) ? 1.0f : 0.0f));
+    GL_CALL(glUniform1f(loc_line_dash_on, (float)ld->dash_width));
+    GL_CALL(glUniform1f(loc_line_dash_gap, (float)ld->dash_gap));
+    GL_CALL(glUniform1i(loc_line_has_dash, has_dash ? 1 : 0));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, verts));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
+    GL_CALL(glDisableVertexAttribArray(0));
+    return true;
+}
+
+static bool draw_line_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const lv_gpu2d_cmd_t * cmd)
+{
+    const lv_draw_line_dsc_t * ld = &cmd->u.line;
+    if(!ld || ld->width < 1 || ld->opa <= LV_OPA_MIN) return false;
+
+    if(cmd->line_pts_n >= 2) {
+        lv_draw_line_dsc_t seg = *ld;
+        seg.points = NULL;
+        seg.point_cnt = 0;
+        for(uint8_t i = 0; i + 1 < cmd->line_pts_n; i++) {
+            seg.p1 = cmd->line_pts[i];
+            seg.p2 = cmd->line_pts[i + 1];
+            const bool rs = (i == 0) ? ld->round_start : false;
+            const bool re = (i + 2 >= cmd->line_pts_n) ? ld->round_end : false;
+            if(!draw_line_segment_gpu(area, dw, dh, &seg, rs, re)) return false;
+        }
+        return true;
+    }
+
+    return draw_line_segment_gpu(area, dw, dh, ld, ld->round_start, ld->round_end);
+}
+
+static int triangle_grad_mode(const lv_draw_triangle_dsc_t * td)
+{
+    if(!td || td->grad.dir == LV_GRAD_DIR_NONE) return 0;
+    if(td->grad.dir == LV_GRAD_DIR_VER) return 1;
+    if(td->grad.dir == LV_GRAD_DIR_HOR) return 2;
+    if(td->grad.dir == LV_GRAD_DIR_LINEAR) return 3;
+    if(td->grad.dir == LV_GRAD_DIR_RADIAL) return 4;
+    if(td->grad.dir == LV_GRAD_DIR_CONICAL) return 5;
+    return -1;
+}
+
+static bool triangle_grad_lut_upload(const lv_grad_dsc_t * grad, lv_opa_t fill_opa)
+{
+#if LV_USE_DRAW_SW
+    lv_draw_sw_grad_calc_t * lut = lv_draw_sw_grad_get(grad, 256, 0);
+    if(!lut) return false;
+
+    uint8_t px[256 * 4];
+    for(uint32_t i = 0; i < 256; i++) {
+        lv_opa_t opa = LV_OPA_MIX2(fill_opa, lut->opa_map[i]);
+        lv_color32_t c32 = lv_color_to_32(lut->color_map[i], opa);
+        px[i * 4 + 0] = c32.blue;
+        px[i * 4 + 1] = c32.green;
+        px[i * 4 + 2] = c32.red;
+        px[i * 4 + 3] = c32.alpha;
+    }
+    lv_draw_sw_grad_cleanup(lut);
+
+    if(g_tri_grad_lut == 0) {
+        GL_CALL(glGenTextures(1, &g_tri_grad_lut));
+    }
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, g_tri_grad_lut));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, px));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    return true;
+#else
+    LV_UNUSED(grad);
+    LV_UNUSED(fill_opa);
+    return false;
+#endif
+}
+
+static void triangle_radial_uniforms(const lv_grad_dsc_t * grad, const lv_area_t * area,
+                                      float * x0, float * y0, float * r0,
+                                      float * a4, float * bpx, float * bpy, float * bc, float * inv_dr)
+{
+    const int32_t wdt = lv_area_get_width(area);
+    const int32_t hgt = lv_area_get_height(area);
+    const float ox = (float)area->x1;
+    const float oy = (float)area->y1;
+
+    lv_point_t start = grad->params.radial.focal;
+    lv_point_t end = grad->params.radial.end;
+    lv_point_t start_extent = grad->params.radial.focal_extent;
+    lv_point_t end_extent = grad->params.radial.end_extent;
+
+    const float fx0 = (float)lv_pct_to_px(start.x, wdt) + ox;
+    const float fy0 = (float)lv_pct_to_px(start.y, hgt) + oy;
+    const float fx1 = (float)lv_pct_to_px(end.x, wdt) + ox;
+    const float fy1 = (float)lv_pct_to_px(end.y, hgt) + oy;
+    const float fsex = (float)lv_pct_to_px(start_extent.x, wdt) + ox;
+    const float fsey = (float)lv_pct_to_px(start_extent.y, hgt) + oy;
+    const float feex = (float)lv_pct_to_px(end_extent.x, wdt) + ox;
+    const float feey = (float)lv_pct_to_px(end_extent.y, hgt) + oy;
+
+    const float fr0 = (float)lv_sqrt32(lv_sqr((int32_t)(fsex - fx0)) + lv_sqr((int32_t)(fsey - fy0)));
+    float fr1 = (float)lv_sqrt32(lv_sqr((int32_t)(feex - fx1)) + lv_sqr((int32_t)(feey - fy1)));
+    if(fr1 < 0.001f) fr1 = 0.001f;
+
+    const float dx = fx1 - fx0;
+    const float dy = fy1 - fy0;
+    const float dr = fr1 - fr0;
+
+    *x0 = fx0;
+    *y0 = fy0;
+    *r0 = fr0;
+    *bpx = 2.0f * dx;
+    *bpy = 2.0f * dy;
+    *bc = 2.0f * (fr0 * dr - fx0 * dx - fy0 * dy);
+    *a4 = (float)((int32_t)lv_sqr((int32_t)dr) - lv_sqr((int32_t)dx) - lv_sqr((int32_t)dy));
+    *inv_dr = (dr > 0.001f || dr < -0.001f) ? (1.0f / dr) : 0.0f;
+}
+
+static void triangle_conical_uniforms(const lv_grad_dsc_t * grad, const lv_area_t * area,
+                                       float * cx, float * cy, float * start, float * span)
+{
+    const int32_t wdt = lv_area_get_width(area);
+    const int32_t hgt = lv_area_get_height(area);
+
+    *cx = (float)lv_pct_to_px(grad->params.conical.center.x, wdt) + (float)area->x1;
+    *cy = (float)lv_pct_to_px(grad->params.conical.center.y, hgt) + (float)area->y1;
+    float alpha = (float)(grad->params.conical.start_angle % 360);
+    float beta = (float)(grad->params.conical.end_angle % 360);
+    if(beta <= alpha) beta += 360.0f;
+    *start = alpha;
+    *span = beta - alpha;
+}
+
+static bool draw_triangle_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const lv_draw_triangle_dsc_t * td)
+{
+    if(!prog_tri || !td || td->opa <= LV_OPA_MIN) return false;
+    const int grad_mode = triangle_grad_mode(td);
+    if(grad_mode < 0) return false;
+
+    if((grad_mode == 4 || grad_mode == 5) && !triangle_grad_lut_upload(&td->grad, td->opa)) {
+        return false;
+    }
+
+    float verts[12];
+    area_to_verts(area, verts);
+    lv_color32_t c0 = grad_mode == 0 ? lv_color_to_32(td->color, td->opa)
+                                     : grad_stop_color32(&td->grad, 0, td->opa);
+    lv_color32_t c1 = grad_mode == 0 ? c0 : grad_stop_color32(&td->grad, 1, td->opa);
+
+    GL_CALL(glUseProgram(prog_tri));
+    GL_CALL(glUniform2f(loc_tri_disp, (float)dw, (float)dh));
+    gpu_comp_uniform_rgba(loc_tri_color, c0);
+    gpu_comp_uniform_rgba(loc_tri_color1, c1);
+    GL_CALL(glUniform2f(loc_tri_p0, (float)td->p[0].x, (float)td->p[0].y));
+    GL_CALL(glUniform2f(loc_tri_p1, (float)td->p[1].x, (float)td->p[1].y));
+    GL_CALL(glUniform2f(loc_tri_p2, (float)td->p[2].x, (float)td->p[2].y));
+    GL_CALL(glUniform1i(loc_tri_grad_mode, grad_mode));
+    if(grad_mode == 1 || grad_mode == 2) {
+        float y0 = (float)area->y1;
+        float y1 = (float)area->y2 + 1.0f;
+        float x0 = (float)area->x1;
+        float x1 = (float)area->x2 + 1.0f;
+        GL_CALL(glUniform2f(loc_tri_grad_p0, x0, y0));
+        GL_CALL(glUniform2f(loc_tri_grad_p1, x1, y1));
+    }
+    else if(grad_mode == 3) {
+        float gx0 = (float)area->x1 + td->grad.params.linear.start.x;
+        float gy0 = (float)area->y1 + td->grad.params.linear.start.y;
+        float gx1 = (float)area->x1 + td->grad.params.linear.end.x;
+        float gy1 = (float)area->y1 + td->grad.params.linear.end.y;
+        GL_CALL(glUniform2f(loc_tri_grad_p0, gx0, gy0));
+        GL_CALL(glUniform2f(loc_tri_grad_p1, gx1, gy1));
+    }
+    else if(grad_mode == 4) {
+        float rx0, ry0, rr0, ra4, rbpx, rbpy, rbc, rinv_dr;
+        triangle_radial_uniforms(&td->grad, area, &rx0, &ry0, &rr0, &ra4, &rbpx, &rbpy, &rbc, &rinv_dr);
+        GL_CALL(glUniform1i(loc_tri_grad_extend, (int)td->grad.extend));
+        GL_CALL(glUniform1f(loc_tri_rad_x0, rx0));
+        GL_CALL(glUniform1f(loc_tri_rad_y0, ry0));
+        GL_CALL(glUniform1f(loc_tri_rad_r0, rr0));
+        GL_CALL(glUniform1f(loc_tri_rad_a4, ra4));
+        GL_CALL(glUniform1f(loc_tri_rad_bpx, rbpx));
+        GL_CALL(glUniform1f(loc_tri_rad_bpy, rbpy));
+        GL_CALL(glUniform1f(loc_tri_rad_bc, rbc));
+        GL_CALL(glUniform1f(loc_tri_rad_inv_dr, rinv_dr));
+        GL_CALL(glActiveTexture(GL_TEXTURE1));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, g_tri_grad_lut));
+        GL_CALL(glUniform1i(loc_tri_grad_lut, 1));
+        GL_CALL(glActiveTexture(GL_TEXTURE0));
+    }
+    else if(grad_mode == 5) {
+        float ccx, ccy, cstart, cspan;
+        triangle_conical_uniforms(&td->grad, area, &ccx, &ccy, &cstart, &cspan);
+        GL_CALL(glUniform1i(loc_tri_grad_extend, (int)td->grad.extend));
+        GL_CALL(glUniform1f(loc_tri_con_cx, ccx));
+        GL_CALL(glUniform1f(loc_tri_con_cy, ccy));
+        GL_CALL(glUniform1f(loc_tri_con_start, cstart));
+        GL_CALL(glUniform1f(loc_tri_con_span, cspan));
+        GL_CALL(glActiveTexture(GL_TEXTURE1));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, g_tri_grad_lut));
+        GL_CALL(glUniform1i(loc_tri_grad_lut, 1));
+        GL_CALL(glActiveTexture(GL_TEXTURE0));
+    }
+    else {
+        GL_CALL(glUniform2f(loc_tri_grad_p0, 0.0f, 0.0f));
+        GL_CALL(glUniform2f(loc_tri_grad_p1, 0.0f, 0.0f));
+    }
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, verts));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
+    GL_CALL(glDisableVertexAttribArray(0));
+    if(grad_mode == 4 || grad_mode == 5) {
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    }
+    return true;
+}
+
+static bool draw_mask_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const lv_draw_mask_rect_dsc_t * md)
+{
+    if(!prog_mask || !md) return false;
+
+    float verts[12];
+    area_to_verts(area, verts);
+    const lv_area_t * ma = &md->area;
+    float rw = (float)lv_area_get_width(ma);
+    float rh = (float)lv_area_get_height(ma);
+
+    GL_CALL(glUseProgram(prog_mask));
+    GL_CALL(glUniform2f(loc_mask_disp, (float)dw, (float)dh));
+    GL_CALL(glUniform4f(loc_mask_rect, (float)ma->x1, (float)ma->y1, rw, rh));
+    GL_CALL(glUniform1f(loc_mask_radius, (float)md->radius));
+    GL_CALL(glUniform1f(loc_mask_keep_out, md->keep_outside ? 1.0f : 0.0f));
+
+    GLenum src_rgb = GL_ZERO;
+    GLenum dst_rgb = GL_ONE_MINUS_SRC_ALPHA;
+    GLenum src_a = GL_ZERO;
+    GLenum dst_a = GL_ONE_MINUS_SRC_ALPHA;
+    GL_CALL(glBlendFuncSeparate(src_rgb, dst_rgb, src_a, dst_a));
+
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, verts));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
+    GL_CALL(glDisableVertexAttribArray(0));
+
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    return true;
+}
+
+static bool blur_temp_ensure(int32_t w, int32_t h)
+{
+    if(w < 1 || h < 1) return false;
+    if(g_blur_temp_tex && g_blur_temp_fbo && g_blur_temp_w == w && g_blur_temp_h == h) return true;
+
+    if(g_blur_temp_tex) {
+        GL_CALL(glDeleteTextures(1, &g_blur_temp_tex));
+        g_blur_temp_tex = 0;
+    }
+    if(g_blur_temp_fbo) {
+        GL_CALL(glDeleteFramebuffers(1, &g_blur_temp_fbo));
+        g_blur_temp_fbo = 0;
+    }
+
+    GL_CALL(glGenTextures(1, &g_blur_temp_tex));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, g_blur_temp_tex));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+
+    GL_CALL(glGenFramebuffers(1, &g_blur_temp_fbo));
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_blur_temp_fbo));
+    GL_CALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_blur_temp_tex, 0));
+#if !LV_USE_EGL
+    {
+        GLenum db = GL_COLOR_ATTACHMENT0;
+        GL_CALL(glDrawBuffers(1, &db));
+    }
+#endif
+    const bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    if(!ok) return false;
+
+    g_blur_temp_w = w;
+    g_blur_temp_h = h;
+    return true;
+}
+
+static bool draw_blur_pass(const lv_area_t * area, int32_t dw, int32_t dh, unsigned int src_tex,
+                            float dir_x, float dir_y, float radius, float step, unsigned int dst_fbo,
+                            const lv_area_t * blur_coords, float corner_r, bool corner_mask)
+{
+    if(!prog_blur || src_tex == 0) return false;
+
+    float verts[12];
+    area_to_verts(area, verts);
+
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, dst_fbo));
+    GL_CALL(glViewport(0, 0, dw, dh));
+    GL_CALL(glUseProgram(prog_blur));
+    GL_CALL(glUniform2f(loc_blur_disp, (float)dw, (float)dh));
+    GL_CALL(glUniform2f(loc_blur_dir, dir_x, dir_y));
+    GL_CALL(glUniform1f(loc_blur_radius, radius));
+    GL_CALL(glUniform1f(loc_blur_step, step));
+    if(blur_coords) {
+        float rw = (float)lv_area_get_width(blur_coords);
+        float rh = (float)lv_area_get_height(blur_coords);
+        GL_CALL(glUniform4f(loc_blur_rect, (float)blur_coords->x1, (float)blur_coords->y1, rw, rh));
+    }
+    else {
+        GL_CALL(glUniform4f(loc_blur_rect, 0.0f, 0.0f, 0.0f, 0.0f));
+    }
+    GL_CALL(glUniform1f(loc_blur_corner, corner_r));
+    GL_CALL(glUniform1i(loc_blur_use_corner, corner_mask ? 1 : 0));
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, src_tex));
+    GL_CALL(glUniform1i(loc_blur_src, 0));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, verts));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
+    GL_CALL(glDisableVertexAttribArray(0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    return true;
+}
+
+static float blur_pass_step(float radius)
+{
+    return radius > 32.0f ? (radius / 32.0f) : 1.0f;
+}
+
+static bool draw_blur_chunk(unsigned int color_tex, int32_t dw, int32_t dh, const lv_area_t * draw_area,
+                             int32_t chunk_radius, const lv_area_t * coords, float corner_r, bool apply_corner_mask)
+{
+    const unsigned int dst_fbo = lv_gpu_renderer_tex_fbo_bind(color_tex);
+    const float radius = (float)chunk_radius;
+    const float step = blur_pass_step(radius);
+
+    if(!draw_blur_pass(draw_area, dw, dh, color_tex, 1.0f, 0.0f, radius, step, g_blur_temp_fbo,
+                       coords, corner_r, false)) {
+        return false;
+    }
+    if(!draw_blur_pass(draw_area, dw, dh, g_blur_temp_tex, 0.0f, 1.0f, radius, step, dst_fbo,
+                       coords, corner_r, apply_corner_mask)) {
+        return false;
+    }
+    return true;
+}
+
+static bool draw_blur_gpu(unsigned int color_tex, int32_t dw, int32_t dh, const lv_area_t * coords,
+                           const lv_area_t * clip, const lv_draw_blur_dsc_t * bd)
+{
+    if(!prog_blur || !bd || bd->blur_radius < 1) return false;
+
+    lv_area_t draw_area;
+    if(!lv_area_intersect(&draw_area, coords, clip)) return false;
+    if(!blur_temp_ensure(dw, dh)) return false;
+    if(!lv_gpu_renderer_tex_fbo_bind_complete(color_tex)) return false;
+
+    int32_t corner_r = bd->corner_radius;
+    const int32_t cw = lv_area_get_width(coords);
+    const int32_t ch = lv_area_get_height(coords);
+    const int32_t short_side = LV_MIN(cw, ch);
+    if(corner_r > short_side >> 1) corner_r = short_side >> 1;
+
+    GL_CALL(glEnable(GL_BLEND));
+    GL_CALL(glBlendFunc(GL_ONE, GL_ZERO));
+
+    int32_t left = bd->blur_radius;
+    while(left > 0) {
+        const int32_t chunk = left > 64 ? 64 : left;
+        const bool last_chunk = (left - chunk) <= 0;
+        const bool corner_mask = last_chunk && corner_r > 0;
+        if(!draw_blur_chunk(color_tex, dw, dh, &draw_area, chunk, coords, (float)corner_r, corner_mask)) {
+            GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+            return false;
+        }
+        left -= chunk;
+    }
+
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    return true;
+}
+
+static bool draw_arc_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const lv_draw_arc_dsc_t * ad)
+{
+    if(!prog_arc || !ad || ad->width < 1 || ad->opa <= LV_OPA_MIN || ad->img_src) return false;
+
+    float verts[12];
+    area_to_verts(area, verts);
+    lv_color32_t c32 = lv_color_to_32(ad->color, ad->opa);
+
+    GL_CALL(glUseProgram(prog_arc));
+    GL_CALL(glUniform2f(loc_arc_disp, (float)dw, (float)dh));
+    gpu_comp_uniform_rgba(loc_arc_color, c32);
+    GL_CALL(glUniform2f(loc_arc_center, (float)ad->center.x, (float)ad->center.y));
+    GL_CALL(glUniform1f(loc_arc_radius, (float)ad->radius));
+    GL_CALL(glUniform1f(loc_arc_width, (float)ad->width));
+    GL_CALL(glUniform2f(loc_arc_angles, (float)ad->start_angle, (float)ad->end_angle));
+    GL_CALL(glUniform1f(loc_arc_round, ad->rounded ? 1.0f : 0.0f));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, verts));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
+    GL_CALL(glDisableVertexAttribArray(0));
+    return true;
+}
+
+static bool draw_box_shadow_gpu(const lv_area_t * coords, const lv_area_t * clip, int32_t dw, int32_t dh,
+                                 const lv_draw_box_shadow_dsc_t * sd)
+{
+    if(!prog_shadow || !sd || sd->width < 1 || sd->opa <= LV_OPA_MIN) return false;
+
+    lv_area_t core;
+    core.x1 = coords->x1 + sd->ofs_x - sd->spread;
+    core.x2 = coords->x2 + sd->ofs_x + sd->spread;
+    core.y1 = coords->y1 + sd->ofs_y - sd->spread;
+    core.y2 = coords->y2 + sd->ofs_y + sd->spread;
+
+    lv_area_t shadow_area;
+    shadow_area.x1 = core.x1 - sd->width / 2 - 1;
+    shadow_area.x2 = core.x2 + sd->width / 2 + 1;
+    shadow_area.y1 = core.y1 - sd->width / 2 - 1;
+    shadow_area.y2 = core.y2 + sd->width / 2 + 1;
+
+    lv_area_t draw_area;
+    if(!lv_area_intersect(&draw_area, &shadow_area, clip)) return false;
+
+    float verts[12];
+    area_to_verts(&draw_area, verts);
+    float cw = (float)lv_area_get_width(&core);
+    float ch = (float)lv_area_get_height(&core);
+    float rad = (float)sd->radius;
+    if(rad > cw * 0.5f) rad = cw * 0.5f;
+    if(rad > ch * 0.5f) rad = ch * 0.5f;
+
+    lv_color32_t c32 = lv_color_to_32(sd->color, sd->opa);
+    GL_CALL(glUseProgram(prog_shadow));
+    GL_CALL(glUniform2f(loc_shadow_disp, (float)dw, (float)dh));
+    gpu_comp_uniform_rgba(loc_shadow_color, c32);
+    GL_CALL(glUniform4f(loc_shadow_core, (float)core.x1, (float)core.y1, cw, ch));
+    GL_CALL(glUniform1f(loc_shadow_radius, rad));
+    GL_CALL(glUniform1f(loc_shadow_blur, (float)sd->width));
+    GL_CALL(glUniform1f(loc_shadow_bg_cover, sd->bg_cover ? 1.0f : 0.0f));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, verts));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
+    GL_CALL(glDisableVertexAttribArray(0));
+    return true;
+}
+
+static void draw_fill_quad(const lv_area_t * area, int32_t dw, int32_t dh,
+                           lv_color_t color, lv_opa_t opa, int32_t radius)
+{
+    lv_draw_fill_dsc_t fd;
+    lv_draw_fill_dsc_init(&fd);
+    fd.color = color;
+    fd.opa = opa;
+    fd.radius = radius;
+    draw_fill_gpu(area, dw, dh, &fd);
 }
 
 static void draw_border_gpu(const lv_gpu2d_cmd_t * cmd, int32_t dw, int32_t dh)
@@ -455,6 +1676,66 @@ static void draw_image_sw_cb(lv_layer_t * layer, void * dsc, const lv_area_t * r
     lv_draw_image(layer, dsc, rel);
 }
 
+static void draw_fill_sw_cb(lv_layer_t * layer, void * dsc, const lv_area_t * rel)
+{
+    lv_draw_fill(layer, dsc, rel);
+}
+
+static void draw_line_sw_cb(lv_layer_t * layer, void * dsc, const lv_area_t * rel)
+{
+    LV_UNUSED(rel);
+    lv_draw_line(layer, dsc);
+}
+
+static void draw_arc_sw_cb(lv_layer_t * layer, void * dsc, const lv_area_t * rel)
+{
+    LV_UNUSED(rel);
+    lv_draw_arc(layer, dsc);
+}
+
+static void draw_triangle_sw_cb(lv_layer_t * layer, void * dsc, const lv_area_t * rel)
+{
+    LV_UNUSED(rel);
+    lv_draw_triangle(layer, dsc);
+}
+
+static void draw_blur_sw_cb(lv_layer_t * layer, void * dsc, const lv_area_t * rel)
+{
+    lv_draw_blur(layer, dsc, rel);
+}
+
+static void draw_box_shadow_sw_cb(lv_layer_t * layer, void * dsc, const lv_area_t * rel)
+{
+    LV_UNUSED(dsc);
+    LV_UNUSED(rel);
+    lv_draw_box_shadow(layer, g_shadow_ctx.sd, &g_shadow_ctx.coords);
+}
+
+static bool shadow_compute_area(const lv_area_t * coords, const lv_draw_box_shadow_dsc_t * sd, lv_area_t * shadow_out)
+{
+    if(!coords || !sd || !shadow_out) return false;
+    lv_area_t core;
+    core.x1 = coords->x1 + sd->ofs_x - sd->spread;
+    core.x2 = coords->x2 + sd->ofs_x + sd->spread;
+    core.y1 = coords->y1 + sd->ofs_y - sd->spread;
+    core.y2 = coords->y2 + sd->ofs_y + sd->spread;
+    shadow_out->x1 = core.x1 - sd->width / 2 - 1;
+    shadow_out->x2 = core.x2 + sd->width / 2 + 1;
+    shadow_out->y1 = core.y1 - sd->width / 2 - 1;
+    shadow_out->y2 = core.y2 + sd->width / 2 + 1;
+    return true;
+}
+
+static bool raster_shadow_sw(const lv_area_t * coords, const lv_area_t * clip,
+                              const lv_draw_box_shadow_dsc_t * sd, unsigned int * tex_out)
+{
+    lv_area_t shadow_area;
+    if(!shadow_compute_area(coords, sd, &shadow_area)) return false;
+    g_shadow_ctx.sd = sd;
+    g_shadow_ctx.coords = *coords;
+    return raster_sw_to_texture(&shadow_area, clip, draw_box_shadow_sw_cb, (void *)sd, tex_out);
+}
+
 static void draw_textured_quad(const lv_area_t * area, int32_t dw, int32_t dh, unsigned int tex)
 {
     if(!prog_tex || tex == 0) return;
@@ -513,13 +1794,115 @@ uint32_t lv_gpu_renderer_gles2_2d_render_cmd_list(const lv_gpu_renderer_gles2_cm
         apply_scissor(&cmd->clip, dh);
 
         switch(cmd->type) {
-            case LV_GPU_RENDERER_GLES2_CMD_FILL:
-                draw_fill_quad(&draw_area, dw, dh, cmd->u.fill.color, cmd->u.fill.opa, cmd->u.fill.radius);
-                rendered++;
+            case LV_GPU_RENDERER_GLES2_CMD_FILL: {
+                    if(draw_fill_gpu(&draw_area, dw, dh, &cmd->u.fill)) {
+                        rendered++;
+                    }
+                    else {
+                        unsigned int tex = 0;
+                        if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_fill_sw_cb,
+                                                 &cmd->u.fill, &tex)) {
+                            draw_textured_quad(&draw_area, dw, dh, tex);
+                            GL_CALL(glDeleteTextures(1, &tex));
+                            sw_raster++;
+                            rendered++;
+                        }
+                    }
+                }
                 break;
             case LV_GPU_RENDERER_GLES2_CMD_BORDER:
                 draw_border_gpu(mut_cmd, dw, dh);
                 rendered++;
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_LINE: {
+                    if(draw_line_gpu(&draw_area, dw, dh, cmd)) {
+                        rendered++;
+                    }
+                    else {
+                        unsigned int tex = 0;
+                        if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_line_sw_cb,
+                                                 &cmd->u.line, &tex)) {
+                            draw_textured_quad(&draw_area, dw, dh, tex);
+                            GL_CALL(glDeleteTextures(1, &tex));
+                            sw_raster++;
+                            rendered++;
+                        }
+                    }
+                }
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_ARC: {
+                    if(draw_arc_gpu(&draw_area, dw, dh, &cmd->u.arc)) {
+                        rendered++;
+                    }
+                    else {
+                        unsigned int tex = 0;
+                        if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_arc_sw_cb,
+                                                 &cmd->u.arc, &tex)) {
+                            draw_textured_quad(&draw_area, dw, dh, tex);
+                            GL_CALL(glDeleteTextures(1, &tex));
+                            sw_raster++;
+                            rendered++;
+                        }
+                    }
+                }
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_BOX_SHADOW: {
+                    if(draw_box_shadow_gpu(&cmd->area, &cmd->clip, dw, dh, &cmd->u.box_shadow)) {
+                        rendered++;
+                    }
+                    else {
+                        unsigned int tex = 0;
+                        if(raster_shadow_sw(&cmd->area, &cmd->clip, &cmd->u.box_shadow, &tex)) {
+                            lv_area_t shadow_area;
+                            shadow_compute_area(&cmd->area, &cmd->u.box_shadow, &shadow_area);
+                            lv_area_t draw_area2;
+                            if(lv_area_intersect(&draw_area2, &shadow_area, &cmd->clip)) {
+                                draw_textured_quad(&draw_area2, dw, dh, tex);
+                            }
+                            GL_CALL(glDeleteTextures(1, &tex));
+                            sw_raster++;
+                            rendered++;
+                        }
+                    }
+                }
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_TRIANGLE: {
+                    if(draw_triangle_gpu(&draw_area, dw, dh, &cmd->u.triangle)) {
+                        rendered++;
+                    }
+                    else {
+                        unsigned int tex = 0;
+                        if(raster_sw_to_texture(&cmd->area, &cmd->clip, draw_triangle_sw_cb,
+                                                 &cmd->u.triangle, &tex)) {
+                            draw_textured_quad(&draw_area, dw, dh, tex);
+                            GL_CALL(glDeleteTextures(1, &tex));
+                            sw_raster++;
+                            rendered++;
+                        }
+                    }
+                }
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_MASK_RECT: {
+                    if(draw_mask_gpu(&draw_area, dw, dh, &cmd->u.mask_rect)) {
+                        rendered++;
+                    }
+                }
+                break;
+            case LV_GPU_RENDERER_GLES2_CMD_BLUR: {
+                    if(draw_blur_gpu(color_tex, dw, dh, &cmd->u.blur.coords, &cmd->clip, &cmd->u.blur.blur)) {
+                        rendered++;
+                    }
+                    else {
+                        unsigned int tex = 0;
+                        if(raster_sw_to_texture(&cmd->u.blur.coords, &cmd->clip, draw_blur_sw_cb,
+                                                 &cmd->u.blur.blur, &tex)) {
+                            draw_textured_quad(&draw_area, dw, dh, tex);
+                            GL_CALL(glDeleteTextures(1, &tex));
+                            sw_raster++;
+                            rendered++;
+                        }
+                    }
+                }
                 break;
             case LV_GPU_RENDERER_GLES2_CMD_LABEL: {
                     unsigned int tex = 0;

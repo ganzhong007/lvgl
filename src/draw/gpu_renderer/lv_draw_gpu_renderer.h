@@ -45,8 +45,16 @@ bool lv_gpu_renderer_blit_tex_to_tex(unsigned int dst_tex, unsigned int src_tex,
 
 /** Alpha-blend SW framebuffer (2D/cursor) on top of the GPU texture after 3D pass. */
 void lv_gpu_renderer_overlay_2d_fb(lv_display_t * disp);
+/** Always false — full-screen fb1 upload removed; use framegraph OVERLAY pass. */
 bool lv_gpu_renderer_overlay_2d_enabled(void);
+/** No-op (kept for API compat). */
 void lv_gpu_renderer_set_overlay_2d_enable(bool enable);
+/** Merge 3D viewport + OVERLAY 2D HUD into one fg pass (depth sort). */
+void lv_gpu_renderer_set_unified_pass(bool enable);
+bool lv_gpu_renderer_unified_pass_enabled(void);
+/** Attach GL_DEPTH_COMPONENT16 to scanout FBO (full dw×dh). */
+void lv_gpu_renderer_tex_fbo_attach_depth(int32_t w, int32_t h);
+bool lv_gpu_renderer_tex_fbo_has_depth(void);
 /** Skip 9x glReadPixels alpha probe per viewport (turbo / bench). */
 void lv_gpu_renderer_set_skip_alpha_probe(bool skip);
 void lv_gpu_renderer_overlay_2d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h);
@@ -85,6 +93,7 @@ typedef struct {
     uint32_t fg_material_batches;
     uint32_t fg_gl_finish_count;
     uint32_t fg_skipped_static_3d;
+    uint32_t fg_unified_overlay_merged;
     uint32_t fg_energy_cost;
     char gl_renderer[128];
 } lv_gpu_renderer_verify_stats_t;
@@ -108,6 +117,7 @@ typedef struct {
     uint32_t fg_material_batches;
     uint32_t fg_gl_finish_count;
     uint32_t fg_skipped_static_3d;
+    uint32_t fg_unified_overlay_merged;
     uint32_t fg_energy_cost;
     char gl_renderer[128];
 } lv_gpu_renderer_path_stats_t;

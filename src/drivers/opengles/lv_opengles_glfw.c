@@ -578,7 +578,6 @@ static void window_update_handler(lv_timer_t * t)
                     int32_t th = lv_area_get_height(&texture->area);
                     ensure_window_display_texture_sized(tw, th);
                     lv_gpu_renderer_flush_3d_to_tex(texture->disp, window_display_texture, tw, th);
-                    lv_gpu_renderer_overlay_2d_to_tex(texture->disp, window_display_texture, tw, th);
                     lv_gpu_renderer_notify_frame_ready(texture->disp);
                 }
                 gpu_present_to_window(window_display_texture, texture, window);
@@ -672,9 +671,6 @@ static void window_update_handler(lv_timer_t * t)
 #endif
 #if LV_USE_DRAW_GPU_RENDERER
                 if(texture->disp != NULL) {
-                    int32_t tw = lv_area_get_width(&texture->area);
-                    int32_t th = lv_area_get_height(&texture->area);
-                    lv_gpu_renderer_overlay_2d_screen(texture->disp, tw, th);
                     {
                         const char * dump_dir = getenv("LVGL_VERIFY_DUMP_WIN");
                         if(dump_dir && dump_dir[0]) {

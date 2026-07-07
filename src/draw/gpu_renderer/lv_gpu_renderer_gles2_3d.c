@@ -728,9 +728,19 @@ static void render_viewport_draw(unsigned int fbo, int32_t vp_x, int32_t vp_y, i
     else {
         GL_CALL(glClearColor(0, 0, 0, 1));
     }
-    GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
 
-    GL_CALL(glDisable(GL_DEPTH_TEST));
+    const bool use_depth = lv_gpu_renderer_unified_pass_enabled() && lv_gpu_renderer_tex_fbo_has_depth();
+    if(use_depth) {
+        GL_CALL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+        GL_CALL(glEnable(GL_DEPTH_TEST));
+        GL_CALL(glDepthFunc(GL_LESS));
+        GL_CALL(glDepthMask(GL_TRUE));
+    }
+    else {
+        GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+        GL_CALL(glDisable(GL_DEPTH_TEST));
+    }
+
     GL_CALL(glEnable(GL_BLEND));
     GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
 #if !LV_USE_EGL
@@ -751,10 +761,15 @@ static void render_viewport_draw(unsigned int fbo, int32_t vp_x, int32_t vp_y, i
     for(uint32_t o = 0; o < opaque_count; o++) {
         draw_item(&items[opaque_order[o]], view, proj);
     }
+    if(use_depth) {
+        GL_CALL(glDepthMask(GL_FALSE));
+    }
     for(uint32_t i = 0; i < item_count; i++) {
         if(!draw_item_is_transparent(&items[i])) continue;
         draw_item(&items[i], view, proj);
     }
+    GL_CALL(glDisable(GL_DEPTH_TEST));
+    GL_CALL(glDepthMask(GL_TRUE));
     GL_CALL(glDisable(GL_SCISSOR_TEST));
 }
 

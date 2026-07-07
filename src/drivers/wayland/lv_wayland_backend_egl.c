@@ -205,7 +205,6 @@ static void egl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * 
                          lv_display_get_original_vertical_resolution(disp));
     lv_gpu_renderer_flush_3d(disp);
     lv_gpu_renderer_notify_frame_ready(disp);
-    lv_gpu_renderer_overlay_2d_fb(disp);
     lv_opengles_render_params_t params = { .h_flip = false, .v_flip = false, .rb_swap = true };
     lv_opengles_render_display(disp, &params);
 #endif

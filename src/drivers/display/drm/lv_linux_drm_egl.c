@@ -474,9 +474,6 @@ bool lv_linux_drm_gpu_present_ex(lv_display_t * disp)
 
     lv_gpu_renderer_flush_3d(disp);
     lv_gpu_renderer_notify_frame_ready(disp);
-    if(lv_gpu_renderer_overlay_2d_enabled()) {
-        lv_gpu_renderer_overlay_2d_fb(disp);
-    }
     if(ctx->dmabuf_scanout_ok) {
         if(drm_turbo_present()) {
             GL_CALL(glFlush());

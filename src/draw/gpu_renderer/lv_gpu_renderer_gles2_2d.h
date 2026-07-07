@@ -18,6 +18,13 @@ extern "C" {
 #include "../../include/lvgl/draw/lv_draw_label.h"
 #include "../../include/lvgl/draw/lv_draw_image.h"
 #include "../../include/lvgl/draw/lv_draw_rect.h"
+#include "../../include/lvgl/draw/lv_draw_line.h"
+#include "../../include/lvgl/draw/lv_draw_arc.h"
+#include "../../include/lvgl/draw/lv_draw_triangle.h"
+#include "../../include/lvgl/draw/lv_draw_mask.h"
+#include "../../include/lvgl/draw/lv_draw_blur.h"
+
+#define LV_GPU_RENDERER_GLES2_LINE_PT_MAX 64
 
 typedef enum {
     LV_GPU_RENDERER_GLES2_CMD_FILL = 0,
@@ -25,18 +32,23 @@ typedef enum {
     LV_GPU_RENDERER_GLES2_CMD_LABEL,
     LV_GPU_RENDERER_GLES2_CMD_LETTER,
     LV_GPU_RENDERER_GLES2_CMD_IMAGE,
+    LV_GPU_RENDERER_GLES2_CMD_LINE,
+    LV_GPU_RENDERER_GLES2_CMD_ARC,
+    LV_GPU_RENDERER_GLES2_CMD_BOX_SHADOW,
+    LV_GPU_RENDERER_GLES2_CMD_TRIANGLE,
+    LV_GPU_RENDERER_GLES2_CMD_MASK_RECT,
+    LV_GPU_RENDERER_GLES2_CMD_BLUR,
 } lv_gpu_renderer_gles2_cmd_type_t;
 
 typedef struct {
     lv_gpu_renderer_gles2_cmd_type_t type;
     lv_area_t area;
     lv_area_t clip;
+    /**Copied polyline points when line dsc uses `points[]`. */
+    lv_point_precise_t line_pts[LV_GPU_RENDERER_GLES2_LINE_PT_MAX];
+    uint8_t line_pts_n;
     union {
-        struct {
-            lv_color_t color;
-            lv_opa_t opa;
-            int32_t radius;
-        } fill;
+        lv_draw_fill_dsc_t fill;
         struct {
             lv_color_t color;
             lv_opa_t opa;
@@ -47,6 +59,15 @@ typedef struct {
         lv_draw_label_dsc_t label;
         lv_draw_letter_dsc_t letter;
         lv_draw_image_dsc_t image;
+        lv_draw_line_dsc_t line;
+        lv_draw_arc_dsc_t arc;
+        lv_draw_box_shadow_dsc_t box_shadow;
+        lv_draw_triangle_dsc_t triangle;
+        lv_draw_mask_rect_dsc_t mask_rect;
+        struct {
+            lv_draw_blur_dsc_t blur;
+            lv_area_t coords;
+        } blur;
     } u;
 } lv_gpu_renderer_gles2_cmd_t;
 
@@ -60,6 +81,20 @@ bool lv_gpu_renderer_gles2_2d_is_raster_nest(void);
 
 bool lv_gpu_renderer_gles2_2d_queue_fill(const lv_area_t * area, const lv_area_t * clip,
                                           lv_color_t color, lv_opa_t opa, int32_t radius);
+bool lv_gpu_renderer_gles2_2d_queue_fill_dsc(const lv_area_t * area, const lv_area_t * clip,
+                                              const lv_draw_fill_dsc_t * dsc);
+bool lv_gpu_renderer_gles2_2d_queue_line(const lv_area_t * area, const lv_area_t * clip,
+                                            const lv_draw_line_dsc_t * dsc);
+bool lv_gpu_renderer_gles2_2d_queue_arc(const lv_area_t * area, const lv_area_t * clip,
+                                         const lv_draw_arc_dsc_t * dsc);
+bool lv_gpu_renderer_gles2_2d_queue_box_shadow(const lv_area_t * area, const lv_area_t * clip,
+                                                const lv_draw_box_shadow_dsc_t * dsc);
+bool lv_gpu_renderer_gles2_2d_queue_triangle(const lv_area_t * area, const lv_area_t * clip,
+                                                const lv_draw_triangle_dsc_t * dsc);
+bool lv_gpu_renderer_gles2_2d_queue_mask_rect(const lv_area_t * area, const lv_area_t * clip,
+                                               const lv_draw_mask_rect_dsc_t * dsc);
+bool lv_gpu_renderer_gles2_2d_queue_blur(const lv_area_t * area, const lv_area_t * clip,
+                                          const lv_draw_blur_dsc_t * dsc, const lv_area_t * coords);
 bool lv_gpu_renderer_gles2_2d_queue_border(const lv_area_t * area, const lv_area_t * clip,
                                             lv_color_t color, lv_opa_t opa, int32_t width,
                                             int32_t radius, lv_border_side_t side);

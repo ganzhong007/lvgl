@@ -59,15 +59,21 @@ typedef struct {
     uint32_t fg_material_batches;
     uint32_t fg_gl_finish_count;
     uint32_t fg_skipped_static_3d;
+    uint32_t fg_unified_overlay_merged;
     uint32_t fg_energy_cost;
     char gl_renderer[128];
 } lv_gpu_renderer_path_frame_t;
 
 static lv_gpu_renderer_path_frame_t g_path_stats;
 static bool g_gl_renderer_logged;
-static bool g_overlay_2d_enable = true;
+static bool g_overlay_2d_enable = false;
+static int g_unified_pass = -1;
 static unsigned int g_scanout_tex_fbo;
 static unsigned int g_scanout_tex_fbo_tex;
+static unsigned int g_scanout_depth_rb;
+static int32_t g_scanout_depth_w;
+static int32_t g_scanout_depth_h;
+static bool g_scanout_depth_attached;
 
 static int32_t gpu_renderer_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
 static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
@@ -186,11 +192,71 @@ bool lv_gpu_renderer_tex_fbo_bind_complete(unsigned int color_tex)
 
 void lv_gpu_renderer_tex_fbo_release(void)
 {
+    if(g_scanout_depth_rb) {
+        GL_CALL(glDeleteRenderbuffers(1, &g_scanout_depth_rb));
+        g_scanout_depth_rb = 0;
+    }
+    g_scanout_depth_w = 0;
+    g_scanout_depth_h = 0;
+    g_scanout_depth_attached = false;
     if(g_scanout_tex_fbo) {
         GL_CALL(glDeleteFramebuffers(1, &g_scanout_tex_fbo));
         g_scanout_tex_fbo = 0;
     }
     g_scanout_tex_fbo_tex = 0;
+}
+
+static void scanout_depth_ensure(int32_t w, int32_t h)
+{
+    if(w < 1 || h < 1) return;
+    if(g_scanout_depth_rb && g_scanout_depth_w == w && g_scanout_depth_h == h) return;
+
+    if(!g_scanout_depth_rb) {
+        GL_CALL(glGenRenderbuffers(1, &g_scanout_depth_rb));
+    }
+    GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, g_scanout_depth_rb));
+    GL_CALL(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, w, h));
+    GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+    g_scanout_depth_w = w;
+    g_scanout_depth_h = h;
+}
+
+void lv_gpu_renderer_tex_fbo_attach_depth(int32_t w, int32_t h)
+{
+    g_scanout_depth_attached = false;
+    if(!lv_gpu_renderer_unified_pass_enabled() || w < 1 || h < 1) return;
+    if(!g_scanout_tex_fbo) return;
+
+    scanout_depth_ensure(w, h);
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_scanout_tex_fbo));
+    GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, g_scanout_depth_rb));
+    g_scanout_depth_attached =
+        glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+}
+
+bool lv_gpu_renderer_tex_fbo_has_depth(void)
+{
+    return g_scanout_depth_attached;
+}
+
+void lv_gpu_renderer_set_unified_pass(bool enable)
+{
+    g_unified_pass = enable ? 1 : 0;
+}
+
+bool lv_gpu_renderer_unified_pass_enabled(void)
+{
+    if(g_unified_pass < 0) {
+        const char * env = getenv("LVGL_FG_UNIFIED_PASS");
+        if(env && env[0]) {
+            g_unified_pass = (env[0] == '0') ? 0 : 1;
+        }
+        else {
+            g_unified_pass = (lv_gpu_renderer_fg_get_ui_mode() == LV_GPU_UI_MODE_NAV_AR) ? 1 : 0;
+        }
+    }
+    return g_unified_pass != 0;
 }
 
 void lv_gpu_renderer_set_ui_mode(int mode)
@@ -200,12 +266,15 @@ void lv_gpu_renderer_set_ui_mode(int mode)
 
 bool lv_gpu_renderer_overlay_2d_enabled(void)
 {
-    return g_overlay_2d_enable;
+    /* Full-screen fb1 upload removed; 2D is composited in framegraph execute. */
+    LV_UNUSED(g_overlay_2d_enable);
+    return false;
 }
 
 void lv_gpu_renderer_set_overlay_2d_enable(bool enable)
 {
-    g_overlay_2d_enable = enable;
+    LV_UNUSED(enable);
+    g_overlay_2d_enable = false;
 }
 
 void lv_gpu_renderer_set_skip_alpha_probe(bool skip)
@@ -232,6 +301,7 @@ static void path_stats_from_fg(void)
     g_path_stats.fg_material_batches = fg->material_batches;
     g_path_stats.fg_gl_finish_count = fg->gl_finish_count;
     g_path_stats.fg_skipped_static_3d = fg->skipped_static_3d;
+    g_path_stats.fg_unified_overlay_merged = fg->unified_overlay_merged;
     g_path_stats.fg_energy_cost = fg->energy_cost;
 }
 
@@ -284,11 +354,13 @@ static void gpu_renderer_flush_internal(unsigned int tex_id, int32_t dw, int32_t
             }
         }
         else if(!logged_full) {
-            LV_LOG_USER("GPU flush_3d: vp=%u items=%u 2d=%u max_alpha=%u",
+            LV_LOG_USER("GPU flush_3d: vp=%u items=%u 2d=%u max_alpha=%u pass=%u unified=%u",
                         (unsigned)g_last_flush_vp_count,
                         (unsigned)g_last_flush_item_count,
                         (unsigned)g_path_stats.gpu_2d_tasks,
-                        (unsigned)g_last_frame_max_alpha);
+                        (unsigned)g_last_frame_max_alpha,
+                        (unsigned)g_path_stats.fg_pass_count,
+                        (unsigned)lv_gpu_renderer_fg_get_stats()->unified_overlay_merged);
             logged_full = true;
         }
     }
@@ -349,7 +421,7 @@ bool lv_gpu_renderer_blit_tex_to_tex(unsigned int dst_tex, unsigned int src_tex,
 
 void lv_gpu_renderer_overlay_2d_fb(lv_display_t * disp)
 {
-    if(!g_overlay_2d_enable) return;
+    if(!lv_gpu_renderer_overlay_2d_enabled()) return;
     int32_t w = lv_display_get_horizontal_resolution(disp);
     int32_t h = lv_display_get_vertical_resolution(disp);
     lv_gpu_renderer_overlay_2d_to_tex(disp, 0, w, h);
@@ -436,6 +508,8 @@ void lv_gpu_renderer_overlay_2d_screen(lv_display_t * disp, int32_t w, int32_t h
     LV_UNUSED(h);
     return;
 #else
+    if(!lv_gpu_renderer_overlay_2d_enabled()) return;
+
     lv_opengles_texture_t * texture = lv_display_get_driver_data(disp);
     if(!texture || !texture->fb1 || w < 1 || h < 1) return;
 
@@ -517,7 +591,7 @@ bool lv_gpu_renderer_composite_layer_to_tex(unsigned int tex_id, const lv_draw_i
 
 void lv_gpu_renderer_overlay_2d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h)
 {
-    if(!g_overlay_2d_enable) return;
+    if(!lv_gpu_renderer_overlay_2d_enabled()) return;
     lv_opengles_texture_t * texture = lv_display_get_driver_data(disp);
     if(!texture || !texture->fb1) return;
 
@@ -686,6 +760,7 @@ bool lv_gpu_renderer_verify_stats(lv_display_t * disp, lv_gpu_renderer_verify_st
     stats->fg_material_batches = g_path_stats.fg_material_batches;
     stats->fg_gl_finish_count = g_path_stats.fg_gl_finish_count;
     stats->fg_skipped_static_3d = g_path_stats.fg_skipped_static_3d;
+    stats->fg_unified_overlay_merged = g_path_stats.fg_unified_overlay_merged;
     stats->fg_energy_cost = g_path_stats.fg_energy_cost;
     lv_strncpy(stats->gl_renderer, g_path_stats.gl_renderer, sizeof(stats->gl_renderer) - 1);
     stats->gl_renderer[sizeof(stats->gl_renderer) - 1] = '\0';
@@ -710,6 +785,7 @@ void lv_gpu_renderer_get_path_stats(lv_gpu_renderer_path_stats_t * stats)
     stats->fg_material_batches = g_path_stats.fg_material_batches;
     stats->fg_gl_finish_count = g_path_stats.fg_gl_finish_count;
     stats->fg_skipped_static_3d = g_path_stats.fg_skipped_static_3d;
+    stats->fg_unified_overlay_merged = g_path_stats.fg_unified_overlay_merged;
     stats->fg_energy_cost = g_path_stats.fg_energy_cost;
     lv_strncpy(stats->gl_renderer, g_path_stats.gl_renderer, sizeof(stats->gl_renderer) - 1);
     stats->gl_renderer[sizeof(stats->gl_renderer) - 1] = '\0';
@@ -966,7 +1042,13 @@ static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * la
     else if(lv_gpu_renderer_fg_can_gpu_native_2d(t)
             || t->type == LV_DRAW_TASK_TYPE_LABEL
             || t->type == LV_DRAW_TASK_TYPE_LETTER
-            || t->type == LV_DRAW_TASK_TYPE_IMAGE) {
+            || t->type == LV_DRAW_TASK_TYPE_IMAGE
+            || t->type == LV_DRAW_TASK_TYPE_LINE
+            || t->type == LV_DRAW_TASK_TYPE_ARC
+            || t->type == LV_DRAW_TASK_TYPE_BOX_SHADOW
+            || t->type == LV_DRAW_TASK_TYPE_TRIANGLE
+            || t->type == LV_DRAW_TASK_TYPE_MASK_RECTANGLE
+            || t->type == LV_DRAW_TASK_TYPE_BLUR) {
         if(!lv_gpu_renderer_fg_queue_2d_task(t)) return LV_DRAW_UNIT_IDLE;
         if(!lv_gpu_renderer_fg_record_2d_task(t)) return LV_DRAW_UNIT_IDLE;
     }

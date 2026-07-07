@@ -84,6 +84,7 @@ typedef struct {
     uint32_t gl_finish_count;
     uint32_t node_count;
     uint32_t skipped_static_3d;
+    uint32_t unified_overlay_merged;
     uint32_t draw_calls;
     uint32_t fbo_switches;
     uint32_t sw_upload_bytes;
