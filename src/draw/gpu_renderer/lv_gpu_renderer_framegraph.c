@@ -319,17 +319,15 @@ bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
         }
         case LV_DRAW_TASK_TYPE_LABEL: {
             lv_draw_label_dsc_t * ld = lv_draw_task_get_label_dsc(t);
-            return ld && ld->rotation == 0;
+            return ld != NULL;
         }
         case LV_DRAW_TASK_TYPE_LETTER: {
             const lv_draw_letter_dsc_t * ld = task->draw_dsc;
-            return ld && ld->rotation == 0;
+            return ld != NULL;
         }
         case LV_DRAW_TASK_TYPE_IMAGE: {
             lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(t);
-            return id && !id->tile && !id->bitmap_mask_src
-                   && id->blend_mode != LV_BLEND_MODE_SUBTRACTIVE
-                   && id->blend_mode != LV_BLEND_MODE_DIFFERENCE;
+            return id != NULL;
         }
         case LV_DRAW_TASK_TYPE_LINE: {
             lv_draw_line_dsc_t * ld = lv_draw_task_get_line_dsc(t);
@@ -378,7 +376,6 @@ bool lv_gpu_renderer_fg_can_gpu_layer(const lv_draw_task_t * task)
     if(!sub) return false;
     if(lv_gpu_renderer_layer_is_target(sub)) return true;
     if(!sub->draw_buf) return false;
-    if(id->blend_mode == LV_BLEND_MODE_SUBTRACTIVE || id->blend_mode == LV_BLEND_MODE_DIFFERENCE) return false;
     return true;
 }
 

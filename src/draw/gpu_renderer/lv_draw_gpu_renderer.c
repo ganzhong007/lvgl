@@ -84,6 +84,23 @@ static void gpu_renderer_event_cb(lv_event_t * e);
 static void gpu_renderer_flush_internal(unsigned int tex_id, int32_t dw, int32_t dh);
 static void gpu_renderer_clear_tex(unsigned int tex_id, int32_t w, int32_t h, float r, float g, float b, float a);
 
+static uint32_t g_glyph_letter_hint;
+
+void lv_gpu_renderer_glyph_letter_hint_set(uint32_t letter)
+{
+    g_glyph_letter_hint = letter;
+}
+
+uint32_t lv_gpu_renderer_glyph_letter_hint_get(void)
+{
+    return g_glyph_letter_hint;
+}
+
+uint32_t lv_gpu_renderer_gles2_glyph_overflow_count(void)
+{
+    return lv_gpu_renderer_gles2_2d_glyph_overflow_count();
+}
+
 bool lv_gpu_renderer_debug_2d_only(void)
 {
     static int cached = -1;

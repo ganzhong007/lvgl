@@ -15,9 +15,6 @@
 #include "lv_gpu_renderer_glyph_atlas.h"
 
 #include "../../draw/sw/lv_draw_sw.h"
-#if LV_USE_VECTOR_GRAPHIC
-#include "../../draw/sw/lv_draw_sw_vector.h"
-#endif
 #include "../lv_draw_private.h"
 #include "../lv_draw_label_private.h"
 #include "../lv_draw_image_private.h"
@@ -35,6 +32,13 @@
 #include "../../include/lvgl/draw/lv_draw_mask.h"
 #include "../../include/lvgl/draw/lv_draw_blur.h"
 #include "../../include/lvgl/draw/lv_grad.h"
+#include "../sw/blend/lv_draw_sw_blend.h"
+#include "../sw/blend/lv_draw_sw_blend_private.h"
+#include "../../draw/sw/lv_draw_sw_mask.h"
+#if LV_USE_FREETYPE && LV_USE_VECTOR_GRAPHIC && LV_USE_THORVG
+#include "../../libs/freetype/lv_freetype_private.h"
+#include "../../draw/lv_draw_vector_private.h"
+#endif
 #include "../../include/lvgl/core/lv_matrix.h"
 #include "../../misc/lv_color.h"
 #include "../../misc/lv_area_private.h"
@@ -94,6 +98,9 @@ static int loc_arc_width;
 static int loc_arc_angles;
 static int loc_arc_color;
 static int loc_arc_round;
+static int loc_arc_tex;
+static int loc_arc_use_tex;
+static int loc_arc_img_rect;
 
 static unsigned int prog_shadow;
 static int loc_shadow_disp;
@@ -144,14 +151,26 @@ static int loc_img_sampler;
 static int loc_img_opa;
 static int loc_img_recolor;
 static int loc_img_use_recolor;
+static int loc_img_mask_sampler;
+static int loc_img_use_mask;
+static int loc_img_mask_uv;
+static int loc_img_use_diff;
+static int loc_img_dst_sampler;
+static int loc_img_dst_rect;
 
-static unsigned int prog_tex;
+static unsigned int g_img_dst_snap_tex;
+static int32_t g_img_dst_snap_w;
+static int32_t g_img_dst_snap_h;
+static int32_t g_img_dst_snap_x;
+static int32_t g_img_dst_snap_y;
 static int loc_tex_disp;
 static int loc_tex_sampler;
 
 static lv_draw_task_t g_gpu_text_task;
+static lv_draw_label_dsc_t g_gpu_label_dsc;
 static int32_t g_gpu2d_dw;
 static int32_t g_gpu2d_dh;
+static uint32_t g_glyph_overflow_count;
 
 static unsigned int prog_mask;
 static int loc_mask_disp;
@@ -186,6 +205,15 @@ typedef struct {
 } shadow_raster_ctx_t;
 
 static shadow_raster_ctx_t g_shadow_ctx;
+
+static void image_dsc_to_matrix(lv_matrix_t * matrix, int32_t x, int32_t y, const lv_draw_image_dsc_t * dsc);
+static void matrix_transform_point(const lv_matrix_t * m, float x, float y, float * ox, float * oy);
+static bool draw_image_gpu(const lv_area_t * coords, const lv_area_t * clip,
+                            const lv_draw_image_dsc_t * dsc, int32_t dw, int32_t dh);
+static void draw_textured_quad(const lv_area_t * area, int32_t dw, int32_t dh, unsigned int tex);
+static bool upload_mask_texture(const void * mask_src, unsigned int * tex_out);
+static bool upload_mask_from_decoded(const lv_draw_buf_t * decoded, unsigned int * tex_out);
+static bool upload_decoded_image(const lv_draw_buf_t * decoded, unsigned int * tex_out);
 
 static bool shader_ok(unsigned int sh)
 {
@@ -331,6 +359,9 @@ static const char * fs_arc =
     "uniform float u_width;\n"
     "uniform vec2 u_angles;\n"
     "uniform float u_round;\n"
+    "uniform sampler2D u_tex;\n"
+    "uniform int u_use_tex;\n"
+    "uniform vec4 u_img_rect;\n"
     "varying vec2 v_p;\n"
     "void main(){\n"
     "  vec2 d=v_p-u_center;\n"
@@ -343,15 +374,17 @@ static const char * fs_arc =
     "  float in_arc=0.0;\n"
     "  if(a0<=a1){ in_arc=step(a0,ang)*step(ang,a1); }\n"
     "  else { in_arc=step(a0,ang)+step(ang,a1); in_arc=clamp(in_arc,0.0,1.0); }\n"
-    "  float a=u_color.a*ring*in_arc;\n"
+    "  vec4 col=u_color;\n"
+    "  if(u_use_tex>0){ vec2 uv=(v_p-u_img_rect.xy)/max(u_img_rect.zw,vec2(0.001)); col=texture2D(u_tex,uv); }\n"
+    "  float a=col.a*ring*in_arc;\n"
     "  if(u_round>0.5 && in_arc<0.5){\n"
     "    vec2 p0=u_center+vec2(cos(radians(a0)),sin(radians(a0)))*u_radius;\n"
     "    vec2 p1=u_center+vec2(cos(radians(a1)),sin(radians(a1)))*u_radius;\n"
     "    float cap=1.0-smoothstep(half_w-0.75,half_w+0.25,min(length(v_p-p0),length(v_p-p1)));\n"
-    "    a=max(a,u_color.a*cap);\n"
+    "    a=max(a,col.a*cap);\n"
     "  }\n"
     "  if(a<0.004) discard;\n"
-    "  gl_FragColor=vec4(u_color.rgb,a);\n"
+    "  gl_FragColor=vec4(col.rgb,a);\n"
     "}\n";
 static const char * fs_shadow =
     "precision mediump float;\n"
@@ -500,7 +533,8 @@ static const char * vs_tex =
     "attribute vec2 a_uv;\n"
     "uniform vec2 u_disp;\n"
     "varying vec2 v_uv;\n"
-    "void main(){ v_uv=a_uv; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
+    "varying vec2 v_scr;\n"
+    "void main(){ v_uv=a_uv; v_scr=a_pos; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
 static const char * fs_tex =
     "precision mediump float;\n"
     "varying vec2 v_uv;\n"
@@ -527,14 +561,31 @@ static const char * fs_img =
     "precision mediump float;\n"
     "varying vec2 v_uv;\n"
     "uniform sampler2D u_tex;\n"
+    "uniform sampler2D u_mask;\n"
+    "uniform sampler2D u_dst;\n"
     "uniform float u_opa;\n"
     "uniform vec4 u_recolor;\n"
     "uniform int u_use_recolor;\n"
+    "uniform int u_use_mask;\n"
+    "uniform vec4 u_mask_uv;\n"
+    "uniform int u_use_diff;\n"
+    "uniform vec4 u_dst_rect;\n"
+    "varying vec2 v_scr;\n"
     "void main(){\n"
     "  vec4 c=texture2D(u_tex,v_uv);\n"
     "  if(u_use_recolor>0){ c.rgb=mix(c.rgb,u_recolor.rgb,u_recolor.a); }\n"
+    "  if(u_use_mask>0){\n"
+    "    vec2 muv=vec2(mix(u_mask_uv.x,u_mask_uv.z,v_uv.x),mix(u_mask_uv.y,u_mask_uv.w,v_uv.y));\n"
+    "    c.a*=texture2D(u_mask,muv).a;\n"
+    "  }\n"
     "  c.a*=u_opa;\n"
     "  if(c.a<0.004) discard;\n"
+    "  if(u_use_diff>0){\n"
+    "    vec2 duv=(v_scr-u_dst_rect.xy)/max(u_dst_rect.zw,vec2(0.001));\n"
+    "    vec4 d=texture2D(u_dst, duv);\n"
+    "    gl_FragColor=vec4(abs(d.rgb-c.rgb),max(d.a,c.a));\n"
+    "    return;\n"
+    "  }\n"
     "  gl_FragColor=c;\n"
     "}\n";
 #else
@@ -631,6 +682,9 @@ static const char * fs_arc =
     "uniform float u_width;\n"
     "uniform vec2 u_angles;\n"
     "uniform float u_round;\n"
+    "uniform sampler2D u_tex;\n"
+    "uniform int u_use_tex;\n"
+    "uniform vec4 u_img_rect;\n"
     "varying vec2 v_p;\n"
     "void main(){\n"
     "  vec2 d=v_p-u_center; float dist=length(d); float half_w=u_width*0.5;\n"
@@ -639,12 +693,14 @@ static const char * fs_arc =
     "  float ang=degrees(atan(d.y,d.x)); if(ang<0.0) ang+=360.0;\n"
     "  float a0=u_angles.x; float a1=u_angles.y; float in_arc=0.0;\n"
     "  if(a0<=a1) in_arc=step(a0,ang)*step(ang,a1); else in_arc=clamp(step(a0,ang)+step(ang,a1),0.0,1.0);\n"
-    "  float a=u_color.a*ring*in_arc;\n"
+    "  vec4 col=u_color;\n"
+    "  if(u_use_tex>0){ vec2 uv=(v_p-u_img_rect.xy)/max(u_img_rect.zw,vec2(0.001)); col=texture2D(u_tex,uv); }\n"
+    "  float a=col.a*ring*in_arc;\n"
     "  if(u_round>0.5 && in_arc<0.5){\n"
     "    vec2 p0=u_center+vec2(cos(radians(a0)),sin(radians(a0)))*u_radius;\n"
     "    vec2 p1=u_center+vec2(cos(radians(a1)),sin(radians(a1)))*u_radius;\n"
-    "    a=max(a,u_color.a*(1.0-smoothstep(half_w-0.75,half_w+0.25,min(length(v_p-p0),length(v_p-p1))))); }\n"
-    "  if(a<0.004) discard; gl_FragColor=vec4(u_color.rgb,a);\n"
+    "    a=max(a,col.a*(1.0-smoothstep(half_w-0.75,half_w+0.25,min(length(v_p-p0),length(v_p-p1))))); }\n"
+    "  if(a<0.004) discard; gl_FragColor=vec4(col.rgb,a);\n"
     "}\n";
 static const char * fs_shadow =
     "#version 120\n"
@@ -789,7 +845,8 @@ static const char * vs_tex =
     "attribute vec2 a_uv;\n"
     "uniform vec2 u_disp;\n"
     "varying vec2 v_uv;\n"
-    "void main(){ v_uv=a_uv; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
+    "varying vec2 v_scr;\n"
+    "void main(){ v_uv=a_uv; v_scr=a_pos; vec2 ndc; ndc.x=a_pos.x/u_disp.x*2.0-1.0; ndc.y=a_pos.y/u_disp.y*2.0-1.0; gl_Position=vec4(ndc,0.0,1.0);}\n";
 static const char * fs_tex =
     "#version 120\n"
     "varying vec2 v_uv;\n"
@@ -816,14 +873,31 @@ static const char * fs_img =
     "#version 120\n"
     "varying vec2 v_uv;\n"
     "uniform sampler2D u_tex;\n"
+    "uniform sampler2D u_mask;\n"
+    "uniform sampler2D u_dst;\n"
     "uniform float u_opa;\n"
     "uniform vec4 u_recolor;\n"
     "uniform int u_use_recolor;\n"
+    "uniform int u_use_mask;\n"
+    "uniform vec4 u_mask_uv;\n"
+    "uniform int u_use_diff;\n"
+    "uniform vec4 u_dst_rect;\n"
+    "varying vec2 v_scr;\n"
     "void main(){\n"
     "  vec4 c=texture2D(u_tex,v_uv);\n"
     "  if(u_use_recolor>0){ c.rgb=mix(c.rgb,u_recolor.rgb,u_recolor.a); }\n"
+    "  if(u_use_mask>0){\n"
+    "    vec2 muv=vec2(mix(u_mask_uv.x,u_mask_uv.z,v_uv.x),mix(u_mask_uv.y,u_mask_uv.w,v_uv.y));\n"
+    "    c.a*=texture2D(u_mask,muv).a;\n"
+    "  }\n"
     "  c.a*=u_opa;\n"
     "  if(c.a<0.004) discard;\n"
+    "  if(u_use_diff>0){\n"
+    "    vec2 duv=(v_scr-u_dst_rect.xy)/max(u_dst_rect.zw,vec2(0.001));\n"
+    "    vec4 d=texture2D(u_dst, duv);\n"
+    "    gl_FragColor=vec4(abs(d.rgb-c.rgb),max(d.a,c.a));\n"
+    "    return;\n"
+    "  }\n"
     "  gl_FragColor=c;\n"
     "}\n";
 #endif
@@ -877,6 +951,9 @@ void lv_gpu_renderer_gles2_2d_init(void)
         loc_arc_angles = glGetUniformLocation(prog_arc, "u_angles");
         loc_arc_color = glGetUniformLocation(prog_arc, "u_color");
         loc_arc_round = glGetUniformLocation(prog_arc, "u_round");
+        loc_arc_tex = glGetUniformLocation(prog_arc, "u_tex");
+        loc_arc_use_tex = glGetUniformLocation(prog_arc, "u_use_tex");
+        loc_arc_img_rect = glGetUniformLocation(prog_arc, "u_img_rect");
     }
     prog_shadow = link_program(vs_shadow, fs_shadow);
     if(prog_shadow) {
@@ -953,6 +1030,12 @@ void lv_gpu_renderer_gles2_2d_init(void)
         loc_img_opa = glGetUniformLocation(prog_img, "u_opa");
         loc_img_recolor = glGetUniformLocation(prog_img, "u_recolor");
         loc_img_use_recolor = glGetUniformLocation(prog_img, "u_use_recolor");
+        loc_img_mask_sampler = glGetUniformLocation(prog_img, "u_mask");
+        loc_img_use_mask = glGetUniformLocation(prog_img, "u_use_mask");
+        loc_img_mask_uv = glGetUniformLocation(prog_img, "u_mask_uv");
+        loc_img_use_diff = glGetUniformLocation(prog_img, "u_use_diff");
+        loc_img_dst_sampler = glGetUniformLocation(prog_img, "u_dst");
+        loc_img_dst_rect = glGetUniformLocation(prog_img, "u_dst_rect");
         GL_CALL(glBindAttribLocation(prog_img, 1, "a_uv"));
     }
     lv_gpu_glyph_atlas_init();
@@ -973,6 +1056,10 @@ void lv_gpu_renderer_gles2_2d_deinit(void)
     if(prog_img) GL_CALL(glDeleteProgram(prog_img));
     prog_fill = prog_line = prog_arc = prog_shadow = prog_tri = prog_mask = prog_blur = prog_tex = 0;
     prog_glyph = prog_img = 0;
+    if(g_img_dst_snap_tex) GL_CALL(glDeleteTextures(1, &g_img_dst_snap_tex));
+    g_img_dst_snap_tex = 0;
+    g_img_dst_snap_w = g_img_dst_snap_h = 0;
+    g_img_dst_snap_x = g_img_dst_snap_y = 0;
     if(g_blur_temp_tex) {
         GL_CALL(glDeleteTextures(1, &g_blur_temp_tex));
         g_blur_temp_tex = 0;
@@ -1787,7 +1874,26 @@ static bool draw_blur_gpu(unsigned int color_tex, int32_t dw, int32_t dh, const 
 
 static bool draw_arc_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const lv_draw_arc_dsc_t * ad)
 {
-    if(!prog_arc || !ad || ad->width < 1 || ad->opa <= LV_OPA_MIN || ad->img_src) return false;
+    if(!prog_arc || !ad || ad->width < 1 || ad->opa <= LV_OPA_MIN) return false;
+
+    unsigned int img_tex = 0;
+    int32_t img_w = 0;
+    int32_t img_h = 0;
+    if(ad->img_src) {
+        lv_image_decoder_dsc_t dec;
+        lv_memzero(&dec, sizeof(dec));
+        if(lv_image_decoder_open(&dec, ad->img_src, NULL) != LV_RESULT_OK || !dec.decoded) {
+            lv_image_decoder_close(&dec);
+            return false;
+        }
+        if(!upload_decoded_image(dec.decoded, &img_tex)) {
+            lv_image_decoder_close(&dec);
+            return false;
+        }
+        img_w = dec.decoded->header.w;
+        img_h = dec.decoded->header.h;
+        lv_image_decoder_close(&dec);
+    }
 
     float verts[12];
     area_to_verts(area, verts);
@@ -1801,10 +1907,26 @@ static bool draw_arc_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const l
     GL_CALL(glUniform1f(loc_arc_width, (float)ad->width));
     GL_CALL(glUniform2f(loc_arc_angles, (float)ad->start_angle, (float)ad->end_angle));
     GL_CALL(glUniform1f(loc_arc_round, ad->rounded ? 1.0f : 0.0f));
+    if(img_tex) {
+        const float iw = (float)img_w;
+        const float ih = (float)img_h;
+        const float ox = (float)ad->center.x - iw * 0.5f;
+        const float oy = (float)ad->center.y - ih * 0.5f;
+        GL_CALL(glUniform1i(loc_arc_use_tex, 1));
+        GL_CALL(glUniform4f(loc_arc_img_rect, ox, oy, iw, ih));
+        GL_CALL(glActiveTexture(GL_TEXTURE0));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, img_tex));
+        GL_CALL(glUniform1i(loc_arc_tex, 0));
+    }
+    else {
+        GL_CALL(glUniform1i(loc_arc_use_tex, 0));
+    }
     GL_CALL(glEnableVertexAttribArray(0));
     GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, verts));
     GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
     GL_CALL(glDisableVertexAttribArray(0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    if(img_tex) GL_CALL(glDeleteTextures(1, &img_tex));
     return true;
 }
 
@@ -2028,21 +2150,207 @@ static bool raster_shadow_sw(const lv_area_t * coords, const lv_area_t * clip,
     return raster_sw_to_texture(&shadow_area, clip, draw_box_shadow_sw_cb, (void *)sd, tex_out);
 }
 
+static void restore_blend_mode(void)
+{
+    GL_CALL(glBlendEquation(GL_FUNC_ADD));
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+}
+
 static void apply_blend_mode(lv_blend_mode_t mode)
 {
     GL_CALL(glEnable(GL_BLEND));
     switch(mode) {
         case LV_BLEND_MODE_ADDITIVE:
+            GL_CALL(glBlendEquation(GL_FUNC_ADD));
             GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE));
             break;
         case LV_BLEND_MODE_MULTIPLY:
+            GL_CALL(glBlendEquation(GL_FUNC_ADD));
             GL_CALL(glBlendFunc(GL_DST_COLOR, GL_ZERO));
+            break;
+        case LV_BLEND_MODE_SUBTRACTIVE:
+            GL_CALL(glBlendEquation(GL_FUNC_REVERSE_SUBTRACT));
+            GL_CALL(glBlendFunc(GL_ONE, GL_ONE));
+            break;
+        case LV_BLEND_MODE_DIFFERENCE:
+            GL_CALL(glBlendEquation(GL_FUNC_ADD));
+            GL_CALL(glBlendFunc(GL_ONE, GL_ZERO));
             break;
         case LV_BLEND_MODE_NORMAL:
         default:
+            GL_CALL(glBlendEquation(GL_FUNC_ADD));
             GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
             break;
     }
+}
+
+static void quad_bounds(const float * pos, float * minx, float * miny, float * maxx, float * maxy)
+{
+    *minx = *miny = 1e9f;
+    *maxx = *maxy = -1e9f;
+    for(int i = 0; i < 6; i++) {
+        const float x = pos[i * 2];
+        const float y = pos[i * 2 + 1];
+        if(x < *minx) *minx = x;
+        if(y < *miny) *miny = y;
+        if(x > *maxx) *maxx = x;
+        if(y > *maxy) *maxy = y;
+    }
+}
+
+static bool ensure_dst_snap_tex(int32_t w, int32_t h)
+{
+    if(w < 1 || h < 1) return false;
+    if(g_img_dst_snap_tex && g_img_dst_snap_w == w && g_img_dst_snap_h == h) return true;
+    if(g_img_dst_snap_tex) GL_CALL(glDeleteTextures(1, &g_img_dst_snap_tex));
+    GL_CALL(glGenTextures(1, &g_img_dst_snap_tex));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, g_img_dst_snap_tex));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    g_img_dst_snap_w = w;
+    g_img_dst_snap_h = h;
+    return g_img_dst_snap_tex != 0;
+}
+
+static bool snap_dst_for_quad(int32_t dw, int32_t dh, const float * pos)
+{
+    float minx, miny, maxx, maxy;
+    quad_bounds(pos, &minx, &miny, &maxx, &maxy);
+    int32_t x = (int32_t)floorf(minx);
+    int32_t y = (int32_t)floorf(miny);
+    int32_t w = (int32_t)ceilf(maxx) - x + 1;
+    int32_t h = (int32_t)ceilf(maxy) - y + 1;
+    if(x < 0) x = 0;
+    if(y < 0) y = 0;
+    if(x + w > dw) w = dw - x;
+    if(y + h > dh) h = dh - y;
+    if(w < 1 || h < 1) return false;
+    if(!ensure_dst_snap_tex(w, h)) return false;
+    g_img_dst_snap_x = x;
+    g_img_dst_snap_y = y;
+    const int32_t gl_y = dh - y - h;
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, g_img_dst_snap_tex));
+    GL_CALL(glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, x, gl_y, w, h));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    return true;
+}
+
+static void compute_mask_uv(const lv_draw_image_dsc_t * dsc, const lv_area_t * coords, int32_t img_w, int32_t img_h,
+                             float uv_out[4])
+{
+    const lv_image_dsc_t * mask = dsc->bitmap_mask_src;
+    lv_area_t image_area;
+    if(lv_area_get_width(&dsc->image_area) >= 0) image_area = dsc->image_area;
+    else image_area = *coords;
+
+    lv_area_t mask_area;
+    lv_area_set(&mask_area, 0, 0, (int32_t)mask->header.w - 1, (int32_t)mask->header.h - 1);
+    lv_area_align(&image_area, &mask_area, LV_ALIGN_CENTER, 0, 0);
+
+    const float inv_mw = 1.0f / (float)mask->header.w;
+    const float inv_mh = 1.0f / (float)mask->header.h;
+    uv_out[0] = ((float)coords->x1 - (float)mask_area.x1) * inv_mw;
+    uv_out[1] = ((float)coords->y1 - (float)mask_area.y1) * inv_mh;
+    uv_out[2] = ((float)coords->x1 + (float)img_w - (float)mask_area.x1) * inv_mw;
+    uv_out[3] = ((float)coords->y1 + (float)img_h - (float)mask_area.y1) * inv_mh;
+}
+
+static bool upload_mask_from_decoded(const lv_draw_buf_t * decoded, unsigned int * tex_out)
+{
+    if(!decoded || !decoded->data || !tex_out) return false;
+    const lv_image_dsc_t wrap = {
+        .header = decoded->header,
+        .data_size = decoded->data_size,
+        .data = decoded->data,
+    };
+    return upload_mask_texture(&wrap, tex_out);
+}
+
+static bool upload_mask_texture(const void * mask_src, unsigned int * tex_out)
+{
+    if(!mask_src || !tex_out) return false;
+
+    const lv_image_dsc_t * mask = mask_src;
+    if(lv_image_src_get_type(mask_src) == LV_IMAGE_SRC_VARIABLE && mask->data) {
+        unsigned int tex = 0;
+        GL_CALL(glGenTextures(1, &tex));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+        GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+        GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+        GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+        GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+        GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+
+        if(mask->header.cf == LV_COLOR_FORMAT_A8 || mask->header.cf == LV_COLOR_FORMAT_L8) {
+            const GLenum fmt = GL_ALPHA;
+            GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, fmt, mask->header.w, mask->header.h, 0, fmt,
+                                 GL_UNSIGNED_BYTE, mask->data));
+        }
+        else if(mask->header.cf == LV_COLOR_FORMAT_ARGB8888 || mask->header.cf == LV_COLOR_FORMAT_XRGB8888
+                || mask->header.cf == LV_COLOR_FORMAT_RGB888) {
+            lv_opengles_teximage_bgra8888(0, mask->header.w, mask->header.h, mask->data, mask->header.stride);
+        }
+        else if(mask->header.cf == LV_COLOR_FORMAT_RGB565A8) {
+            GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mask->header.w, mask->header.h, 0,
+                                 GL_RGBA, GL_UNSIGNED_BYTE, NULL));
+            const uint8_t * rgb = mask->data;
+            const uint8_t * a8 = mask->data + mask->header.stride * mask->header.h;
+            const int32_t rgb_stride = mask->header.stride;
+            lv_draw_buf_t tmp;
+            uint32_t sz = LV_DRAW_BUF_SIZE(mask->header.w, mask->header.h, LV_COLOR_FORMAT_ARGB8888);
+            uint8_t * mem = lv_malloc(sz);
+            if(!mem) {
+                GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+                GL_CALL(glDeleteTextures(1, &tex));
+                return false;
+            }
+            lv_draw_buf_init(&tmp, mask->header.w, mask->header.h, LV_COLOR_FORMAT_ARGB8888, LV_STRIDE_AUTO, mem, sz);
+            for(int32_t row = 0; row < mask->header.h; row++) {
+                const uint16_t * row565 = (const uint16_t *)(rgb + (uint32_t)row * (uint32_t)rgb_stride);
+                uint8_t * dst = tmp.data + (uint32_t)row * (uint32_t)tmp.header.stride;
+                const uint8_t * alpha = a8 + (uint32_t)row * (uint32_t)mask->header.w;
+                for(int32_t col = 0; col < mask->header.w; col++) {
+                    const uint16_t c = row565[col];
+                    dst[col * 4 + 0] = (uint8_t)(((c >> 11) & 0x1F) * 255 / 31);
+                    dst[col * 4 + 1] = (uint8_t)(((c >> 5) & 0x3F) * 255 / 63);
+                    dst[col * 4 + 2] = (uint8_t)((c & 0x1F) * 255 / 31);
+                    dst[col * 4 + 3] = alpha[col];
+                }
+            }
+            lv_opengles_teximage_bgra8888(0, mask->header.w, mask->header.h, tmp.data, tmp.header.stride);
+            lv_free(mem);
+        }
+        else {
+            lv_image_decoder_dsc_t dec;
+            lv_memzero(&dec, sizeof(dec));
+            if(lv_image_decoder_open(&dec, mask_src, NULL) != LV_RESULT_OK || !dec.decoded) {
+                GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+                GL_CALL(glDeleteTextures(1, &tex));
+                lv_image_decoder_close(&dec);
+                return false;
+            }
+            lv_opengles_teximage_bgra8888(0, dec.decoded->header.w, dec.decoded->header.h,
+                                          dec.decoded->data, dec.decoded->header.stride);
+            lv_image_decoder_close(&dec);
+        }
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+        *tex_out = tex;
+        return true;
+    }
+
+    lv_image_decoder_dsc_t dec;
+    lv_memzero(&dec, sizeof(dec));
+    if(lv_image_decoder_open(&dec, mask_src, NULL) != LV_RESULT_OK || !dec.decoded) {
+        lv_image_decoder_close(&dec);
+        return false;
+    }
+    const bool ok = upload_mask_from_decoded(dec.decoded, tex_out);
+    lv_image_decoder_close(&dec);
+    return ok;
 }
 
 static void draw_uv_quad(int32_t dw, int32_t dh, unsigned int prog, int loc_disp, int loc_sampler,
@@ -2063,18 +2371,49 @@ static void draw_uv_quad(int32_t dw, int32_t dh, unsigned int prog, int loc_disp
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
 }
 
-static void draw_glyph_quad(const lv_area_t * letter_coords, int32_t dw, int32_t dh,
-                             const lv_gpu_glyph_atlas_uv_t * uv, lv_color_t color, lv_opa_t opa)
+static void draw_glyph_quad_ex(const lv_area_t * letter_coords, int32_t dw, int32_t dh,
+                                const lv_gpu_glyph_atlas_uv_t * uv, lv_color_t color, lv_opa_t opa,
+                                int32_t rotation_01deg, const lv_point_t * pivot, int32_t glyph_box_h, int32_t glyph_ofs_y)
 {
     if(!prog_glyph || !uv || uv->tex == 0) return;
     const float pad = uv->sdf ? 4.0f : 0.0f;
-    float x1 = (float)letter_coords->x1 - pad;
-    float y1 = (float)letter_coords->y1 - pad;
-    float x2 = (float)letter_coords->x2 + 1.0f + pad;
-    float y2 = (float)letter_coords->y2 + 1.0f + pad;
-    float pos[] = { x1, y1, x2, y1, x2, y2, x1, y1, x2, y2, x1, y2 };
+    const float bw = (float)lv_area_get_width(letter_coords) + 1.0f + pad * 2.0f;
+    const float bh = (float)lv_area_get_height(letter_coords) + 1.0f + pad * 2.0f;
+    const float x0 = (float)letter_coords->x1 - pad;
+    const float y0 = (float)letter_coords->y1 - pad;
+
+    float pos[12];
     float uvs[] = { uv->u0, uv->v0, uv->u1, uv->v0, uv->u1, uv->v1,
                     uv->u0, uv->v0, uv->u1, uv->v1, uv->u0, uv->v1 };
+
+    if(rotation_01deg % 3600 == 0) {
+        const float x1 = x0 + bw - 1.0f;
+        const float y1 = y0 + bh - 1.0f;
+        float flat[] = { x0, y0, x1, y0, x1, y1, x0, y0, x1, y1, x0, y1 };
+        lv_memcpy(pos, flat, sizeof(pos));
+    }
+    else {
+        lv_draw_image_dsc_t id;
+        lv_draw_image_dsc_init(&id);
+        id.rotation = rotation_01deg;
+        id.pivot.x = pivot ? pivot->x : 0;
+        id.pivot.y = pivot ? (glyph_box_h + glyph_ofs_y) : 0;
+        lv_matrix_t matrix;
+        image_dsc_to_matrix(&matrix, (int32_t)x0, (int32_t)y0, &id);
+        float corners[4][2] = { {0.f, 0.f}, {bw, 0.f}, {bw, bh}, {0.f, bh} };
+        for(int i = 0; i < 4; i++) {
+            float ox, oy;
+            matrix_transform_point(&matrix, corners[i][0], corners[i][1], &ox, &oy);
+            corners[i][0] = ox;
+            corners[i][1] = oy;
+        }
+        float tris[] = {
+            corners[0][0], corners[0][1], corners[1][0], corners[1][1], corners[2][0], corners[2][1],
+            corners[0][0], corners[0][1], corners[2][0], corners[2][1], corners[3][0], corners[3][1],
+        };
+        lv_memcpy(pos, tris, sizeof(pos));
+    }
+
     lv_color32_t c32 = lv_color_to_32(color, opa);
     GL_CALL(glUseProgram(prog_glyph));
     GL_CALL(glUniform2f(loc_glyph_disp, (float)dw, (float)dh));
@@ -2095,60 +2434,296 @@ static void draw_glyph_quad(const lv_area_t * letter_coords, int32_t dw, int32_t
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
 }
 
-static bool gpu_text_label_simple(const lv_draw_label_dsc_t * ld)
+static void draw_glyph_quad(const lv_area_t * letter_coords, int32_t dw, int32_t dh,
+                             const lv_gpu_glyph_atlas_uv_t * uv, lv_color_t color, lv_opa_t opa)
 {
-    if(!ld) return false;
-    if(ld->rotation != 0) return false;
-    if(ld->outline_stroke_width > 0) return false;
-    if(ld->sel_start != LV_DRAW_LABEL_NO_TXT_SEL) return false;
-    if(ld->decor != LV_TEXT_DECOR_NONE) return false;
-    if(ld->base.drop_shadow_opa) return false;
+    draw_glyph_quad_ex(letter_coords, dw, dh, uv, color, opa, 0, NULL, 0, 0);
+}
+
+static bool draw_glyph_bitmap_once(const uint8_t * bitmap, int32_t bw, int32_t bh, int32_t stride,
+                                    const lv_area_t * letter_coords, int32_t dw, int32_t dh,
+                                    lv_color_t color, lv_opa_t opa, int32_t rotation_01deg,
+                                    const lv_point_t * pivot, int32_t glyph_box_h, int32_t glyph_ofs_y)
+{
+    if(!bitmap || bw < 1 || bh < 1) return false;
+    unsigned int tex = 0;
+    GL_CALL(glGenTextures(1, &tex));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, bw, bh, 0, GL_ALPHA, GL_UNSIGNED_BYTE, NULL));
+    for(int32_t row = 0; row < bh; row++) {
+        GL_CALL(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, row, bw, 1, GL_ALPHA, GL_UNSIGNED_BYTE,
+                                bitmap + (uint32_t)row * (uint32_t)stride));
+    }
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+
+    lv_gpu_glyph_atlas_uv_t uv;
+    uv.tex = tex;
+    uv.u0 = 0.f;
+    uv.v0 = 0.f;
+    uv.u1 = 1.f;
+    uv.v1 = 1.f;
+    uv.sdf = 0;
+    draw_glyph_quad_ex(letter_coords, dw, dh, &uv, color, opa, rotation_01deg, pivot, glyph_box_h, glyph_ofs_y);
+    GL_CALL(glDeleteTextures(1, &tex));
     return true;
+}
+
+uint32_t lv_gpu_renderer_gles2_2d_glyph_overflow_count(void)
+{
+    return g_glyph_overflow_count;
+}
+
+#if LV_USE_FREETYPE && LV_USE_VECTOR_GRAPHIC && LV_USE_THORVG
+static void gpu_freetype_outline_event_cb(lv_event_t * e)
+{
+    lv_freetype_outline_event_param_t * param = lv_event_get_param(e);
+    switch(lv_event_get_code(e)) {
+        case LV_EVENT_CREATE:
+            param->outline = lv_vector_path_create(LV_VECTOR_PATH_QUALITY_HIGH);
+            break;
+        case LV_EVENT_DELETE:
+            lv_vector_path_clear(param->outline);
+            lv_vector_path_delete(param->outline);
+            break;
+        case LV_EVENT_INSERT: {
+                lv_fpoint_t pnt;
+                lv_fpoint_t ctrl_pnt1;
+                lv_fpoint_t ctrl_pnt2;
+                lv_vector_path_t * path = param->outline;
+                switch(param->type) {
+                    case LV_FREETYPE_OUTLINE_MOVE_TO:
+                        pnt.x = LV_FREETYPE_F26DOT6_TO_FLOAT(param->to.x);
+                        pnt.y = LV_FREETYPE_F26DOT6_TO_FLOAT(param->to.y);
+                        lv_vector_path_move_to(path, &pnt);
+                        break;
+                    case LV_FREETYPE_OUTLINE_LINE_TO:
+                        pnt.x = LV_FREETYPE_F26DOT6_TO_FLOAT(param->to.x);
+                        pnt.y = LV_FREETYPE_F26DOT6_TO_FLOAT(param->to.y);
+                        lv_vector_path_line_to(path, &pnt);
+                        break;
+                    case LV_FREETYPE_OUTLINE_CUBIC_TO:
+                        pnt.x = LV_FREETYPE_F26DOT6_TO_FLOAT(param->to.x);
+                        pnt.y = LV_FREETYPE_F26DOT6_TO_FLOAT(param->to.y);
+                        ctrl_pnt1.x = LV_FREETYPE_F26DOT6_TO_FLOAT(param->control1.x);
+                        ctrl_pnt1.y = LV_FREETYPE_F26DOT6_TO_FLOAT(param->control1.y);
+                        ctrl_pnt2.x = LV_FREETYPE_F26DOT6_TO_FLOAT(param->control2.x);
+                        ctrl_pnt2.y = LV_FREETYPE_F26DOT6_TO_FLOAT(param->control2.y);
+                        lv_vector_path_cubic_to(path, &ctrl_pnt1, &ctrl_pnt2, &pnt);
+                        break;
+                    case LV_FREETYPE_OUTLINE_CONIC_TO:
+                        pnt.x = LV_FREETYPE_F26DOT6_TO_FLOAT(param->to.x);
+                        pnt.y = LV_FREETYPE_F26DOT6_TO_FLOAT(param->to.y);
+                        ctrl_pnt1.x = LV_FREETYPE_F26DOT6_TO_FLOAT(param->control1.x);
+                        ctrl_pnt1.y = LV_FREETYPE_F26DOT6_TO_FLOAT(param->control1.y);
+                        lv_vector_path_quad_to(path, &ctrl_pnt1, &pnt);
+                        break;
+                    default:
+                        break;
+                }
+                break;
+            }
+        default:
+            break;
+    }
+}
+
+static bool draw_glyph_vector_gpu(lv_draw_glyph_dsc_t * glyph_draw_dsc, int32_t dw, int32_t dh)
+{
+    if(!glyph_draw_dsc || !glyph_draw_dsc->letter_coords || !glyph_draw_dsc->g) return false;
+    lv_vector_path_t * paths = (lv_vector_path_t *)glyph_draw_dsc->glyph_data;
+    if(!paths) return false;
+
+    float scale = 1.0f;
+    if(lv_freetype_is_outline_font(glyph_draw_dsc->g->resolved_font)) {
+        scale = LV_FREETYPE_F26DOT6_TO_FLOAT(lv_freetype_outline_get_scale(glyph_draw_dsc->g->resolved_font));
+    }
+    const int32_t w = (int32_t)((float)glyph_draw_dsc->g->box_w + glyph_draw_dsc->outline_stroke_width * 2 * scale);
+    const int32_t h = (int32_t)((float)glyph_draw_dsc->g->box_h + glyph_draw_dsc->outline_stroke_width * 2 * scale);
+    if(w < 1 || h < 1) return false;
+
+    lv_draw_buf_t * draw_buf = lv_draw_buf_create(w, h, LV_COLOR_FORMAT_ARGB8888, LV_STRIDE_AUTO);
+    if(!draw_buf) return false;
+    lv_draw_buf_clear(draw_buf, NULL);
+
+    lv_layer_t layer;
+    lv_memzero(&layer, sizeof(layer));
+    layer.draw_buf = draw_buf;
+    layer.color_format = LV_COLOR_FORMAT_ARGB8888;
+    layer.buf_area.x1 = 0;
+    layer.buf_area.y1 = 0;
+    layer.buf_area.x2 = w - 1;
+    layer.buf_area.y2 = h - 1;
+    layer._clip_area = layer.buf_area;
+    layer.phy_clip_area = layer.buf_area;
+
+    lv_matrix_t matrix;
+    lv_matrix_identity(&matrix);
+    const int32_t offset_x = (int32_t)((float)glyph_draw_dsc->g->ofs_x - glyph_draw_dsc->outline_stroke_width * scale);
+    const int32_t offset_y = (int32_t)((float)glyph_draw_dsc->g->ofs_y - glyph_draw_dsc->outline_stroke_width * scale);
+    lv_matrix_scale(&matrix, 1, -1);
+    lv_matrix_translate(&matrix, -offset_x, -h - offset_y);
+    lv_matrix_scale(&matrix, scale, scale);
+
+    lv_draw_vector_dsc_t * vector_dsc = lv_draw_vector_dsc_create(&layer);
+    lv_draw_vector_dsc_set_transform(vector_dsc, &matrix);
+    if(glyph_draw_dsc->outline_stroke_width > 0) {
+        lv_draw_vector_dsc_set_stroke_color(vector_dsc, glyph_draw_dsc->outline_stroke_color);
+        lv_draw_vector_dsc_set_stroke_opa(vector_dsc, glyph_draw_dsc->outline_stroke_opa);
+        lv_draw_vector_dsc_set_stroke_width(vector_dsc, glyph_draw_dsc->outline_stroke_width);
+        lv_draw_vector_dsc_add_path(vector_dsc, paths);
+        lv_draw_vector_dsc_set_stroke_opa(vector_dsc, 0);
+        lv_draw_vector_dsc_set_stroke_width(vector_dsc, 0);
+    }
+    lv_draw_vector_dsc_set_fill_color(vector_dsc, glyph_draw_dsc->color);
+    lv_draw_vector_dsc_set_fill_opa(vector_dsc, glyph_draw_dsc->opa);
+    lv_draw_vector_dsc_add_path(vector_dsc, paths);
+
+    if(vector_dsc->task_list) {
+        lv_draw_task_t dummy_t;
+        lv_memzero(&dummy_t, sizeof(dummy_t));
+        dummy_t.area = layer._clip_area;
+        dummy_t._real_area = layer._clip_area;
+        dummy_t.clip_area = layer._clip_area;
+        dummy_t.target_layer = &layer;
+        dummy_t.type = LV_DRAW_TASK_TYPE_VECTOR;
+        dummy_t.opa = LV_OPA_COVER;
+        dummy_t.draw_dsc = vector_dsc;
+        lv_draw_sw_vector(&dummy_t, dummy_t.draw_dsc);
+    }
+    lv_draw_vector_dsc_delete(vector_dsc);
+
+    unsigned int tex = 0;
+    const bool uploaded = upload_decoded_image(draw_buf, &tex);
+    lv_draw_buf_destroy(draw_buf);
+    if(!uploaded) return false;
+
+    lv_area_t letter_coords = *glyph_draw_dsc->letter_coords;
+    lv_area_set_width(&letter_coords, w);
+    lv_area_set_height(&letter_coords, h);
+    draw_textured_quad(&letter_coords, dw, dh, tex);
+    GL_CALL(glDeleteTextures(1, &tex));
+    return true;
+}
+#endif
+
+static bool draw_glyph_bitmap_gpu(const lv_font_t * font, const lv_font_glyph_dsc_t * g,
+                                   const lv_draw_buf_t * draw_buf, lv_draw_glyph_dsc_t * glyph_draw_dsc,
+                                   int32_t dw, int32_t dh, lv_color_t color, lv_opa_t opa)
+{
+    const int32_t bw = draw_buf->header.w > 0 ? draw_buf->header.w : lv_area_get_width(glyph_draw_dsc->letter_coords);
+    const int32_t bh = draw_buf->header.h > 0 ? draw_buf->header.h : lv_area_get_height(glyph_draw_dsc->letter_coords);
+    const int32_t stride = draw_buf->header.stride;
+
+    lv_gpu_glyph_atlas_uv_t uv;
+    if(lv_gpu_glyph_atlas_acquire(font, g->gid.index, draw_buf->data, bw, bh, stride, &uv)) {
+        draw_glyph_quad_ex(glyph_draw_dsc->letter_coords, dw, dh, &uv, color, opa,
+                           glyph_draw_dsc->rotation, &glyph_draw_dsc->pivot, g->box_h, g->ofs_y);
+        return true;
+    }
+
+    g_glyph_overflow_count++;
+    return draw_glyph_bitmap_once(draw_buf->data, bw, bh, stride, glyph_draw_dsc->letter_coords, dw, dh,
+                                  color, opa, glyph_draw_dsc->rotation, &glyph_draw_dsc->pivot, g->box_h, g->ofs_y);
 }
 
 static void gpu_glyph_draw_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_draw_dsc,
                                lv_draw_fill_dsc_t * fill_draw_dsc, const lv_area_t * fill_area)
 {
     LV_UNUSED(t);
-    LV_UNUSED(fill_draw_dsc);
-    LV_UNUSED(fill_area);
+    const int32_t dw = g_gpu2d_dw;
+    const int32_t dh = g_gpu2d_dh;
+    if(dw < 1 || dh < 1) return;
+
+    if(fill_draw_dsc && fill_area) {
+        draw_fill_quad(fill_area, dw, dh, fill_draw_dsc->color, fill_draw_dsc->opa, 0);
+        return;
+    }
+
     if(!glyph_draw_dsc || !glyph_draw_dsc->letter_coords || !glyph_draw_dsc->g) return;
-    if(glyph_draw_dsc->rotation % 3600 != 0) return;
-    if(glyph_draw_dsc->format == LV_FONT_GLYPH_FORMAT_VECTOR
-       || glyph_draw_dsc->format == LV_FONT_GLYPH_FORMAT_IMAGE) return;
 
     const lv_font_glyph_dsc_t * g = glyph_draw_dsc->g;
     const lv_font_t * font = g->resolved_font;
     if(!font) return;
-    const void * bmp = glyph_draw_dsc->glyph_data;
-    if(!bmp) {
-        glyph_draw_dsc->glyph_data = lv_font_get_glyph_bitmap(g, glyph_draw_dsc->_draw_buf);
-        bmp = glyph_draw_dsc->glyph_data;
-    }
-    if(!bmp) return;
 
-    const lv_draw_buf_t * draw_buf = bmp;
-    const int32_t bw = lv_area_get_width(glyph_draw_dsc->letter_coords);
-    const int32_t bh = lv_area_get_height(glyph_draw_dsc->letter_coords);
-    lv_gpu_glyph_atlas_uv_t uv;
-    if(!lv_gpu_glyph_atlas_acquire(font, g->gid.index, draw_buf->data, bw, bh, draw_buf->header.stride, &uv)) {
+#if LV_USE_FREETYPE && LV_USE_VECTOR_GRAPHIC && LV_USE_THORVG
+    if(glyph_draw_dsc->format == LV_FONT_GLYPH_FORMAT_VECTOR) {
+        if(!glyph_draw_dsc->glyph_data) {
+            glyph_draw_dsc->glyph_data = lv_font_get_glyph_bitmap(g, glyph_draw_dsc->_draw_buf);
+        }
+        if(draw_glyph_vector_gpu(glyph_draw_dsc, dw, dh)) return;
+    }
+#endif
+
+    if(glyph_draw_dsc->format == LV_FONT_GLYPH_FORMAT_IMAGE) {
+        if(!glyph_draw_dsc->glyph_data) {
+            glyph_draw_dsc->glyph_data = lv_font_get_glyph_bitmap(g, glyph_draw_dsc->_draw_buf);
+        }
+        if(glyph_draw_dsc->glyph_data) {
+            lv_draw_image_dsc_t id;
+            lv_draw_image_dsc_init(&id);
+            id.src = glyph_draw_dsc->glyph_data;
+            id.opa = glyph_draw_dsc->opa;
+            id.rotation = glyph_draw_dsc->rotation;
+            id.pivot = (lv_point_t) {
+                .x = glyph_draw_dsc->pivot.x,
+                .y = g->box_h + g->ofs_y,
+            };
+            id.recolor = glyph_draw_dsc->color;
+            id.recolor_opa = LV_OPA_COVER;
+            draw_image_gpu(glyph_draw_dsc->letter_coords, &g_gpu_text_task.clip_area, &id, dw, dh);
+        }
         return;
     }
 
-    const int32_t dw = g_gpu2d_dw;
-    const int32_t dh = g_gpu2d_dh;
-    if(dw < 1 || dh < 1) return;
-    draw_glyph_quad(glyph_draw_dsc->letter_coords, dw, dh, &uv, glyph_draw_dsc->color, glyph_draw_dsc->opa);
+    if(!glyph_draw_dsc->glyph_data) {
+        glyph_draw_dsc->glyph_data = lv_font_get_glyph_bitmap(g, glyph_draw_dsc->_draw_buf);
+    }
+    const lv_draw_buf_t * draw_buf = glyph_draw_dsc->glyph_data;
+    if(!draw_buf) return;
+
+    if(glyph_draw_dsc->outline_stroke_width > 0) {
+        static const int8_t dx[] = { -1, 0, 1, -1, 1, -1, 0, 1 };
+        static const int8_t dy[] = { -1, -1, -1, 0, 0, 1, 1, 1 };
+        const int32_t step = LV_MAX(1, glyph_draw_dsc->outline_stroke_width / 2);
+        lv_draw_glyph_dsc_t stroke = *glyph_draw_dsc;
+        lv_area_t shifted;
+        stroke.letter_coords = &shifted;
+        for(int i = 0; i < 8; i++) {
+            shifted = *glyph_draw_dsc->letter_coords;
+            lv_area_move(&shifted, dx[i] * step, dy[i] * step);
+            draw_glyph_bitmap_gpu(font, g, draw_buf, &stroke, dw, dh,
+                                  glyph_draw_dsc->outline_stroke_color, glyph_draw_dsc->outline_stroke_opa);
+        }
+    }
+
+    draw_glyph_bitmap_gpu(font, g, draw_buf, glyph_draw_dsc, dw, dh, glyph_draw_dsc->color, glyph_draw_dsc->opa);
 }
 
 static bool draw_label_gpu(const lv_area_t * area, const lv_area_t * clip,
                             const lv_draw_label_dsc_t * ld, int32_t dw, int32_t dh)
 {
-    if(!prog_glyph || !ld || !gpu_text_label_simple(ld)) return false;
+    if(!prog_glyph || !ld) return false;
 
+#if LV_USE_FREETYPE && LV_USE_VECTOR_GRAPHIC && LV_USE_THORVG
+    static bool ft_evt;
+    if(!ft_evt) {
+        lv_freetype_outline_add_event(gpu_freetype_outline_event_cb, LV_EVENT_ALL, NULL);
+        ft_evt = true;
+    }
+#endif
+
+    g_gpu2d_dw = dw;
+    g_gpu2d_dh = dh;
+    lv_memcpy(&g_gpu_label_dsc, ld, sizeof(g_gpu_label_dsc));
     lv_memzero(&g_gpu_text_task, sizeof(g_gpu_text_task));
     g_gpu_text_task.clip_area = *clip;
     g_gpu_text_task.target_layer = lv_refr_get_disp_refreshing()->layer_head;
+    g_gpu_text_task.draw_dsc = &g_gpu_label_dsc;
 
     lv_draw_label_iterate_characters(&g_gpu_text_task, ld, area, gpu_glyph_draw_cb);
     return true;
@@ -2157,8 +2732,10 @@ static bool draw_label_gpu(const lv_area_t * area, const lv_area_t * clip,
 static bool draw_letter_gpu(const lv_area_t * area, const lv_area_t * clip,
                              const lv_draw_letter_dsc_t * ld, int32_t dw, int32_t dh)
 {
-    if(!prog_glyph || !ld || ld->rotation != 0) return false;
+    if(!prog_glyph || !ld) return false;
 
+    g_gpu2d_dw = dw;
+    g_gpu2d_dh = dh;
     lv_memzero(&g_gpu_text_task, sizeof(g_gpu_text_task));
     g_gpu_text_task.clip_area = *clip;
     g_gpu_text_task.target_layer = lv_refr_get_disp_refreshing()->layer_head;
@@ -2169,6 +2746,9 @@ static bool draw_letter_gpu(const lv_area_t * area, const lv_area_t * clip,
     glyph_dsc.color = ld->color;
     glyph_dsc.rotation = ld->rotation;
     glyph_dsc.pivot = ld->pivot;
+    glyph_dsc.outline_stroke_width = ld->outline_stroke_width;
+    glyph_dsc.outline_stroke_opa = ld->outline_stroke_opa;
+    glyph_dsc.outline_stroke_color = ld->outline_stroke_color;
 
     lv_point_t pt = { area->x1, area->y1 };
     lv_draw_unit_draw_letter(&g_gpu_text_task, &glyph_dsc, &pt, ld->font, ld->unicode, gpu_glyph_draw_cb);
@@ -2225,9 +2805,9 @@ static bool upload_decoded_image(const lv_draw_buf_t * decoded, unsigned int * t
 
 static bool draw_tex_transformed(unsigned int tex, int32_t img_w, int32_t img_h,
                                   int32_t x, int32_t y, const lv_draw_image_dsc_t * dsc,
-                                  int32_t dw, int32_t dh)
+                                  const lv_area_t * coords, int32_t dw, int32_t dh)
 {
-    if(!prog_img || !dsc || tex == 0 || img_w < 1 || img_h < 1 || dw < 1 || dh < 1) return false;
+    if(!prog_img || !dsc || !coords || tex == 0 || img_w < 1 || img_h < 1 || dw < 1 || dh < 1) return false;
 
     lv_matrix_t matrix;
     image_dsc_to_matrix(&matrix, x, y, dsc);
@@ -2244,6 +2824,27 @@ static bool draw_tex_transformed(unsigned int tex, int32_t img_w, int32_t img_h,
     };
 
     apply_blend_mode(dsc->blend_mode);
+
+    unsigned int mask_tex = 0;
+    bool use_mask = false;
+    float mask_uv[4];
+    if(dsc->bitmap_mask_src) {
+        if(upload_mask_texture(dsc->bitmap_mask_src, &mask_tex)) {
+            use_mask = true;
+            compute_mask_uv(dsc, coords, img_w, img_h, mask_uv);
+        }
+        else {
+            restore_blend_mode();
+            return false;
+        }
+    }
+
+    const bool use_diff = dsc->blend_mode == LV_BLEND_MODE_DIFFERENCE;
+    if(use_diff && !snap_dst_for_quad(dw, dh, pos)) {
+        restore_blend_mode();
+        return false;
+    }
+
     const bool use_recolor = dsc->recolor_opa > LV_OPA_MIN;
     GL_CALL(glUseProgram(prog_img));
     GL_CALL(glUniform2f(loc_img_disp, (float)dw, (float)dh));
@@ -2256,8 +2857,43 @@ static bool draw_tex_transformed(unsigned int tex, int32_t img_w, int32_t img_h,
     else {
         GL_CALL(glUniform1i(loc_img_use_recolor, 0));
     }
-    draw_uv_quad(dw, dh, prog_img, loc_img_disp, loc_img_sampler, pos, uv, tex);
-    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    GL_CALL(glUniform1i(loc_img_use_mask, use_mask ? 1 : 0));
+    if(use_mask) {
+        GL_CALL(glUniform4f(loc_img_mask_uv, mask_uv[0], mask_uv[1], mask_uv[2], mask_uv[3]));
+    }
+    GL_CALL(glUniform1i(loc_img_use_diff, use_diff ? 1 : 0));
+    if(use_diff) {
+        GL_CALL(glUniform4f(loc_img_dst_rect, (float)g_img_dst_snap_x, (float)g_img_dst_snap_y,
+                            (float)g_img_dst_snap_w, (float)g_img_dst_snap_h));
+    }
+
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+    GL_CALL(glUniform1i(loc_img_sampler, 0));
+    if(use_mask) {
+        GL_CALL(glActiveTexture(GL_TEXTURE1));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, mask_tex));
+        GL_CALL(glUniform1i(loc_img_mask_sampler, 1));
+    }
+    if(use_diff) {
+        GL_CALL(glActiveTexture(GL_TEXTURE2));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, g_img_dst_snap_tex));
+        GL_CALL(glUniform1i(loc_img_dst_sampler, 2));
+    }
+
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glEnableVertexAttribArray(1));
+    GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, pos));
+    GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, uv));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
+    GL_CALL(glDisableVertexAttribArray(1));
+    GL_CALL(glDisableVertexAttribArray(0));
+
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    if(mask_tex) GL_CALL(glDeleteTextures(1, &mask_tex));
+
+    restore_blend_mode();
     return true;
 }
 
@@ -2274,7 +2910,7 @@ bool lv_gpu_renderer_gles2_2d_composite_layer(unsigned int dst_tex, unsigned int
     g_gpu2d_dw = dw;
     g_gpu2d_dh = dh;
     lv_opengles_reinit_state();
-    const bool ok = draw_tex_transformed(src_tex, src_w, src_h, coords->x1, coords->y1, dsc, dw, dh);
+    const bool ok = draw_tex_transformed(src_tex, src_w, src_h, coords->x1, coords->y1, dsc, coords, dw, dh);
     lv_gpu_renderer_restore_default_framebuffer();
     return ok;
 }
@@ -2283,8 +2919,7 @@ static bool draw_image_gpu(const lv_area_t * coords, const lv_area_t * clip,
                             const lv_draw_image_dsc_t * dsc, int32_t dw, int32_t dh)
 {
     LV_UNUSED(clip);
-    if(!prog_img || !dsc || !coords || dsc->tile || dsc->bitmap_mask_src) return false;
-    if(dsc->blend_mode == LV_BLEND_MODE_SUBTRACTIVE || dsc->blend_mode == LV_BLEND_MODE_DIFFERENCE) return false;
+    if(!prog_img || !dsc || !coords) return false;
 
     lv_image_decoder_dsc_t decoder_dsc;
     lv_memzero(&decoder_dsc, sizeof(decoder_dsc));
@@ -2302,7 +2937,37 @@ static bool draw_image_gpu(const lv_area_t * coords, const lv_area_t * clip,
 
     const int32_t img_w = decoder_dsc.decoded->header.w;
     const int32_t img_h = decoder_dsc.decoded->header.h;
-    const bool ok = draw_tex_transformed(tex, img_w, img_h, coords->x1, coords->y1, dsc, dw, dh);
+    bool ok = false;
+
+    if(!dsc->tile) {
+        ok = draw_tex_transformed(tex, img_w, img_h, coords->x1, coords->y1, dsc, coords, dw, dh);
+    }
+    else {
+        lv_area_t tile_area;
+        if(lv_area_get_width(&dsc->image_area) >= 0) tile_area = dsc->image_area;
+        else tile_area = *coords;
+        lv_area_set_width(&tile_area, img_w);
+        lv_area_set_height(&tile_area, img_h);
+
+        const int32_t tile_x_start = tile_area.x1;
+        ok = true;
+        while(tile_area.y1 <= coords->y2 && ok) {
+            while(tile_area.x1 <= coords->x2 && ok) {
+                lv_area_t clipped;
+                if(lv_area_intersect(&clipped, &tile_area, coords)) {
+                    if(!draw_tex_transformed(tex, img_w, img_h, tile_area.x1, tile_area.y1, dsc, &tile_area, dw, dh)) {
+                        ok = false;
+                    }
+                }
+                tile_area.x1 += img_w;
+                tile_area.x2 += img_w;
+            }
+            tile_area.y1 += img_h;
+            tile_area.y2 += img_h;
+            tile_area.x1 = tile_x_start;
+            tile_area.x2 = tile_x_start + img_w - 1;
+        }
+    }
 
     GL_CALL(glDeleteTextures(1, &tex));
     lv_image_decoder_close(&decoder_dsc);
@@ -2561,6 +3226,16 @@ uint32_t lv_gpu_renderer_gles2_2d_render_cmd_list(const lv_gpu_renderer_gles2_cm
                     img_dsc.opa = LV_OPA_COVER;
                     if(draw_image_gpu(&cmd->u.mask_bitmap.blend_area, &cmd->clip, &img_dsc, dw, dh)) {
                         rendered++;
+                    }
+                    else {
+                        unsigned int tex = 0;
+                        if(raster_sw_to_texture(&cmd->u.mask_bitmap.blend_area, &cmd->clip, draw_image_sw_cb,
+                                                 &img_dsc, &tex)) {
+                            draw_textured_quad(&cmd->u.mask_bitmap.blend_area, dw, dh, tex);
+                            GL_CALL(glDeleteTextures(1, &tex));
+                            sw_raster++;
+                            rendered++;
+                        }
                     }
                 }
                 break;

@@ -26,6 +26,13 @@ void lv_gpu_renderer_set_ui_mode(int mode);
 void lv_draw_gpu_renderer_init(void);
 void lv_draw_gpu_renderer_deinit(void);
 
+/** Current unicode for GPU glyph callback (set during lv_draw_unit_draw_letter). */
+void lv_gpu_renderer_glyph_letter_hint_set(uint32_t letter);
+uint32_t lv_gpu_renderer_glyph_letter_hint_get(void);
+
+/** Glyph atlas overflow draws (GPU one-shot path) since boot. */
+uint32_t lv_gpu_renderer_gles2_glyph_overflow_count(void);
+
 /** Debug: LVGL_GPU_2D_ONLY (default on unless set to 0) — skip 3D/overlay, 2D batch → scanout only. */
 bool lv_gpu_renderer_debug_2d_only(void);
 

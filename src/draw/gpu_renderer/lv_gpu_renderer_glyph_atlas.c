@@ -14,13 +14,26 @@
 #include "../../drivers/opengles/lv_opengles_debug.h"
 #include "../../drivers/opengles/lv_opengles_private.h"
 #include "../../stdlib/lv_mem.h"
+#include <stdlib.h>
 #include <string.h>
 
-#define LV_GPU_GLYPH_ATLAS_SIZE 1024
+#define LV_GPU_GLYPH_ATLAS_SIZE_DEFAULT 1024
 #define LV_GPU_GLYPH_CACHE_MAX  512
 #define LV_GPU_GLYPH_PAD        4
 #define LV_GPU_GLYPH_SDF_PAD    4
 #define LV_GPU_GLYPH_SDF_INF    65535u
+
+static int32_t glyph_atlas_size(void)
+{
+    static int32_t size = -1;
+    if(size < 0) {
+        const char * env = getenv("LVGL_GPU_GLYPH_ATLAS_SIZE");
+        size = env && env[0] ? (int32_t)atoi(env) : LV_GPU_GLYPH_ATLAS_SIZE_DEFAULT;
+        if(size < 64) size = 64;
+        if(size > 2048) size = 2048;
+    }
+    return size;
+}
 
 typedef struct {
     const lv_font_t * font;
@@ -57,8 +70,8 @@ void lv_gpu_glyph_atlas_init(void)
     GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
 
     uint8_t clear_px = 128;
-    for(int32_t y = 0; y < LV_GPU_GLYPH_ATLAS_SIZE; y++) {
-        GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, LV_GPU_GLYPH_ATLAS_SIZE, 1, 0, GL_ALPHA, GL_UNSIGNED_BYTE, &clear_px));
+    for(int32_t y = 0; y < glyph_atlas_size(); y++) {
+        GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, glyph_atlas_size(), 1, 0, GL_ALPHA, GL_UNSIGNED_BYTE, &clear_px));
     }
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
     atlas_reset_shelf();
@@ -187,20 +200,20 @@ bool lv_gpu_glyph_atlas_acquire(const lv_font_t * font, uint32_t glyph_id,
     const int32_t need_w = sdf_w + LV_GPU_GLYPH_PAD * 2;
     const int32_t need_h = sdf_h + LV_GPU_GLYPH_PAD * 2;
 
-    if(need_w >= LV_GPU_GLYPH_ATLAS_SIZE - LV_GPU_GLYPH_PAD) return false;
+    if(need_w >= glyph_atlas_size() - LV_GPU_GLYPH_PAD) return false;
 
-    if(g_shelf_x + need_w >= LV_GPU_GLYPH_ATLAS_SIZE) {
+    if(g_shelf_x + need_w >= glyph_atlas_size()) {
         g_shelf_x = LV_GPU_GLYPH_PAD;
         g_shelf_y += g_shelf_h + LV_GPU_GLYPH_PAD;
         g_shelf_h = 0;
     }
-    if(g_shelf_y + need_h >= LV_GPU_GLYPH_ATLAS_SIZE) {
-        atlas_reset_shelf();
-        if(need_w >= LV_GPU_GLYPH_ATLAS_SIZE || need_h >= LV_GPU_GLYPH_ATLAS_SIZE) return false;
-        g_shelf_x = LV_GPU_GLYPH_PAD;
-        g_shelf_y = LV_GPU_GLYPH_PAD;
-        g_shelf_h = 0;
+    if(g_shelf_y + need_h >= glyph_atlas_size()) {
+        return false;
     }
+
+    const int32_t dst_x = g_shelf_x + LV_GPU_GLYPH_PAD;
+    const int32_t dst_y = g_shelf_y + LV_GPU_GLYPH_PAD;
+    if(dst_x + sdf_w > glyph_atlas_size() || dst_y + sdf_h > glyph_atlas_size()) return false;
 
     uint8_t * sdf_buf = lv_malloc((uint32_t)sdf_w * (uint32_t)sdf_h);
     if(!sdf_buf) return false;
@@ -208,9 +221,6 @@ bool lv_gpu_glyph_atlas_acquire(const lv_font_t * font, uint32_t glyph_id,
         lv_free(sdf_buf);
         return false;
     }
-
-    const int32_t dst_x = g_shelf_x + LV_GPU_GLYPH_PAD;
-    const int32_t dst_y = g_shelf_y + LV_GPU_GLYPH_PAD;
 
     GL_CALL(glBindTexture(GL_TEXTURE_2D, g_atlas_tex));
     GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
@@ -226,7 +236,7 @@ bool lv_gpu_glyph_atlas_acquire(const lv_font_t * font, uint32_t glyph_id,
 
     lv_gpu_glyph_atlas_uv_t uv;
     uv.tex = g_atlas_tex;
-    const float inv = 1.0f / (float)LV_GPU_GLYPH_ATLAS_SIZE;
+    const float inv = 1.0f / (float)glyph_atlas_size();
     uv.u0 = (float)dst_x * inv;
     uv.v0 = (float)dst_y * inv;
     uv.u1 = (float)(dst_x + sdf_w) * inv;

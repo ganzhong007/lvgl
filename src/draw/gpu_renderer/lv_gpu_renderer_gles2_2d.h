@@ -25,6 +25,7 @@ extern "C" {
 #include "../../include/lvgl/draw/lv_draw_blur.h"
 #if LV_USE_VECTOR_GRAPHIC
 #include "../../include/lvgl/draw/lv_draw_vector.h"
+#include "../../draw/lv_draw_vector_private.h"
 #endif
 
 #define LV_GPU_RENDERER_GLES2_LINE_PT_MAX 64
@@ -141,6 +142,8 @@ bool lv_gpu_renderer_gles2_2d_composite_layer(unsigned int dst_tex, unsigned int
                                                int32_t src_w, int32_t src_h,
                                                const lv_draw_image_dsc_t * dsc, const lv_area_t * coords,
                                                int32_t dw, int32_t dh);
+
+uint32_t lv_gpu_renderer_gles2_2d_glyph_overflow_count(void);
 
 #endif /*LV_USE_DRAW_GPU_RENDERER*/
 

@@ -9,6 +9,9 @@
 
 #include "lv_draw_label_private.h"
 #include "lv_draw_private.h"
+#if LV_USE_DRAW_GPU_RENDERER
+#include "gpu_renderer/lv_draw_gpu_renderer.h"
+#endif
 #include "../misc/lv_area_private.h"
 #include "lv_draw_vector_private.h"
 #include "../misc/lv_bidi_private.h"
@@ -658,6 +661,9 @@ void lv_draw_unit_draw_letter(lv_draw_task_t * t, lv_draw_glyph_dsc_t * dsc,  co
     }
 
     dsc->letter_coords = &letter_coords;
+#if LV_USE_DRAW_GPU_RENDERER
+    lv_gpu_renderer_glyph_letter_hint_set(letter);
+#endif
     cb(t, dsc, NULL, NULL);
 
     lv_font_glyph_release_draw_data(dsc->g);
