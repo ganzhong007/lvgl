@@ -414,16 +414,28 @@ int32_t lv_gpu_renderer_fg_evaluate_score(lv_draw_task_t * task, lv_gpu_renderer
         const lv_draw_dsc_base_t * base = (const lv_draw_dsc_base_t *)task->draw_dsc;
         if(base && gpu_obj_is_3d_logical(base->obj)) return 0;
 
+        const bool gpu_offscreen = lv_gpu_renderer_layer_is_target(task->target_layer)
+                                   && !is_display_fb_layer(task->target_layer);
+        const int32_t layer_score = gpu_offscreen ? 5 : 35;
+
         switch(task->type) {
+            case LV_DRAW_TASK_TYPE_FILL:
+            case LV_DRAW_TASK_TYPE_BORDER:
             case LV_DRAW_TASK_TYPE_LABEL:
             case LV_DRAW_TASK_TYPE_LETTER:
             case LV_DRAW_TASK_TYPE_IMAGE:
+            case LV_DRAW_TASK_TYPE_LINE:
+            case LV_DRAW_TASK_TYPE_ARC:
+            case LV_DRAW_TASK_TYPE_BOX_SHADOW:
+            case LV_DRAW_TASK_TYPE_TRIANGLE:
+            case LV_DRAW_TASK_TYPE_MASK_RECTANGLE:
+            case LV_DRAW_TASK_TYPE_BLUR:
 #if LV_USE_VECTOR_GRAPHIC
             case LV_DRAW_TASK_TYPE_VECTOR:
 #endif
             case LV_DRAW_TASK_TYPE_MASK_BITMAP:
                 if(path_out) *path_out = LV_GPU_PATH_2D_RASTER;
-                return 35;
+                return layer_score;
             default:
                 break;
         }

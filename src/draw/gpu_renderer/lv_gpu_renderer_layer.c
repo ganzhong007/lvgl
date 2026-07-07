@@ -154,6 +154,11 @@ bool lv_gpu_renderer_layer_push_cmd(lv_layer_t * layer, const lv_gpu_renderer_gl
 {
     lv_gpu_layer_slot_t * slot = slot_find(layer);
     if(!slot || !cmd || slot->cmd_count >= LV_GPU_LAYER_CMD_MAX) return false;
+
+    const int32_t w = lv_area_get_width(&layer->buf_area);
+    const int32_t h = lv_area_get_height(&layer->buf_area);
+    if(!slot_ensure_fbo(slot, w, h)) return false;
+
     slot->cmds[slot->cmd_count++] = *cmd;
     return true;
 }
