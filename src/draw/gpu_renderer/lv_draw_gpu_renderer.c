@@ -20,6 +20,7 @@
 #include "lv_gpu_renderer_framegraph.h"
 #include "lv_gpu_renderer_gles2_3d.h"
 #include "lv_gpu_renderer_gles2_2d.h"
+#include "lv_gpu_renderer_layer.h"
 #include "../lv_draw_private.h"
 #include "../../core/lv_refr_private.h"
 #include "../../display/lv_display_private.h"
@@ -27,10 +28,12 @@
 #include "../../drivers/opengles/lv_opengles_driver.h"
 #include "../../drivers/opengles/lv_opengles_private.h"
 #include "../../drivers/opengles/lv_opengles_texture_private.h"
+#include "../../misc/lv_area_private.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include "../../include/lvgl/draw/lv_draw_3d.h"
+#include "../../include/lvgl/draw/lv_draw_vector.h"
 #include <stdio.h>
 
 #define DRAW_UNIT_ID_GPU_RENDERER 11
@@ -77,6 +80,7 @@ static bool g_scanout_depth_attached;
 
 static int32_t gpu_renderer_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
 static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
+static void gpu_renderer_event_cb(lv_event_t * e);
 static void gpu_renderer_flush_internal(unsigned int tex_id, int32_t dw, int32_t dh);
 static void gpu_renderer_clear_tex(unsigned int tex_id, int32_t w, int32_t h, float r, float g, float b, float a);
 
@@ -145,8 +149,10 @@ void lv_draw_gpu_renderer_init(void)
     lv_draw_gpu_renderer_unit_t * u = lv_draw_create_unit(sizeof(lv_draw_gpu_renderer_unit_t));
     u->base_unit.evaluate_cb = gpu_renderer_evaluate;
     u->base_unit.dispatch_cb = gpu_renderer_dispatch;
+    u->base_unit.event_cb = gpu_renderer_event_cb;
     u->base_unit.name = "GPU_RENDERER";
     g_unit = u;
+    lv_gpu_renderer_layer_init();
     lv_gpu_renderer_fg_init();
 }
 
@@ -156,9 +162,28 @@ void lv_draw_gpu_renderer_deinit(void)
     lv_gpu_renderer_gles2_3d_deinit();
 #endif
     lv_gpu_renderer_gles2_2d_deinit();
+    lv_gpu_renderer_layer_deinit();
     lv_gpu_renderer_fg_deinit();
     lv_gpu_renderer_tex_fbo_release();
     g_unit = NULL;
+}
+
+static void gpu_renderer_event_cb(lv_event_t * e)
+{
+    switch(lv_event_get_code(e)) {
+        case LV_EVENT_CHILD_CREATED: {
+                lv_layer_t * layer = lv_event_get_param(e);
+                lv_gpu_renderer_layer_on_created(layer);
+                break;
+            }
+        case LV_EVENT_CHILD_DELETED: {
+                lv_layer_t * layer = lv_event_get_param(e);
+                lv_gpu_renderer_layer_on_deleted(layer);
+                break;
+            }
+        default:
+            break;
+    }
 }
 
 unsigned int lv_gpu_renderer_tex_fbo_bind(unsigned int color_tex)
@@ -549,8 +574,24 @@ bool lv_gpu_renderer_composite_layer_to_tex(unsigned int tex_id, const lv_draw_i
 #else
     if(!draw_dsc || !coords || !clip || tex_id == 0 || dw < 1 || dh < 1) return false;
 
+    lv_area_t draw_area;
+    if(!lv_area_intersect(&draw_area, coords, clip)) return false;
+
     lv_layer_t * layer_to_draw = (lv_layer_t *)draw_dsc->src;
-    if(!layer_to_draw || !layer_to_draw->draw_buf || !layer_to_draw->draw_buf->data) return false;
+    if(!layer_to_draw) return false;
+
+    const unsigned int layer_tex_gpu = lv_gpu_renderer_layer_tex(layer_to_draw);
+    if(layer_tex_gpu != 0) {
+        if(!lv_gpu_renderer_tex_fbo_bind_complete(tex_id)) {
+            return false;
+        }
+        lv_opengles_reinit_state();
+        lv_opengles_render_texture_rbswap(layer_tex_gpu, coords, draw_dsc->opa, dw, dh, &draw_area, false, false);
+        lv_gpu_renderer_restore_default_framebuffer();
+        return true;
+    }
+
+    if(!layer_to_draw->draw_buf || !layer_to_draw->draw_buf->data) return false;
 
     lv_draw_buf_t * buf = layer_to_draw->draw_buf;
     int32_t lw = lv_area_get_width(&layer_to_draw->buf_area);
@@ -559,9 +600,6 @@ bool lv_gpu_renderer_composite_layer_to_tex(unsigned int tex_id, const lv_draw_i
 
     lv_color_format_t cf = buf->header.cf;
     if(cf != LV_COLOR_FORMAT_ARGB8888 && cf != LV_COLOR_FORMAT_XRGB8888) return false;
-
-    lv_area_t draw_area;
-    if(!lv_area_intersect(&draw_area, coords, clip)) return false;
 
     unsigned int layer_tex = 0;
     GL_CALL(glGenTextures(1, &layer_tex));
@@ -1048,7 +1086,11 @@ static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * la
             || t->type == LV_DRAW_TASK_TYPE_BOX_SHADOW
             || t->type == LV_DRAW_TASK_TYPE_TRIANGLE
             || t->type == LV_DRAW_TASK_TYPE_MASK_RECTANGLE
-            || t->type == LV_DRAW_TASK_TYPE_BLUR) {
+            || t->type == LV_DRAW_TASK_TYPE_BLUR
+#if LV_USE_VECTOR_GRAPHIC
+            || t->type == LV_DRAW_TASK_TYPE_VECTOR
+#endif
+            ) {
         if(!lv_gpu_renderer_fg_queue_2d_task(t)) return LV_DRAW_UNIT_IDLE;
         if(!lv_gpu_renderer_fg_record_2d_task(t)) return LV_DRAW_UNIT_IDLE;
     }

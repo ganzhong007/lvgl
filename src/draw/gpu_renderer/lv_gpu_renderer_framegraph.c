@@ -18,6 +18,8 @@
 #include "lv_gpu_renderer_batch_3d.h"
 #include "lv_gpu_renderer_gles2_2d.h"
 #include "lv_gpu_renderer_gles2_3d.h"
+#include "lv_gpu_renderer_layer.h"
+#include "../../include/lvgl/draw/lv_draw_vector.h"
 #include "../../core/lv_refr_private.h"
 #include "../../core/lv_obj_class_private.h"
 #include "../../core/lv_obj_private.h"
@@ -73,6 +75,12 @@ static bool is_display_fb_layer(const lv_layer_t * layer)
     if(!tex || !tex->fb1) return false;
 
     return layer->draw_buf->data == tex->fb1;
+}
+
+static bool fg_is_gpu_2d_target(const lv_layer_t * layer)
+{
+    if(is_display_fb_layer(layer)) return true;
+    return lv_gpu_renderer_layer_is_target(layer);
 }
 
 static bool gpu_obj_is_3d_logical(const lv_obj_t * obj)
@@ -236,6 +244,10 @@ bool lv_gpu_renderer_fg_record_2d_task(lv_draw_task_t * task)
     lv_gpu_renderer_gles2_cmd_t cmd;
     if(!lv_gpu_renderer_gles2_2d_copy_last_cmd(&cmd)) return false;
 
+    if(lv_gpu_renderer_layer_is_target(task->target_layer)) {
+        return lv_gpu_renderer_layer_push_cmd(task->target_layer, &cmd);
+    }
+
     lv_gpu_fg_node_t node;
     lv_memzero(&node, sizeof(node));
     node.kind = LV_GPU_FG_NODE_2D;
@@ -254,6 +266,11 @@ bool lv_gpu_renderer_fg_record_layer_task(lv_draw_task_t * task)
 {
     lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(task);
     if(!id) return false;
+
+    lv_layer_t * sub = (lv_layer_t *)id->src;
+    if(sub) {
+        lv_gpu_renderer_layer_flush(sub);
+    }
 
     lv_gpu_fg_node_t node;
     lv_memzero(&node, sizeof(node));
@@ -275,7 +292,7 @@ bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
 
     if(lv_gpu_renderer_gles2_2d_is_raster_nest()) return false;
     if(lv_refr_get_disp_refreshing() == NULL) return false;
-    if(!is_display_fb_layer(task->target_layer)) return false;
+    if(!fg_is_gpu_2d_target(task->target_layer)) return false;
 
     {
         const lv_draw_dsc_base_t * base = (const lv_draw_dsc_base_t *)t->draw_dsc;
@@ -310,8 +327,9 @@ bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
         }
         case LV_DRAW_TASK_TYPE_IMAGE: {
             lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(t);
-            return id && id->rotation == 0 && id->scale_x == LV_SCALE_NONE && id->scale_y == LV_SCALE_NONE
-                   && id->skew_x == 0 && id->skew_y == 0 && id->blend_mode == LV_BLEND_MODE_NORMAL;
+            return id && !id->tile && !id->bitmap_mask_src
+                   && id->blend_mode != LV_BLEND_MODE_SUBTRACTIVE
+                   && id->blend_mode != LV_BLEND_MODE_DIFFERENCE;
         }
         case LV_DRAW_TASK_TYPE_LINE: {
             lv_draw_line_dsc_t * ld = lv_draw_task_get_line_dsc(t);
@@ -337,6 +355,12 @@ bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
             lv_draw_blur_dsc_t * bd = lv_draw_task_get_blur_dsc(t);
             return bd && bd->blur_radius > 0;
         }
+#if LV_USE_VECTOR_GRAPHIC
+        case LV_DRAW_TASK_TYPE_VECTOR:
+            return true;
+#endif
+        case LV_DRAW_TASK_TYPE_MASK_BITMAP:
+            return true;
         default:
             return false;
     }
@@ -346,13 +370,15 @@ bool lv_gpu_renderer_fg_can_gpu_layer(const lv_draw_task_t * task)
 {
     if(task->type != LV_DRAW_TASK_TYPE_LAYER) return false;
     if(task->state == LV_DRAW_TASK_STATE_BLOCKED) return false;
-    if(!is_display_fb_layer(task->target_layer)) return false;
+    if(!fg_is_gpu_2d_target(task->target_layer)) return false;
 
     lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(task);
     if(!id) return false;
     lv_layer_t * sub = (lv_layer_t *)id->src;
-    if(!sub || !sub->draw_buf) return false;
-    if(id->rotation != 0 || id->scale_x != LV_SCALE_NONE || id->scale_y != LV_SCALE_NONE) return false;
+    if(!sub) return false;
+    if(lv_gpu_renderer_layer_is_target(sub)) return true;
+    if(!sub->draw_buf) return false;
+    if(id->blend_mode == LV_BLEND_MODE_SUBTRACTIVE || id->blend_mode == LV_BLEND_MODE_DIFFERENCE) return false;
     return true;
 }
 
@@ -384,7 +410,7 @@ int32_t lv_gpu_renderer_fg_evaluate_score(lv_draw_task_t * task, lv_gpu_renderer
         return 20;
     }
 
-    if(is_display_fb_layer(task->target_layer)) {
+    if(fg_is_gpu_2d_target(task->target_layer)) {
         const lv_draw_dsc_base_t * base = (const lv_draw_dsc_base_t *)task->draw_dsc;
         if(base && gpu_obj_is_3d_logical(base->obj)) return 0;
 
@@ -392,6 +418,10 @@ int32_t lv_gpu_renderer_fg_evaluate_score(lv_draw_task_t * task, lv_gpu_renderer
             case LV_DRAW_TASK_TYPE_LABEL:
             case LV_DRAW_TASK_TYPE_LETTER:
             case LV_DRAW_TASK_TYPE_IMAGE:
+#if LV_USE_VECTOR_GRAPHIC
+            case LV_DRAW_TASK_TYPE_VECTOR:
+#endif
+            case LV_DRAW_TASK_TYPE_MASK_BITMAP:
                 if(path_out) *path_out = LV_GPU_PATH_2D_RASTER;
                 return 35;
             default:
@@ -484,6 +514,15 @@ bool lv_gpu_renderer_fg_queue_2d_task(lv_draw_task_t * t)
             if(!bd) return false;
             return lv_gpu_renderer_gles2_2d_queue_blur(&t->area, &t->clip_area, bd, &t->area);
         }
+#if LV_USE_VECTOR_GRAPHIC
+        case LV_DRAW_TASK_TYPE_VECTOR: {
+            lv_draw_vector_dsc_t * vd = lv_draw_task_get_vector_dsc(t);
+            if(!vd) return false;
+            return lv_gpu_renderer_gles2_2d_queue_vector(&t->area, &t->clip_area, vd);
+        }
+#endif
+        case LV_DRAW_TASK_TYPE_MASK_BITMAP:
+            return false;
         default:
             return false;
     }

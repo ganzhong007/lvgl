@@ -23,6 +23,9 @@ extern "C" {
 #include "../../include/lvgl/draw/lv_draw_triangle.h"
 #include "../../include/lvgl/draw/lv_draw_mask.h"
 #include "../../include/lvgl/draw/lv_draw_blur.h"
+#if LV_USE_VECTOR_GRAPHIC
+#include "../../include/lvgl/draw/lv_draw_vector.h"
+#endif
 
 #define LV_GPU_RENDERER_GLES2_LINE_PT_MAX 64
 
@@ -38,6 +41,8 @@ typedef enum {
     LV_GPU_RENDERER_GLES2_CMD_TRIANGLE,
     LV_GPU_RENDERER_GLES2_CMD_MASK_RECT,
     LV_GPU_RENDERER_GLES2_CMD_BLUR,
+    LV_GPU_RENDERER_GLES2_CMD_VECTOR,
+    LV_GPU_RENDERER_GLES2_CMD_MASK_BITMAP,
 } lv_gpu_renderer_gles2_cmd_type_t;
 
 typedef struct {
@@ -68,6 +73,14 @@ typedef struct {
             lv_draw_blur_dsc_t blur;
             lv_area_t coords;
         } blur;
+#if LV_USE_VECTOR_GRAPHIC
+        lv_draw_vector_dsc_t vector;
+#endif
+        struct {
+            const lv_image_dsc_t * mask_src;
+            lv_area_t mask_area;
+            lv_area_t blend_area;
+        } mask_bitmap;
     } u;
 } lv_gpu_renderer_gles2_cmd_t;
 
@@ -104,6 +117,13 @@ bool lv_gpu_renderer_gles2_2d_queue_letter(const lv_area_t * area, const lv_area
                                               const lv_draw_letter_dsc_t * dsc);
 bool lv_gpu_renderer_gles2_2d_queue_image(const lv_area_t * area, const lv_area_t * clip,
                                            const lv_draw_image_dsc_t * dsc);
+#if LV_USE_VECTOR_GRAPHIC
+bool lv_gpu_renderer_gles2_2d_queue_vector(const lv_area_t * area, const lv_area_t * clip,
+                                              const lv_draw_vector_dsc_t * dsc);
+#endif
+bool lv_gpu_renderer_gles2_2d_queue_mask_bitmap(const lv_area_t * area, const lv_area_t * clip,
+                                                   const lv_image_dsc_t * mask_src,
+                                                   const lv_area_t * mask_area, const lv_area_t * blend_area);
 
 /** Copy last queued cmd into out (for framegraph node storage). */
 bool lv_gpu_renderer_gles2_2d_copy_last_cmd(lv_gpu_renderer_gles2_cmd_t * out);
