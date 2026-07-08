@@ -294,24 +294,10 @@ bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
     if(lv_refr_get_disp_refreshing() == NULL) return false;
     if(!fg_is_gpu_2d_target(task->target_layer)) return false;
 
-    {
-        const lv_draw_dsc_base_t * base = (const lv_draw_dsc_base_t *)t->draw_dsc;
-        if(base && gpu_obj_is_3d_logical(base->obj)) return false;
-    }
-
     switch(task->type) {
         case LV_DRAW_TASK_TYPE_FILL: {
             lv_draw_fill_dsc_t * fd = lv_draw_task_get_fill_dsc(t);
-            if(!fd) return false;
-            if(fd->grad.dir == LV_GRAD_DIR_NONE) {
-                if(fd->opa > LV_OPA_80) {
-                    lv_color32_t c = lv_color_to_32(fd->color, fd->opa);
-                    if(c.red > 240 && c.green > 240 && c.blue > 240) return false;
-                }
-                return true;
-            }
-            if(fd->grad.dir == LV_GRAD_DIR_RADIAL || fd->grad.dir == LV_GRAD_DIR_CONICAL) return true;
-            return fd->grad.stops_count >= 1;
+            return fd != NULL;
         }
         case LV_DRAW_TASK_TYPE_BORDER: {
             lv_draw_border_dsc_t * bd = lv_draw_task_get_border_dsc(t);
@@ -409,7 +395,7 @@ int32_t lv_gpu_renderer_fg_evaluate_score(lv_draw_task_t * task, lv_gpu_renderer
 
     if(fg_is_gpu_2d_target(task->target_layer)) {
         const lv_draw_dsc_base_t * base = (const lv_draw_dsc_base_t *)task->draw_dsc;
-        if(base && gpu_obj_is_3d_logical(base->obj)) return 0;
+        LV_UNUSED(base);
 
         const bool gpu_offscreen = lv_gpu_renderer_layer_is_target(task->target_layer)
                                    && !is_display_fb_layer(task->target_layer);
@@ -530,8 +516,17 @@ bool lv_gpu_renderer_fg_queue_2d_task(lv_draw_task_t * t)
             return lv_gpu_renderer_gles2_2d_queue_vector(&t->area, &t->clip_area, vd);
         }
 #endif
-        case LV_DRAW_TASK_TYPE_MASK_BITMAP:
-            return false;
+        case LV_DRAW_TASK_TYPE_MASK_BITMAP: {
+            typedef struct {
+                const lv_image_dsc_t * mask_src;
+                lv_area_t mask_area;
+                lv_area_t blend_area;
+            } lv_gpu_mask_bitmap_dsc_t;
+            const lv_gpu_mask_bitmap_dsc_t * md = (const lv_gpu_mask_bitmap_dsc_t *)t->draw_dsc;
+            if(!md || !md->mask_src) return false;
+            return lv_gpu_renderer_gles2_2d_queue_mask_bitmap(&t->area, &t->clip_area, md->mask_src,
+                                                               &md->mask_area, &md->blend_area);
+        }
         default:
             return false;
     }

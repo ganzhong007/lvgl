@@ -77,6 +77,10 @@ static unsigned int g_scanout_depth_rb;
 static int32_t g_scanout_depth_w;
 static int32_t g_scanout_depth_h;
 static bool g_scanout_depth_attached;
+static unsigned int g_scanout_stencil_rb;
+static int32_t g_scanout_stencil_w;
+static int32_t g_scanout_stencil_h;
+static bool g_scanout_stencil_attached;
 
 static int32_t gpu_renderer_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
 static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
@@ -241,6 +245,13 @@ void lv_gpu_renderer_tex_fbo_release(void)
     g_scanout_depth_w = 0;
     g_scanout_depth_h = 0;
     g_scanout_depth_attached = false;
+    if(g_scanout_stencil_rb) {
+        GL_CALL(glDeleteRenderbuffers(1, &g_scanout_stencil_rb));
+        g_scanout_stencil_rb = 0;
+    }
+    g_scanout_stencil_w = 0;
+    g_scanout_stencil_h = 0;
+    g_scanout_stencil_attached = false;
     if(g_scanout_tex_fbo) {
         GL_CALL(glDeleteFramebuffers(1, &g_scanout_tex_fbo));
         g_scanout_tex_fbo = 0;
@@ -280,6 +291,43 @@ void lv_gpu_renderer_tex_fbo_attach_depth(int32_t w, int32_t h)
 bool lv_gpu_renderer_tex_fbo_has_depth(void)
 {
     return g_scanout_depth_attached;
+}
+
+static void scanout_stencil_ensure(int32_t w, int32_t h)
+{
+    if(w < 1 || h < 1) return;
+    if(g_scanout_stencil_rb && g_scanout_stencil_w == w && g_scanout_stencil_h == h) return;
+
+    if(!g_scanout_stencil_rb) {
+        GL_CALL(glGenRenderbuffers(1, &g_scanout_stencil_rb));
+    }
+    GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, g_scanout_stencil_rb));
+    GL_CALL(glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, w, h));
+    GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
+    g_scanout_stencil_w = w;
+    g_scanout_stencil_h = h;
+}
+
+void lv_gpu_renderer_tex_fbo_attach_stencil(int32_t w, int32_t h)
+{
+    g_scanout_stencil_attached = false;
+    if(w < 1 || h < 1) return;
+    if(!g_scanout_tex_fbo) return;
+
+    scanout_stencil_ensure(w, h);
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_scanout_tex_fbo));
+    GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, g_scanout_stencil_rb));
+    g_scanout_stencil_attached =
+        glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    if(!g_scanout_stencil_attached) {
+        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0));
+    }
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+}
+
+bool lv_gpu_renderer_tex_fbo_has_stencil(void)
+{
+    return g_scanout_stencil_attached;
 }
 
 void lv_gpu_renderer_set_unified_pass(bool enable)
@@ -1103,6 +1151,7 @@ static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * la
             || t->type == LV_DRAW_TASK_TYPE_TRIANGLE
             || t->type == LV_DRAW_TASK_TYPE_MASK_RECTANGLE
             || t->type == LV_DRAW_TASK_TYPE_BLUR
+            || t->type == LV_DRAW_TASK_TYPE_MASK_BITMAP
 #if LV_USE_VECTOR_GRAPHIC
             || t->type == LV_DRAW_TASK_TYPE_VECTOR
 #endif
