@@ -95,6 +95,7 @@ static int32_t g_scanout_stencil_h;
 static bool g_scanout_stencil_attached;
 static bool g_scanout_depth_is_ds;
 static int g_ds_packed = -1;
+static bool g_ds_attach_logged;
 
 static bool ds_packed_supported(void)
 {
@@ -334,6 +335,12 @@ void lv_gpu_renderer_tex_fbo_attach_depth(int32_t w, int32_t h)
         GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0));
     }
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    if(!g_ds_attach_logged) {
+        LV_LOG_USER("GPU FBO unified: packed_ds=%d depth=%d stencil=%d (%dx%d)",
+                    (int)g_scanout_depth_is_ds, (int)g_scanout_depth_attached,
+                    (int)g_scanout_stencil_attached, (int)w, (int)h);
+        g_ds_attach_logged = true;
+    }
 }
 
 bool lv_gpu_renderer_tex_fbo_has_depth(void)
@@ -378,20 +385,42 @@ void lv_gpu_renderer_tex_fbo_attach_stencil(int32_t w, int32_t h)
         }
     }
     else {
+        /* Fallback: separate depth+stencil RBs (some Mali builds accept this pair). */
+        scanout_depth_ensure(w, h);
         scanout_stencil_ensure(w, h);
+        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, g_scanout_depth_rb));
         GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, g_scanout_stencil_rb));
         g_scanout_stencil_attached =
             glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
         if(!g_scanout_stencil_attached) {
+            GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0));
             GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0));
+            /* Last resort: stencil-only (may fail on some GLES2 drivers). */
+            GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, g_scanout_stencil_rb));
+            g_scanout_stencil_attached =
+                glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+            if(!g_scanout_stencil_attached) {
+                GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0));
+            }
         }
     }
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    if(!g_ds_attach_logged) {
+        LV_LOG_USER("GPU FBO stencil: packed_ds=%d stencil=%d (%dx%d)",
+                    (int)ds_packed_supported(), (int)g_scanout_stencil_attached, (int)w, (int)h);
+        g_ds_attach_logged = true;
+    }
 }
 
 bool lv_gpu_renderer_tex_fbo_has_stencil(void)
 {
     return g_scanout_stencil_attached;
+}
+
+int32_t lv_gpu_renderer_get_max_texture_size(void)
+{
+    if(g_unit && g_unit->caps.max_texture_size > 0) return g_unit->caps.max_texture_size;
+    return 0;
 }
 
 void lv_gpu_renderer_set_unified_pass(bool enable)

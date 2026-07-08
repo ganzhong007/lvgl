@@ -45,6 +45,21 @@
 #include <string.h>
 
 #define LV_GPU2D_QUEUE_MAX 512
+#define GPU_IMG_TEX_CACHE_MAX 64
+
+typedef struct {
+    const void * src;
+    lv_image_src_t src_type;
+    int32_t w;
+    int32_t h;
+    lv_color_format_t cf;
+    unsigned int tex;
+    uint32_t lru_stamp;
+    bool valid;
+} gpu_img_tex_entry_t;
+
+static gpu_img_tex_entry_t g_img_tex_cache[GPU_IMG_TEX_CACHE_MAX];
+static uint32_t g_img_tex_lru_gen;
 
 typedef lv_gpu_renderer_gles2_cmd_t lv_gpu2d_cmd_t;
 
@@ -203,6 +218,11 @@ static void draw_textured_quad(const lv_area_t * area, int32_t dw, int32_t dh, u
 static bool upload_mask_texture(const void * mask_src, unsigned int * tex_out);
 static bool upload_mask_from_decoded(const lv_draw_buf_t * decoded, unsigned int * tex_out);
 static bool upload_decoded_image(const lv_draw_buf_t * decoded, unsigned int * tex_out);
+static void gpu_img_tex_cache_clear(void);
+static bool gpu_img_tex_is_cached(unsigned int tex);
+static bool gpu_img_tex_acquire(const void * src, lv_image_src_t src_type,
+                                 const lv_draw_buf_t * decoded, unsigned int * tex_out);
+static bool gpu_mask_tex_acquire(const void * mask_src, unsigned int * tex_out);
 
 static bool shader_ok(unsigned int sh)
 {
@@ -1095,6 +1115,7 @@ void lv_gpu_renderer_gles2_2d_deinit(void)
     }
     lv_gpu_glyph_atlas_deinit();
     lv_gpu_renderer_gles2_sdf_deinit();
+    gpu_img_tex_cache_clear();
 #if LV_USE_VECTOR_GRAPHIC
     lv_gpu_renderer_gles2_vector_deinit();
 #endif
@@ -1908,7 +1929,7 @@ static bool draw_arc_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const l
             lv_image_decoder_close(&dec);
             return false;
         }
-        if(!upload_decoded_image(dec.decoded, &img_tex)) {
+        if(!gpu_img_tex_acquire(dec.src, dec.src_type, dec.decoded, &img_tex)) {
             lv_image_decoder_close(&dec);
             return false;
         }
@@ -1948,7 +1969,6 @@ static bool draw_arc_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const l
     GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
     GL_CALL(glDisableVertexAttribArray(0));
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
-    if(img_tex) GL_CALL(glDeleteTextures(1, &img_tex));
     return true;
 }
 
@@ -2712,6 +2732,126 @@ static bool upload_decoded_image(const lv_draw_buf_t * decoded, unsigned int * t
     return true;
 }
 
+static void gpu_img_tex_cache_clear(void)
+{
+    for(uint32_t i = 0; i < GPU_IMG_TEX_CACHE_MAX; i++) {
+        if(g_img_tex_cache[i].valid && g_img_tex_cache[i].tex) {
+            GL_CALL(glDeleteTextures(1, &g_img_tex_cache[i].tex));
+        }
+        g_img_tex_cache[i].valid = false;
+    }
+}
+
+static bool gpu_img_tex_is_cached(unsigned int tex)
+{
+    if(tex == 0) return false;
+    for(uint32_t i = 0; i < GPU_IMG_TEX_CACHE_MAX; i++) {
+        if(g_img_tex_cache[i].valid && g_img_tex_cache[i].tex == tex) return true;
+    }
+    return false;
+}
+
+static unsigned int gpu_img_tex_cache_find(const void * src, lv_image_src_t src_type,
+                                              const lv_draw_buf_t * decoded)
+{
+    if(!src || !decoded) return 0;
+    for(uint32_t i = 0; i < GPU_IMG_TEX_CACHE_MAX; i++) {
+        gpu_img_tex_entry_t * e = &g_img_tex_cache[i];
+        if(!e->valid) continue;
+        if(e->src == src && e->src_type == src_type
+           && e->w == decoded->header.w && e->h == decoded->header.h
+           && e->cf == decoded->header.cf) {
+            e->lru_stamp = ++g_img_tex_lru_gen;
+            return e->tex;
+        }
+    }
+    return 0;
+}
+
+static void gpu_img_tex_cache_insert(const void * src, lv_image_src_t src_type,
+                                       const lv_draw_buf_t * decoded, unsigned int tex)
+{
+    if(!src || !decoded || !tex) return;
+
+    uint32_t slot = GPU_IMG_TEX_CACHE_MAX;
+    uint32_t oldest_stamp = UINT32_MAX;
+    for(uint32_t i = 0; i < GPU_IMG_TEX_CACHE_MAX; i++) {
+        if(!g_img_tex_cache[i].valid) {
+            slot = i;
+            break;
+        }
+        if(g_img_tex_cache[i].lru_stamp < oldest_stamp) {
+            oldest_stamp = g_img_tex_cache[i].lru_stamp;
+            slot = i;
+        }
+    }
+    if(slot >= GPU_IMG_TEX_CACHE_MAX) return;
+
+    if(g_img_tex_cache[slot].valid && g_img_tex_cache[slot].tex && g_img_tex_cache[slot].tex != tex) {
+        GL_CALL(glDeleteTextures(1, &g_img_tex_cache[slot].tex));
+    }
+    g_img_tex_cache[slot].src = src;
+    g_img_tex_cache[slot].src_type = src_type;
+    g_img_tex_cache[slot].w = decoded->header.w;
+    g_img_tex_cache[slot].h = decoded->header.h;
+    g_img_tex_cache[slot].cf = decoded->header.cf;
+    g_img_tex_cache[slot].tex = tex;
+    g_img_tex_cache[slot].lru_stamp = ++g_img_tex_lru_gen;
+    g_img_tex_cache[slot].valid = true;
+}
+
+static bool gpu_img_tex_acquire(const void * src, lv_image_src_t src_type,
+                                 const lv_draw_buf_t * decoded, unsigned int * tex_out)
+{
+    if(!decoded || !tex_out) return false;
+    const unsigned int cached = gpu_img_tex_cache_find(src, src_type, decoded);
+    if(cached) {
+        *tex_out = cached;
+        return true;
+    }
+    if(!upload_decoded_image(decoded, tex_out)) return false;
+    gpu_img_tex_cache_insert(src, src_type, decoded, *tex_out);
+    return true;
+}
+
+static lv_draw_buf_t gpu_mask_as_draw_buf(const void * mask_src)
+{
+    lv_draw_buf_t buf;
+    lv_memzero(&buf, sizeof(buf));
+    if(lv_image_src_get_type(mask_src) == LV_IMAGE_SRC_VARIABLE) {
+        const lv_image_dsc_t * mask = mask_src;
+        buf.header = mask->header;
+        buf.data = mask->data;
+        buf.data_size = mask->data_size;
+    }
+    return buf;
+}
+
+static bool gpu_mask_tex_acquire(const void * mask_src, unsigned int * tex_out)
+{
+    if(!mask_src || !tex_out) return false;
+
+    const lv_image_src_t src_type = lv_image_src_get_type(mask_src);
+    if(src_type == LV_IMAGE_SRC_VARIABLE) {
+        lv_draw_buf_t buf = gpu_mask_as_draw_buf(mask_src);
+        if(buf.data) {
+            const unsigned int cached = gpu_img_tex_cache_find(mask_src, src_type, &buf);
+            if(cached) {
+                *tex_out = cached;
+                return true;
+            }
+        }
+    }
+
+    if(!upload_mask_texture(mask_src, tex_out)) return false;
+
+    if(src_type == LV_IMAGE_SRC_VARIABLE) {
+        lv_draw_buf_t buf = gpu_mask_as_draw_buf(mask_src);
+        if(buf.data) gpu_img_tex_cache_insert(mask_src, src_type, &buf, *tex_out);
+    }
+    return true;
+}
+
 static bool draw_tex_transformed(unsigned int tex, int32_t img_w, int32_t img_h,
                                   int32_t x, int32_t y, const lv_draw_image_dsc_t * dsc,
                                   const lv_area_t * coords, int32_t dw, int32_t dh)
@@ -2738,7 +2878,7 @@ static bool draw_tex_transformed(unsigned int tex, int32_t img_w, int32_t img_h,
     bool use_mask = false;
     float mask_uv[4];
     if(dsc->bitmap_mask_src) {
-        if(upload_mask_texture(dsc->bitmap_mask_src, &mask_tex)) {
+        if(gpu_mask_tex_acquire(dsc->bitmap_mask_src, &mask_tex)) {
             use_mask = true;
             compute_mask_uv(dsc, coords, img_w, img_h, mask_uv);
         }
@@ -2800,7 +2940,7 @@ static bool draw_tex_transformed(unsigned int tex, int32_t img_w, int32_t img_h,
 
     GL_CALL(glActiveTexture(GL_TEXTURE0));
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
-    if(mask_tex) GL_CALL(glDeleteTextures(1, &mask_tex));
+    if(mask_tex && !gpu_img_tex_is_cached(mask_tex)) GL_CALL(glDeleteTextures(1, &mask_tex));
 
     restore_blend_mode();
     return true;
@@ -2839,7 +2979,7 @@ static bool draw_image_gpu(const lv_area_t * coords, const lv_area_t * clip,
     }
 
     unsigned int tex = 0;
-    if(!upload_decoded_image(decoder_dsc.decoded, &tex)) {
+    if(!gpu_img_tex_acquire(decoder_dsc.src, decoder_dsc.src_type, decoder_dsc.decoded, &tex)) {
         lv_image_decoder_close(&decoder_dsc);
         return false;
     }
@@ -2878,7 +3018,6 @@ static bool draw_image_gpu(const lv_area_t * coords, const lv_area_t * clip,
         }
     }
 
-    GL_CALL(glDeleteTextures(1, &tex));
     lv_image_decoder_close(&decoder_dsc);
     return ok;
 }

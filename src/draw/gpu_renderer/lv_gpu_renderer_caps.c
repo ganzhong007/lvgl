@@ -27,13 +27,19 @@ void lv_gpu_renderer_caps_probe(lv_gpu_renderer_caps_t * caps)
     caps->has_fbo = true;
     caps->has_depth16 = true;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &caps->max_texture_size);
+    {
+        const char * exts = (const char *)glGetString(GL_EXTENSIONS);
+        caps->has_packed_depth_stencil = exts && (strstr(exts, "GL_OES_packed_depth_stencil") ||
+                                                  strstr(exts, "GL_EXT_packed_depth_stencil"));
+    }
 }
 
 void lv_gpu_renderer_caps_log(const lv_gpu_renderer_caps_t * caps)
 {
 #if LV_GPU_RENDERER_LOG_CAPS
-    LV_LOG_USER("LVGL caps: GLES%u fbo=%d depth16=%d max_tex=%d",
-                (unsigned)caps->gles_major, caps->has_fbo, caps->has_depth16, caps->max_texture_size);
+    LV_LOG_USER("LVGL caps: GLES%u fbo=%d depth16=%d packed_ds=%d max_tex=%d",
+                (unsigned)caps->gles_major, caps->has_fbo, caps->has_depth16,
+                caps->has_packed_depth_stencil, caps->max_texture_size);
 #else
     LV_UNUSED(caps);
 #endif

@@ -313,7 +313,10 @@ bool lv_gpu_renderer_fg_can_gpu_native_2d(const lv_draw_task_t * task)
         }
         case LV_DRAW_TASK_TYPE_IMAGE: {
             lv_draw_image_dsc_t * id = lv_draw_task_get_image_dsc(t);
-            return id != NULL;
+            if(!id) return false;
+            const int32_t max_tex = lv_gpu_renderer_get_max_texture_size();
+            if(max_tex > 0 && (id->header.w > max_tex || id->header.h > max_tex)) return false;
+            return true;
         }
         case LV_DRAW_TASK_TYPE_LINE: {
             lv_draw_line_dsc_t * ld = lv_draw_task_get_line_dsc(t);

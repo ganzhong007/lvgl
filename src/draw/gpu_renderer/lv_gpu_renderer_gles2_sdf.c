@@ -206,12 +206,19 @@ static void bind_tex(unsigned int prog, int loc_disp, int loc_sampler, unsigned 
 static void upload_a8_padded(unsigned int tex, const uint8_t * bitmap, int32_t bw, int32_t bh,
                              int32_t stride, int32_t pad, int32_t tw, int32_t th)
 {
+    uint8_t row_rgba[SDF_MAX_DIM * 4];
     GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
     GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, tw, th, 0, GL_ALPHA, GL_UNSIGNED_BYTE, NULL));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL));
     for(int32_t y = 0; y < bh; y++) {
-        GL_CALL(glTexSubImage2D(GL_TEXTURE_2D, 0, pad, pad + y, bw, 1, GL_ALPHA, GL_UNSIGNED_BYTE,
-                                bitmap + (uint32_t)y * (uint32_t)stride));
+        const uint8_t * row = bitmap + (uint32_t)y * (uint32_t)stride;
+        for(int32_t x = 0; x < bw; x++) {
+            row_rgba[x * 4 + 0] = 0;
+            row_rgba[x * 4 + 1] = 0;
+            row_rgba[x * 4 + 2] = 0;
+            row_rgba[x * 4 + 3] = row[x];
+        }
+        GL_CALL(glTexSubImage2D(GL_TEXTURE_2D, 0, pad, pad + y, bw, 1, GL_RGBA, GL_UNSIGNED_BYTE, row_rgba));
     }
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
 }
@@ -286,7 +293,7 @@ bool lv_gpu_renderer_gles2_sdf_upload_atlas(unsigned int atlas_tex, int32_t dst_
     const int32_t tw = sdf_w;
     const int32_t th = sdf_h;
 
-    unsigned int src_a8 = make_tex_alpha(tw, th);
+    unsigned int src_a8 = make_tex_rgba(tw, th);
     upload_a8_padded(src_a8, bitmap, bw, bh, stride, pad, tw, th);
 
     unsigned int ping[2] = { make_tex_rgba(tw, th), make_tex_rgba(tw, th) };
@@ -295,7 +302,7 @@ bool lv_gpu_renderer_gles2_sdf_upload_atlas(unsigned int atlas_tex, int32_t dst_
 
     const unsigned int inside_field = jfa_from_mask(src_a8, tw, th, ping, fbo);
 
-    unsigned int inv_a8 = make_tex_alpha(tw, th);
+    unsigned int inv_a8 = make_tex_rgba(tw, th);
     unsigned int inv_fbo = make_fbo(inv_a8);
     if(inv_fbo) {
         GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, inv_fbo));

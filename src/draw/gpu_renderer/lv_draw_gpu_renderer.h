@@ -64,6 +64,8 @@ void lv_gpu_renderer_tex_fbo_attach_depth(int32_t w, int32_t h);
 bool lv_gpu_renderer_tex_fbo_has_depth(void);
 void lv_gpu_renderer_tex_fbo_attach_stencil(int32_t w, int32_t h);
 bool lv_gpu_renderer_tex_fbo_has_stencil(void);
+/** GL_MAX_TEXTURE_SIZE from caps probe (0 if unknown). */
+int32_t lv_gpu_renderer_get_max_texture_size(void);
 /** Skip 9x glReadPixels alpha probe per viewport (turbo / bench). */
 void lv_gpu_renderer_set_skip_alpha_probe(bool skip);
 void lv_gpu_renderer_overlay_2d_to_tex(lv_display_t * disp, unsigned int tex_id, int32_t w, int32_t h);

@@ -25,6 +25,7 @@
 #define GPU_VEC_MAX_TRIS  8192
 #define GPU_VEC_FLAT_TOL  0.25f
 #define GPU_VEC_MAX_STOPS 8
+#define GPU_VEC_BATCH_VERTS (GPU_VEC_MAX_TRIS * 3)
 
 static unsigned int prog_tri;
 static int loc_tri_disp;
@@ -148,6 +149,8 @@ typedef struct {
 } gpu_vec_grad_t;
 
 static unsigned int g_vec_grad_lut_tex = 0;
+static unsigned int g_vec_vbo = 0;
+static float g_vec_batch_verts[GPU_VEC_BATCH_VERTS * 2];
 
 static unsigned int compile_shader(unsigned int type, const char * src)
 {
@@ -184,6 +187,7 @@ static unsigned int link_program(unsigned int v, unsigned int f)
 void lv_gpu_renderer_gles2_vector_init(void)
 {
     if(prog_tri) return;
+    if(!g_vec_vbo) GL_CALL(glGenBuffers(1, &g_vec_vbo));
     unsigned int v = compile_shader(GL_VERTEX_SHADER, vs_vec);
     unsigned int f = compile_shader(GL_FRAGMENT_SHADER, fs_vec);
     prog_tri = link_program(v, f);
@@ -209,6 +213,10 @@ void lv_gpu_renderer_gles2_vector_deinit(void)
     if(g_vec_grad_lut_tex) {
         GL_CALL(glDeleteTextures(1, &g_vec_grad_lut_tex));
         g_vec_grad_lut_tex = 0;
+    }
+    if(g_vec_vbo) {
+        GL_CALL(glDeleteBuffers(1, &g_vec_vbo));
+        g_vec_vbo = 0;
     }
 }
 
@@ -537,19 +545,27 @@ static void grad_from_solid(lv_color32_t color, gpu_vec_grad_t * out)
     LV_UNUSED(color);
 }
 
+static void vec_vbo_draw(const float * verts, uint32_t vert_count)
+{
+    if(vert_count < 3 || !g_vec_vbo) return;
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, g_vec_vbo));
+    GL_CALL(glBufferData(GL_ARRAY_BUFFER, vert_count * 2 * sizeof(float), verts, GL_STREAM_DRAW));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0));
+    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)vert_count));
+    GL_CALL(glDisableVertexAttribArray(0));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
+}
+
 static void draw_tris_raw(const gpu_vec_pt_t * poly, const uint16_t * idx, uint32_t idx_n)
 {
-    GL_CALL(glEnableVertexAttribArray(0));
-    for(uint32_t i = 0; i + 2 < idx_n; i += 3) {
-        const float v[6] = {
-            poly[idx[i]].x, poly[idx[i]].y,
-            poly[idx[i + 1]].x, poly[idx[i + 1]].y,
-            poly[idx[i + 2]].x, poly[idx[i + 2]].y,
-        };
-        GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, v));
-        GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 3));
+    if(idx_n < 3) return;
+    if(idx_n > GPU_VEC_BATCH_VERTS) idx_n = GPU_VEC_BATCH_VERTS;
+    for(uint32_t i = 0; i < idx_n; i++) {
+        g_vec_batch_verts[i * 2]     = poly[idx[i]].x;
+        g_vec_batch_verts[i * 2 + 1] = poly[idx[i]].y;
     }
-    GL_CALL(glDisableVertexAttribArray(0));
+    vec_vbo_draw(g_vec_batch_verts, idx_n);
 }
 
 static void draw_tris(const gpu_vec_pt_t * poly, const uint16_t * idx, uint32_t idx_n,
@@ -629,6 +645,11 @@ static void draw_stroke_poly(const gpu_vec_pt_t * poly, uint32_t n, float width,
     if(n < 2 || width < 0.5f) return;
     const float hw = width * 0.5f;
     float dist = 0.f;
+    uint32_t nv = 0;
+    bind_paint_uniforms(color, grad, dw, dh);
+    GL_CALL(glEnable(GL_BLEND));
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+
     for(uint32_t i = 0; i + 1 < n; i++) {
         const float x0 = poly[i].x, y0 = poly[i].y;
         const float x1 = poly[i + 1].x, y1 = poly[i + 1].y;
@@ -648,23 +669,21 @@ static void draw_stroke_poly(const gpu_vec_pt_t * poly, uint32_t n, float width,
                 const float sx1 = x0 + dx * t1, sy1 = y0 + dy * t1;
                 const float sdx = sx1 - sx0, sdy = sy1 - sy0;
                 const float slen = sqrtf(sdx * sdx + sdy * sdy);
-                if(slen > 0.001f) {
+                if(slen > 0.001f && nv + 12 <= GPU_VEC_BATCH_VERTS * 2) {
                     const float nx = -sdy / slen * hw, ny = sdx / slen * hw;
-                    const float v[12] = {
+                    const float q[12] = {
                         sx0 + nx, sy0 + ny, sx1 + nx, sy1 + ny, sx1 - nx, sy1 - ny,
                         sx0 + nx, sy0 + ny, sx1 - nx, sy1 - ny, sx0 - nx, sy0 - ny,
                     };
-                    bind_paint_uniforms(color, grad, dw, dh);
-                    GL_CALL(glEnableVertexAttribArray(0));
-                    GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, v));
-                    GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 6));
-                    GL_CALL(glDisableVertexAttribArray(0));
+                    for(int k = 0; k < 12; k++) g_vec_batch_verts[nv++] = q[k];
                 }
             }
             seg_off += adv;
         }
         dist += len;
     }
+
+    if(nv >= 6) vec_vbo_draw(g_vec_batch_verts, nv / 2);
 }
 
 static bool draw_path_contour(int32_t dw, int32_t dh, const lv_vector_path_t * path,

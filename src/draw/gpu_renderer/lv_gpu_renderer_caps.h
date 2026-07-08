@@ -17,6 +17,7 @@ typedef struct {
     uint8_t gles_major;
     bool has_fbo;
     bool has_depth16;
+    bool has_packed_depth_stencil;
     int32_t max_texture_size;
 } lv_gpu_renderer_caps_t;
 
