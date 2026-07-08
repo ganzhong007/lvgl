@@ -128,6 +128,22 @@ void lv_opengles_teximage_bgra8888(int level, int32_t w, int32_t h, const uint8_
     if(w < 1 || h < 1 || !data) return;
 
     const uint32_t tight_stride = (uint32_t)w * 4u;
+    const bool row_tight = ((uint32_t)stride == tight_stride);
+
+    GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+
+    /* Fast path: when the driver understands BGRA texel order
+     * (GL_EXT_texture_format_BGRA8888), the LVGL ARGB8888 buffer
+     * (B,G,R,A in memory) can be uploaded verbatim with zero CPU work.
+     * A non-tight stride is handled by GL_EXT_unpack_subimage. */
+    if(g_ext_bgra_tex && (row_tight || g_ext_unpack_row_length)) {
+        if(!row_tight) GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, (GLint)(stride / 4u)));
+        GL_CALL(glTexImage2D(GL_TEXTURE_2D, level, GL_BGRA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, data));
+        if(!row_tight) GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, 0));
+        return;
+    }
+
+    /* Fallback: no BGRA texture support -> pack tightly and swap R/B on CPU. */
     uint8_t * tight = lv_malloc(tight_stride * (uint32_t)h);
     if(!tight) return;
 
@@ -141,7 +157,6 @@ void lv_opengles_teximage_bgra8888(int level, int32_t w, int32_t h, const uint8_
             out[x * 4 + 3] = row[x * 4 + 3];
         }
     }
-    GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
     GL_CALL(glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, tight));
     lv_free(tight);
 }

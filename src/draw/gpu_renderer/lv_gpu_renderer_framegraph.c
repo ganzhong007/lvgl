@@ -617,7 +617,13 @@ void lv_gpu_renderer_fg_execute(unsigned int tex_id, int32_t dw, int32_t dh,
 #endif
 
     if(fg_unified_pass_active()) {
+        /* Packed depth-stencil: depth for 3D, stencil for exact vector fills. */
         lv_gpu_renderer_tex_fbo_attach_depth(dw, dh);
+    }
+    else {
+        /* 2D-only pass: attach a stencil buffer so vector paths fill exactly
+         * (even-odd/nonzero) instead of falling back to earcut approximation. */
+        lv_gpu_renderer_tex_fbo_attach_stencil(dw, dh);
     }
 
 #if !LV_USE_EGL

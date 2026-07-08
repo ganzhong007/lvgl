@@ -38,6 +38,18 @@
 
 #define DRAW_UNIT_ID_GPU_RENDERER 11
 
+/* Packed depth-stencil (GL_OES_packed_depth_stencil / core in GL3+). A single
+ * renderbuffer bound to both the depth and stencil attachment points is the
+ * FBO-complete configuration accepted by both Mali and llvmpipe, unlike a
+ * separate DEPTH16 + STENCIL8 pair. */
+#ifndef GL_DEPTH24_STENCIL8
+#ifdef GL_DEPTH24_STENCIL8_OES
+#define GL_DEPTH24_STENCIL8 GL_DEPTH24_STENCIL8_OES
+#else
+#define GL_DEPTH24_STENCIL8 0x88F0
+#endif
+#endif
+
 typedef struct {
     lv_draw_unit_t base_unit;
     lv_draw_task_t * task_act;
@@ -81,6 +93,23 @@ static unsigned int g_scanout_stencil_rb;
 static int32_t g_scanout_stencil_w;
 static int32_t g_scanout_stencil_h;
 static bool g_scanout_stencil_attached;
+static bool g_scanout_depth_is_ds;
+static int g_ds_packed = -1;
+
+static bool ds_packed_supported(void)
+{
+#if LV_USE_EGL
+    if(g_ds_packed < 0) {
+        const char * exts = (const char *)glGetString(GL_EXTENSIONS);
+        g_ds_packed = (exts && (strstr(exts, "GL_OES_packed_depth_stencil") ||
+                                strstr(exts, "GL_EXT_packed_depth_stencil"))) ? 1 : 0;
+    }
+    return g_ds_packed == 1;
+#else
+    /* Desktop GL 3.0+ / llvmpipe: DEPTH24_STENCIL8 is guaranteed. */
+    return true;
+#endif
+}
 
 static int32_t gpu_renderer_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
 static int32_t gpu_renderer_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
@@ -268,7 +297,14 @@ static void scanout_depth_ensure(int32_t w, int32_t h)
         GL_CALL(glGenRenderbuffers(1, &g_scanout_depth_rb));
     }
     GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, g_scanout_depth_rb));
-    GL_CALL(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, w, h));
+    if(ds_packed_supported()) {
+        GL_CALL(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h));
+        g_scanout_depth_is_ds = true;
+    }
+    else {
+        GL_CALL(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, w, h));
+        g_scanout_depth_is_ds = false;
+    }
     GL_CALL(glBindRenderbuffer(GL_RENDERBUFFER, 0));
     g_scanout_depth_w = w;
     g_scanout_depth_h = h;
@@ -277,14 +313,26 @@ static void scanout_depth_ensure(int32_t w, int32_t h)
 void lv_gpu_renderer_tex_fbo_attach_depth(int32_t w, int32_t h)
 {
     g_scanout_depth_attached = false;
+    g_scanout_stencil_attached = false;
     if(!lv_gpu_renderer_unified_pass_enabled() || w < 1 || h < 1) return;
     if(!g_scanout_tex_fbo) return;
 
     scanout_depth_ensure(w, h);
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_scanout_tex_fbo));
     GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, g_scanout_depth_rb));
-    g_scanout_depth_attached =
-        glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    if(g_scanout_depth_is_ds) {
+        /* Same packed buffer feeds the stencil attachment for GPU vector fills. */
+        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, g_scanout_depth_rb));
+    }
+    const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    if(complete) {
+        g_scanout_depth_attached = true;
+        g_scanout_stencil_attached = g_scanout_depth_is_ds;
+    }
+    else {
+        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0));
+        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0));
+    }
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
 }
 
@@ -314,13 +362,29 @@ void lv_gpu_renderer_tex_fbo_attach_stencil(int32_t w, int32_t h)
     if(w < 1 || h < 1) return;
     if(!g_scanout_tex_fbo) return;
 
-    scanout_stencil_ensure(w, h);
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, g_scanout_tex_fbo));
-    GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, g_scanout_stencil_rb));
-    g_scanout_stencil_attached =
-        glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
-    if(!g_scanout_stencil_attached) {
-        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0));
+
+    if(ds_packed_supported()) {
+        /* Prefer a packed depth-stencil renderbuffer bound to both attachment
+         * points; this is FBO-complete where a standalone STENCIL8 is not. */
+        scanout_depth_ensure(w, h);
+        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, g_scanout_depth_rb));
+        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, g_scanout_depth_rb));
+        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        g_scanout_stencil_attached = complete;
+        if(!complete) {
+            GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0));
+            GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0));
+        }
+    }
+    else {
+        scanout_stencil_ensure(w, h);
+        GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, g_scanout_stencil_rb));
+        g_scanout_stencil_attached =
+            glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        if(!g_scanout_stencil_attached) {
+            GL_CALL(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0));
+        }
     }
     GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
 }

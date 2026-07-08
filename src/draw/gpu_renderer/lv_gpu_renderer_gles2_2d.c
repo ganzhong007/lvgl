@@ -285,11 +285,12 @@ static const char * fs_fill =
     "}\n"
     "void main(){\n"
     "  vec4 base=u_color;\n"
-    "  if(u_grad_mode==1){ float t=clamp((v_p.y-u_rect.y)/max(u_rect.w,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
-    "  else if(u_grad_mode==2){ float t=clamp((v_p.x-u_rect.x)/max(u_rect.z,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  float gt=-1.0;\n"
+    "  if(u_grad_mode==1){ gt=clamp((v_p.y-u_rect.y)/max(u_rect.w,1.0),0.0,1.0); }\n"
+    "  else if(u_grad_mode==2){ gt=clamp((v_p.x-u_rect.x)/max(u_rect.z,1.0),0.0,1.0); }\n"
     "  else if(u_grad_mode==3){\n"
     "    vec2 se=u_grad_p1-u_grad_p0; float len2=dot(se,se);\n"
-    "    float t=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; base=mix(u_color,u_color1,t); }\n"
+    "    gt=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; }\n"
     "  else if(u_grad_mode==4){\n"
     "    float xp=v_p.x; float yp=v_p.y;\n"
     "    float b=xp*u_rad_bpx+yp*u_rad_bpy+u_rad_bc;\n"
@@ -299,11 +300,11 @@ static const char * fs_fill =
     "    else if(abs(u_rad_bpx)>0.000001||abs(u_rad_bpy)>0.000001){\n"
     "      float det=b*b-u_rad_a4*c; t=det<0.0?0.0:(-b+sqrt(det))/u_rad_a4; }\n"
     "    else t=(length(v_p-vec2(u_rad_x0,u_rad_y0))-u_rad_r0)*u_rad_inv_dr;\n"
-    "    t=fill_grad_extend(t); base=mix(u_color,u_color1,t); }\n"
+    "    gt=fill_grad_extend(t); }\n"
     "  else if(u_grad_mode==5){\n"
     "    float ang=degrees(atan(v_p.y-u_con_cy,v_p.x-u_con_cx)); if(ang<0.0) ang+=360.0;\n"
-    "    float t=fill_grad_extend((ang-u_con_start)/max(u_con_span,0.001));\n"
-    "    base=mix(u_color,u_color1,t); }\n"
+    "    gt=fill_grad_extend((ang-u_con_start)/max(u_con_span,0.001)); }\n"
+    "  if(gt>=0.0) base=texture2D(u_grad_lut, vec2(gt,0.5));\n"
     "  vec2 h=u_rect.zw*0.5; vec2 c=u_rect.xy+h;\n"
     "  vec2 q=abs(v_p-c)-h+u_radius;\n"
     "  float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-u_radius;\n"
@@ -431,11 +432,12 @@ static const char * fs_tri =
     "  float u=(dot11*dot02-dot01*dot12)*inv; float v=(dot00*dot12-dot01*dot02)*inv;\n"
     "  if(u<0.0||v<0.0||u+v>1.0) discard;\n"
     "  vec4 base=u_color;\n"
-    "  if(u_grad_mode==1){ float t=clamp((v_p.y-u_grad_p0.y)/max(u_grad_p1.y-u_grad_p0.y,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
-    "  else if(u_grad_mode==2){ float t=clamp((v_p.x-u_grad_p0.x)/max(u_grad_p1.x-u_grad_p0.x,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  float gt=-1.0;\n"
+    "  if(u_grad_mode==1){ gt=clamp((v_p.y-u_grad_p0.y)/max(u_grad_p1.y-u_grad_p0.y,1.0),0.0,1.0); }\n"
+    "  else if(u_grad_mode==2){ gt=clamp((v_p.x-u_grad_p0.x)/max(u_grad_p1.x-u_grad_p0.x,1.0),0.0,1.0); }\n"
     "  else if(u_grad_mode==3){\n"
     "    vec2 se=u_grad_p1-u_grad_p0; float len2=dot(se,se);\n"
-    "    float t=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; base=mix(u_color,u_color1,t); }\n"
+    "    gt=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; }\n"
     "  else if(u_grad_mode==4){\n"
     "    float xp=v_p.x; float yp=v_p.y;\n"
     "    float b=xp*u_rad_bpx+yp*u_rad_bpy+u_rad_bc;\n"
@@ -445,11 +447,11 @@ static const char * fs_tri =
     "    else if(abs(u_rad_bpx)>0.000001||abs(u_rad_bpy)>0.000001){\n"
     "      float det=b*b-u_rad_a4*c; t=det<0.0?0.0:(-b+sqrt(det))/u_rad_a4; }\n"
     "    else { t=(length(v_p-vec2(u_rad_x0,u_rad_y0))-u_rad_r0)*u_rad_inv_dr; }\n"
-    "    t=tri_grad_extend(t); base=mix(u_color,u_color1,t); }\n"
+    "    gt=tri_grad_extend(t); }\n"
     "  else if(u_grad_mode==5){\n"
     "    float ang=degrees(atan(v_p.y-u_con_cy,v_p.x-u_con_cx)); if(ang<0.0) ang+=360.0;\n"
-    "    float t=tri_grad_extend((ang-u_con_start)/max(u_con_span,0.001));\n"
-    "    base=mix(u_color,u_color1,t); }\n"
+    "    gt=tri_grad_extend((ang-u_con_start)/max(u_con_span,0.001)); }\n"
+    "  if(gt>=0.0) base=texture2D(u_grad_lut, vec2(gt,0.5));\n"
     "  if(base.a<0.004) discard;\n"
     "  gl_FragColor=base;\n"
     "}\n";
@@ -625,11 +627,12 @@ static const char * fs_fill =
     "}\n"
     "void main(){\n"
     "  vec4 base=u_color;\n"
-    "  if(u_grad_mode==1){ float t=clamp((v_p.y-u_rect.y)/max(u_rect.w,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
-    "  else if(u_grad_mode==2){ float t=clamp((v_p.x-u_rect.x)/max(u_rect.z,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  float gt=-1.0;\n"
+    "  if(u_grad_mode==1){ gt=clamp((v_p.y-u_rect.y)/max(u_rect.w,1.0),0.0,1.0); }\n"
+    "  else if(u_grad_mode==2){ gt=clamp((v_p.x-u_rect.x)/max(u_rect.z,1.0),0.0,1.0); }\n"
     "  else if(u_grad_mode==3){\n"
     "    vec2 se=u_grad_p1-u_grad_p0; float len2=dot(se,se);\n"
-    "    float t=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; base=mix(u_color,u_color1,t); }\n"
+    "    gt=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; }\n"
     "  else if(u_grad_mode==4){\n"
     "    float xp=v_p.x; float yp=v_p.y;\n"
     "    float b=xp*u_rad_bpx+yp*u_rad_bpy+u_rad_bc;\n"
@@ -639,11 +642,11 @@ static const char * fs_fill =
     "    else if(abs(u_rad_bpx)>0.000001||abs(u_rad_bpy)>0.000001){\n"
     "      float det=b*b-u_rad_a4*c; t=det<0.0?0.0:(-b+sqrt(det))/u_rad_a4; }\n"
     "    else t=(length(v_p-vec2(u_rad_x0,u_rad_y0))-u_rad_r0)*u_rad_inv_dr;\n"
-    "    t=fill_grad_extend(t); base=mix(u_color,u_color1,t); }\n"
+    "    gt=fill_grad_extend(t); }\n"
     "  else if(u_grad_mode==5){\n"
     "    float ang=degrees(atan(v_p.y-u_con_cy,v_p.x-u_con_cx)); if(ang<0.0) ang+=360.0;\n"
-    "    float t=fill_grad_extend((ang-u_con_start)/max(u_con_span,0.001));\n"
-    "    base=mix(u_color,u_color1,t); }\n"
+    "    gt=fill_grad_extend((ang-u_con_start)/max(u_con_span,0.001)); }\n"
+    "  if(gt>=0.0) base=texture2D(u_grad_lut, vec2(gt,0.5));\n"
     "  vec2 h=u_rect.zw*0.5; vec2 c=u_rect.xy+h;\n"
     "  vec2 q=abs(v_p-c)-h+u_radius;\n"
     "  float d=length(max(q,0.0))+min(max(q.x,q.y),0.0)-u_radius;\n"
@@ -754,11 +757,12 @@ static const char * fs_tri =
     "  float u=(dot11*dot02-dot01*dot12)*inv; float v=(dot00*dot12-dot01*dot02)*inv;\n"
     "  if(u<0.0||v<0.0||u+v>1.0) discard;\n"
     "  vec4 base=u_color;\n"
-    "  if(u_grad_mode==1){ float t=clamp((v_p.y-u_grad_p0.y)/max(u_grad_p1.y-u_grad_p0.y,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
-    "  else if(u_grad_mode==2){ float t=clamp((v_p.x-u_grad_p0.x)/max(u_grad_p1.x-u_grad_p0.x,1.0),0.0,1.0); base=mix(u_color,u_color1,t); }\n"
+    "  float gt=-1.0;\n"
+    "  if(u_grad_mode==1){ gt=clamp((v_p.y-u_grad_p0.y)/max(u_grad_p1.y-u_grad_p0.y,1.0),0.0,1.0); }\n"
+    "  else if(u_grad_mode==2){ gt=clamp((v_p.x-u_grad_p0.x)/max(u_grad_p1.x-u_grad_p0.x,1.0),0.0,1.0); }\n"
     "  else if(u_grad_mode==3){\n"
     "    vec2 se=u_grad_p1-u_grad_p0; float len2=dot(se,se);\n"
-    "    float t=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; base=mix(u_color,u_color1,t); }\n"
+    "    gt=len2>0.0001?clamp(dot(v_p-u_grad_p0,se)/len2,0.0,1.0):0.0; }\n"
     "  else if(u_grad_mode==4){\n"
     "    float xp=v_p.x; float yp=v_p.y;\n"
     "    float b=xp*u_rad_bpx+yp*u_rad_bpy+u_rad_bc;\n"
@@ -768,11 +772,11 @@ static const char * fs_tri =
     "    else if(abs(u_rad_bpx)>0.000001||abs(u_rad_bpy)>0.000001){\n"
     "      float det=b*b-u_rad_a4*c; t=det<0.0?0.0:(-b+sqrt(det))/u_rad_a4; }\n"
     "    else t=(length(v_p-vec2(u_rad_x0,u_rad_y0))-u_rad_r0)*u_rad_inv_dr;\n"
-    "    t=tri_grad_extend(t); base=mix(u_color,u_color1,t); }\n"
+    "    gt=tri_grad_extend(t); }\n"
     "  else if(u_grad_mode==5){\n"
     "    float ang=degrees(atan(v_p.y-u_con_cy,v_p.x-u_con_cx)); if(ang<0.0) ang+=360.0;\n"
-    "    float t=tri_grad_extend((ang-u_con_start)/max(u_con_span,0.001));\n"
-    "    base=mix(u_color,u_color1,t); }\n"
+    "    gt=tri_grad_extend((ang-u_con_start)/max(u_con_span,0.001)); }\n"
+    "  if(gt>=0.0) base=texture2D(u_grad_lut, vec2(gt,0.5));\n"
     "  if(base.a<0.004) discard; gl_FragColor=base;\n"
     "}\n";
 static const char * fs_mask =
@@ -1392,6 +1396,70 @@ static lv_color32_t grad_stop_color32(const lv_grad_dsc_t * grad, uint32_t idx, 
     return lv_color_to_32(s->color, opa);
 }
 
+/* 1D lookup texture (256 texels) built from all gradient stops so the shader
+ * can reproduce multi-stop gradients exactly instead of the old 2-color mix.
+ * Texels are stored B,G,R,A to match gpu_comp_uniform_rgba() channel order. */
+#define GRAD_LUT_SIZE 256
+static unsigned int g_grad_lut_tex = 0;
+
+static void grad_lut_build(const lv_grad_dsc_t * grad, lv_opa_t fill_opa, uint8_t * out)
+{
+    const int n = grad ? (int)grad->stops_count : 0;
+    for(int i = 0; i < GRAD_LUT_SIZE; i++) {
+        lv_color_t col;
+        lv_opa_t sopa;
+        if(n <= 0) {
+            col = lv_color_black();
+            sopa = LV_OPA_COVER;
+        }
+        else if(i <= grad->stops[0].frac) {
+            col = grad->stops[0].color;
+            sopa = grad->stops[0].opa;
+        }
+        else if(i >= grad->stops[n - 1].frac) {
+            col = grad->stops[n - 1].color;
+            sopa = grad->stops[n - 1].opa;
+        }
+        else {
+            int k = 0;
+            while(k < n - 1 && i > grad->stops[k + 1].frac) k++;
+            const lv_grad_stop_t * a = &grad->stops[k];
+            const lv_grad_stop_t * b = &grad->stops[k + 1];
+            int span = (int)b->frac - (int)a->frac;
+            int f = span > 0 ? ((i - (int)a->frac) * 255) / span : 0;
+            col = lv_color_mix(b->color, a->color, (uint8_t)f);
+            sopa = (lv_opa_t)((int)a->opa + ((int)b->opa - (int)a->opa) * f / 255);
+        }
+        lv_color32_t c = lv_color_to_32(col, LV_OPA_MIX2(fill_opa, sopa));
+        out[i * 4 + 0] = c.blue;
+        out[i * 4 + 1] = c.green;
+        out[i * 4 + 2] = c.red;
+        out[i * 4 + 3] = c.alpha;
+    }
+}
+
+static void bind_grad_lut(const lv_grad_dsc_t * grad, lv_opa_t fill_opa, int sampler_loc)
+{
+    uint8_t lut[GRAD_LUT_SIZE * 4];
+    grad_lut_build(grad, fill_opa, lut);
+
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    if(!g_grad_lut_tex) {
+        GL_CALL(glGenTextures(1, &g_grad_lut_tex));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, g_grad_lut_tex));
+        GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+        GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+        GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+        GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    }
+    else {
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, g_grad_lut_tex));
+    }
+    GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, GRAD_LUT_SIZE, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, lut));
+    GL_CALL(glUniform1i(sampler_loc, 0));
+}
+
 static void triangle_radial_uniforms(const lv_grad_dsc_t * grad, const lv_area_t * area,
                                       float * x0, float * y0, float * r0,
                                       float * a4, float * bpx, float * bpy, float * bc, float * inv_dr);
@@ -1426,6 +1494,7 @@ static bool draw_fill_gpu(const lv_area_t * area, int32_t dw, int32_t dh, const 
     GL_CALL(glUniform4f(loc_fill_rect, x1, y1, rw, rh));
     GL_CALL(glUniform1f(loc_fill_radius, rad));
     GL_CALL(glUniform1i(loc_fill_grad_mode, grad_mode));
+    if(grad_mode >= 1) bind_grad_lut(&fd->grad, fd->opa, loc_fill_grad_lut);
     if(grad_mode == 3) {
         const lv_area_t rel = *area;
         float gx0 = (float)(rel.x1 + fd->grad.params.linear.start.x);
@@ -1608,6 +1677,7 @@ static bool draw_triangle_gpu(const lv_area_t * area, int32_t dw, int32_t dh, co
     GL_CALL(glUniform2f(loc_tri_p1, (float)td->p[1].x, (float)td->p[1].y));
     GL_CALL(glUniform2f(loc_tri_p2, (float)td->p[2].x, (float)td->p[2].y));
     GL_CALL(glUniform1i(loc_tri_grad_mode, grad_mode));
+    if(grad_mode >= 1) bind_grad_lut(&td->grad, td->opa, loc_tri_grad_lut);
     if(grad_mode == 1 || grad_mode == 2) {
         float y0 = (float)area->y1;
         float y1 = (float)area->y2 + 1.0f;

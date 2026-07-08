@@ -38,6 +38,7 @@ static int loc_tri_grad_cx;
 static int loc_tri_grad_cy;
 static int loc_tri_grad_r0;
 static int loc_tri_grad_r1;
+static int loc_tri_grad_lut;
 
 #if LV_USE_EGL
 static const char * vs_vec =
@@ -64,6 +65,7 @@ static const char * fs_vec =
     "uniform float u_grad_cy;\n"
     "uniform float u_grad_r0;\n"
     "uniform float u_grad_r1;\n"
+    "uniform sampler2D u_grad_lut;\n"
     "varying vec2 v_pos;\n"
     "void main(){\n"
     "  vec4 base=u_color;\n"
@@ -77,7 +79,7 @@ static const char * fs_vec =
     "      t=(d-u_grad_r0)/max(u_grad_r1-u_grad_r0,0.001);\n"
     "    }\n"
     "    t=clamp(t,0.0,1.0);\n"
-    "    base=mix(u_color,u_color1,t);\n"
+    "    base=texture2D(u_grad_lut, vec2(t,0.5));\n"
     "  }\n"
     "  if(base.a<0.004) discard;\n"
     "  gl_FragColor=base;\n"
@@ -108,6 +110,7 @@ static const char * fs_vec =
     "uniform float u_grad_cy;\n"
     "uniform float u_grad_r0;\n"
     "uniform float u_grad_r1;\n"
+    "uniform sampler2D u_grad_lut;\n"
     "varying vec2 v_pos;\n"
     "void main(){\n"
     "  vec4 base=u_color;\n"
@@ -121,7 +124,7 @@ static const char * fs_vec =
     "      t=(d-u_grad_r0)/max(u_grad_r1-u_grad_r0,0.001);\n"
     "    }\n"
     "    t=clamp(t,0.0,1.0);\n"
-    "    base=mix(u_color,u_color1,t);\n"
+    "    base=texture2D(u_grad_lut, vec2(t,0.5));\n"
     "  }\n"
     "  if(base.a<0.004) discard;\n"
     "  gl_FragColor=base;\n"
@@ -133,6 +136,7 @@ typedef struct {
     float y;
 } gpu_vec_pt_t;
 
+#define GPU_VEC_LUT_SIZE 256
 typedef struct {
     bool active;
     int style;
@@ -140,7 +144,10 @@ typedef struct {
     lv_color32_t c1;
     float p0x, p0y, p1x, p1y;
     float cx, cy, r0, r1;
+    uint8_t lut[GPU_VEC_LUT_SIZE * 4]; /* B,G,R,A per texel, all stops resolved */
 } gpu_vec_grad_t;
+
+static unsigned int g_vec_grad_lut_tex = 0;
 
 static unsigned int compile_shader(unsigned int type, const char * src)
 {
@@ -192,12 +199,17 @@ void lv_gpu_renderer_gles2_vector_init(void)
     loc_tri_grad_cy = glGetUniformLocation(prog_tri, "u_grad_cy");
     loc_tri_grad_r0 = glGetUniformLocation(prog_tri, "u_grad_r0");
     loc_tri_grad_r1 = glGetUniformLocation(prog_tri, "u_grad_r1");
+    loc_tri_grad_lut = glGetUniformLocation(prog_tri, "u_grad_lut");
 }
 
 void lv_gpu_renderer_gles2_vector_deinit(void)
 {
     if(prog_tri) GL_CALL(glDeleteProgram(prog_tri));
     prog_tri = 0;
+    if(g_vec_grad_lut_tex) {
+        GL_CALL(glDeleteTextures(1, &g_vec_grad_lut_tex));
+        g_vec_grad_lut_tex = 0;
+    }
 }
 
 static void xform_pt(const lv_matrix_t * m, float x, float y, float * ox, float * oy)
@@ -445,9 +457,57 @@ static void bind_paint_uniforms(lv_color32_t color, const gpu_vec_grad_t * grad,
         GL_CALL(glUniform1f(loc_tri_grad_cy, grad->cy));
         GL_CALL(glUniform1f(loc_tri_grad_r0, grad->r0));
         GL_CALL(glUniform1f(loc_tri_grad_r1, grad->r1));
+
+        GL_CALL(glActiveTexture(GL_TEXTURE0));
+        if(!g_vec_grad_lut_tex) {
+            GL_CALL(glGenTextures(1, &g_vec_grad_lut_tex));
+            GL_CALL(glBindTexture(GL_TEXTURE_2D, g_vec_grad_lut_tex));
+            GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+            GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+            GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+            GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+        }
+        else {
+            GL_CALL(glBindTexture(GL_TEXTURE_2D, g_vec_grad_lut_tex));
+        }
+        GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+        GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, GPU_VEC_LUT_SIZE, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, grad->lut));
+        GL_CALL(glUniform1i(loc_tri_grad_lut, 0));
     }
     else {
         GL_CALL(glUniform1i(loc_tri_grad_on, 0));
+    }
+}
+
+static void vec_grad_lut_build(const lv_vector_gradient_t * g, lv_opa_t opa, uint8_t * out)
+{
+    const int n = (int)g->stops_count;
+    for(int i = 0; i < GPU_VEC_LUT_SIZE; i++) {
+        lv_color_t col;
+        lv_opa_t sopa;
+        if(i <= g->stops[0].frac) {
+            col = g->stops[0].color;
+            sopa = g->stops[0].opa;
+        }
+        else if(i >= g->stops[n - 1].frac) {
+            col = g->stops[n - 1].color;
+            sopa = g->stops[n - 1].opa;
+        }
+        else {
+            int k = 0;
+            while(k < n - 1 && i > g->stops[k + 1].frac) k++;
+            const lv_grad_stop_t * a = &g->stops[k];
+            const lv_grad_stop_t * b = &g->stops[k + 1];
+            int span = (int)b->frac - (int)a->frac;
+            int f = span > 0 ? ((i - (int)a->frac) * 255) / span : 0;
+            col = lv_color_mix(b->color, a->color, (uint8_t)f);
+            sopa = (lv_opa_t)((int)a->opa + ((int)b->opa - (int)a->opa) * f / 255);
+        }
+        lv_color32_t c = lv_color_to_32(col, LV_OPA_MIX2(opa, sopa));
+        out[i * 4 + 0] = c.blue;
+        out[i * 4 + 1] = c.green;
+        out[i * 4 + 2] = c.red;
+        out[i * 4 + 3] = c.alpha;
     }
 }
 
@@ -460,6 +520,7 @@ static void grad_from_vector(const lv_vector_gradient_t * g, lv_opa_t opa, gpu_v
     out->c0 = lv_color_to_32(g->stops[0].color, LV_OPA_MIX2(opa, g->stops[0].opa));
     const uint32_t last = g->stops_count - 1;
     out->c1 = lv_color_to_32(g->stops[last].color, LV_OPA_MIX2(opa, g->stops[last].opa));
+    vec_grad_lut_build(g, opa, out->lut);
     out->p0x = g->x1;
     out->p0y = g->y1;
     out->p1x = g->x2;
