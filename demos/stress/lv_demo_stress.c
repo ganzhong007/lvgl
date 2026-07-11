@@ -26,12 +26,14 @@ static void set_y_anim(void * obj, int32_t v);
 static void set_width_anim(void * obj, int32_t v);
 static void arc_set_end_angle_anim(void * obj, int32_t v);
 static void obj_test_task_cb(lv_timer_t * tmr);
+static void stress_create_draw_load(void);
 
 /**********************
  *  STATIC VARIABLES
  **********************/
 static lv_obj_t * main_page;
 static lv_obj_t * ta;
+static lv_obj_t * draw_load_layer;
 static size_t mem_free_start = 0;
 static int16_t g_state = -1;
 
@@ -91,6 +93,7 @@ static void obj_test_task_cb(lv_timer_t * tmr)
             lv_obj_set_size(obj, 100, 70);
             obj = lv_label_create(obj);
             lv_label_set_text(obj, "Multi line\n"LV_SYMBOL_OK LV_SYMBOL_CLOSE LV_SYMBOL_WIFI);
+            stress_create_draw_load();
             break;
 
         case 1: {
@@ -282,16 +285,18 @@ static void obj_test_task_cb(lv_timer_t * tmr)
             obj = lv_list_create(main_page);
             {
                 lv_obj_t * b;
-                b = lv_list_add_button(obj, LV_SYMBOL_OK, "1. Some very long text to scroll");
-                auto_delete(b, 10);
-                lv_list_add_button(obj, LV_SYMBOL_OK, "2. Some very long text to scroll");
-                lv_list_add_button(obj, LV_SYMBOL_OK, "3. Some very long text to scroll");
-                b = lv_list_add_button(obj, LV_SYMBOL_OK, "4. Some very long text to scroll");
-                auto_delete(b, LV_DEMO_STRESS_TIME_STEP);
-                b = lv_list_add_button(obj, LV_SYMBOL_OK, "5. Some very long text to scroll");
-                auto_delete(b, LV_DEMO_STRESS_TIME_STEP + 90);
-                b = lv_list_add_button(obj, LV_SYMBOL_OK, "6. Some very long text to scroll");
-                auto_delete(b, LV_DEMO_STRESS_TIME_STEP + 10);
+                for(uint32_t li = 0; li < LV_DEMO_STRESS_DRAW_MULT; li++) {
+                    b = lv_list_add_button(obj, LV_SYMBOL_OK, "1. Some very long text to scroll");
+                    if(li == 0) auto_delete(b, 10);
+                    lv_list_add_button(obj, LV_SYMBOL_OK, "2. Some very long text to scroll");
+                    lv_list_add_button(obj, LV_SYMBOL_OK, "3. Some very long text to scroll");
+                    b = lv_list_add_button(obj, LV_SYMBOL_OK, "4. Some very long text to scroll");
+                    if(li == 0) auto_delete(b, LV_DEMO_STRESS_TIME_STEP);
+                    b = lv_list_add_button(obj, LV_SYMBOL_OK, "5. Some very long text to scroll");
+                    if(li == 0) auto_delete(b, LV_DEMO_STRESS_TIME_STEP + 90);
+                    b = lv_list_add_button(obj, LV_SYMBOL_OK, "6. Some very long text to scroll");
+                    if(li == 0) auto_delete(b, LV_DEMO_STRESS_TIME_STEP + 10);
+                }
                 lv_obj_scroll_to_view(lv_obj_get_child(obj, -1),  LV_ANIM_ON);
             }
             auto_delete(obj, LV_DEMO_STRESS_TIME_STEP * 5 + 15);
@@ -417,6 +422,8 @@ static void obj_test_task_cb(lv_timer_t * tmr)
         case 31:
             lv_obj_clean(lv_screen_active());
             main_page = NULL;
+            ta = NULL;
+            draw_load_layer = NULL;
             g_state = -2;
             break;
         default:
@@ -455,6 +462,39 @@ static void set_width_anim(void * obj, int32_t v)
 static void arc_set_end_angle_anim(void * obj, int32_t v)
 {
     lv_arc_set_end_angle(obj, v);
+}
+
+static void stress_create_draw_load(void)
+{
+    if(LV_DEMO_STRESS_DRAW_MULT <= 1) return;
+    if(draw_load_layer != NULL) return;
+
+    /* ~20 widgets on main_page mid-test; add (MULT-1)*20 extras ≈ 10x draw load */
+    const uint32_t per_base = 20;
+    const uint32_t n = per_base * (uint32_t)(LV_DEMO_STRESS_DRAW_MULT - 1);
+    const uint32_t cols = 10;
+    const int32_t layer_w = LV_HOR_RES / 2;
+    const int32_t cell_w = layer_w / (int32_t)cols;
+    const int32_t rows = (int32_t)((n + cols - 1) / cols);
+    const int32_t cell_h = LV_VER_RES / (rows > 0 ? rows : 1);
+
+    draw_load_layer = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(draw_load_layer, layer_w, LV_VER_RES);
+    lv_obj_align(draw_load_layer, LV_ALIGN_TOP_RIGHT, 0, 0);
+    lv_obj_set_style_bg_opa(draw_load_layer, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_opa(draw_load_layer, LV_OPA_TRANSP, 0);
+    lv_obj_remove_flag(draw_load_layer, LV_OBJ_FLAG_SCROLLABLE);
+
+    for(uint32_t i = 0; i < n; i++) {
+        lv_obj_t * b = lv_button_create(draw_load_layer);
+        lv_obj_set_size(b, LV_MAX(cell_w - 4, 24), LV_MAX(cell_h - 4, 20));
+        lv_obj_set_pos(b, (int32_t)(i % cols) * cell_w + 2, (int32_t)(i / cols) * cell_h + 2);
+        lv_obj_t * l = lv_label_create(b);
+        lv_label_set_text_fmt(l, "%u", (unsigned)(i + 1));
+    }
+
+    LV_LOG_USER("draw load: %u extra widgets (LV_DEMO_STRESS_DRAW_MULT=%d)",
+                (unsigned)n, LV_DEMO_STRESS_DRAW_MULT);
 }
 
 #endif /* LV_USE_DEMO_STRESS */

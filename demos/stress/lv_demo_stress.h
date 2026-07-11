@@ -21,6 +21,11 @@ extern "C" {
 
 #define LV_DEMO_STRESS_TIME_STEP    50
 
+#ifndef LV_DEMO_STRESS_DRAW_MULT
+/** Repeat drawable count for stress benchmark (1 = stock demo). */
+#define LV_DEMO_STRESS_DRAW_MULT    1
+#endif
+
 /**********************
  *      TYPEDEFS
  **********************/
