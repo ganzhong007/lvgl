@@ -18,6 +18,7 @@
 #include "../core/lv_obj_private.h"
 
 #include "../misc/lv_timer_private.h"
+#include "../misc/lv_port_layer_trace.h"
 
 /*********************
  *      DEFINES
@@ -1529,6 +1530,8 @@ static void indev_proc_release(lv_indev_t * indev)
                     if(indev->long_pr_sent == 0) {
                         if(indev_proc_short_click(indev) == LV_RESULT_INVALID) return;
                     }
+                    LV_PORT_LAYER_TRACE("L2-INDEV", "pointer release -> LV_EVENT_CLICKED on %p",
+                                        (void *)indev_obj_act);
                     if(send_event(LV_EVENT_CLICKED, indev_act) == LV_RESULT_INVALID) return;
                 }
             }

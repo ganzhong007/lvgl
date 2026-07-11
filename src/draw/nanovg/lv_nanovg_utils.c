@@ -13,6 +13,7 @@
 
 #include "../../misc/lv_pending.h"
 #include "lv_draw_nanovg_private.h"
+#include "../../misc/lv_port_layer_trace.h"
 #include "lv_nanovg_math.h"
 #include <float.h>
 #include <math.h>
@@ -249,6 +250,7 @@ void lv_nanovg_end_frame(struct _lv_draw_nanovg_unit_t * u)
     LV_PROFILER_DRAW_BEGIN_TAG("nvgEndFrame");
     nvgEndFrame(u->vg);
     LV_PROFILER_DRAW_END_TAG("nvgEndFrame");
+    LV_PORT_LAYER_TRACE("L3-NVG", "nvgEndFrame -> glnvg__renderFlush (GPU draw)");
 
     lv_nanovg_clean_up(u);
 

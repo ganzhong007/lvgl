@@ -53,6 +53,7 @@
 
 #include "../../libs/nanovg/nanovg_gl.h"
 #include "../../libs/nanovg/nanovg_gl_utils.h"
+#include "../../misc/lv_port_layer_trace.h"
 
 /* GL_BGRA may not be defined on all platforms */
 #ifndef GL_BGRA
@@ -81,6 +82,19 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer);
 static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task);
 static int32_t draw_delete(lv_draw_unit_t * draw_unit);
 static void draw_event_cb(lv_event_t * e);
+
+#if LV_USE_PORT_LAYER_TRACE
+static const char * nvg_draw_task_name(lv_draw_task_type_t type)
+{
+    switch(type) {
+        case LV_DRAW_TASK_TYPE_FILL: return "FILL";
+        case LV_DRAW_TASK_TYPE_BORDER: return "BORDER";
+        case LV_DRAW_TASK_TYPE_LABEL: return "LABEL";
+        case LV_DRAW_TASK_TYPE_IMAGE: return "IMAGE";
+        default: return "OTHER";
+    }
+}
+#endif
 
 /**********************
  *  STATIC VARIABLES
@@ -153,6 +167,12 @@ static void draw_execute(lv_draw_nanovg_unit_t * u, lv_draw_task_t * t)
     lv_nanovg_transform(u->vg, &global_matrix);
 
     lv_nanovg_set_clip_area(u->vg, &t->clip_area);
+
+#if LV_USE_PORT_LAYER_TRACE
+    LV_PORT_LAYER_TRACE("L3-NVG", "execute %s at (%d,%d)-(%d,%d)",
+                        nvg_draw_task_name(t->type),
+                        (int)t->area.x1, (int)t->area.y1, (int)t->area.x2, (int)t->area.y2);
+#endif
 
     switch(t->type) {
         case LV_DRAW_TASK_TYPE_FILL:
@@ -364,6 +384,7 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
         LV_PROFILER_DRAW_BEGIN_TAG("nvgBeginFrame");
         nvgBeginFrame(u->vg, buf_w, buf_h, 1.0f);
         LV_PROFILER_DRAW_END_TAG("nvgBeginFrame");
+        LV_PORT_LAYER_TRACE("L3-NVG", "nvgBeginFrame %dx%d", (int)buf_w, (int)buf_h);
         u->is_started = true;
     }
 

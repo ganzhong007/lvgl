@@ -14,6 +14,7 @@
 #include "../opengles/lv_opengles_texture_private.h"
 #include "../opengles/lv_opengles_egl_private.h"
 #include "../opengles/lv_opengles_debug.h"
+#include "../../misc/lv_port_layer_trace.h"
 
 #include <wayland-egl.h>
 
@@ -175,8 +176,11 @@ static void flush_wait_cb(lv_display_t * disp)
 
 static void egl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
 {
-    LV_UNUSED(area);
     LV_UNUSED(px_map);
+
+    LV_PORT_LAYER_TRACE("L6-DRIVER", "Wayland EGL flush (%d,%d)-(%d,%d) last=%d (nanovg/opengles swap)",
+                        (int)area->x1, (int)area->y1, (int)area->x2, (int)area->y2,
+                        lv_display_flush_is_last(disp) ? 1 : 0);
 
     int32_t disp_width = lv_display_get_horizontal_resolution(disp);
     int32_t disp_height = lv_display_get_vertical_resolution(disp);
@@ -214,7 +218,10 @@ static void egl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * 
 static void egl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
 {
     LV_UNUSED(px_map);
-    LV_UNUSED(area);
+
+    LV_PORT_LAYER_TRACE("L6-DRIVER", "Wayland EGL flush (%d,%d)-(%d,%d) last=%d (glTexImage2D blit)",
+                        (int)area->x1, (int)area->y1, (int)area->x2, (int)area->y2,
+                        lv_display_flush_is_last(disp) ? 1 : 0);
 
     if(!lv_display_flush_is_last(disp)) {
         lv_display_flush_ready(disp);

@@ -12,6 +12,7 @@
 #if LV_WAYLAND_USE_SHM
 
 #include "../../display/lv_display_private.h"
+#include "../../misc/lv_port_layer_trace.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -390,6 +391,10 @@ static void shm_global_handler(void * backend_ctx, struct wl_registry * registry
 }
 static void shm_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
 {
+    LV_PORT_LAYER_TRACE("L6-DRIVER", "Wayland SHM flush (%d,%d)-(%d,%d) last=%d",
+                        (int)area->x1, (int)area->y1, (int)area->x2, (int)area->y2,
+                        lv_display_flush_is_last(disp) ? 1 : 0);
+
     lv_wl_shm_display_data_t * ddata = lv_wayland_get_backend_display_data(disp);
     struct wl_surface * surface = lv_wayland_get_window_surface(disp);
     if(!surface) {

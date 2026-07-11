@@ -9,6 +9,7 @@
 #include "lv_refr_private.h"
 #include "lv_obj_draw_private.h"
 #include "../misc/lv_area_private.h"
+#include "../misc/lv_port_layer_trace.h"
 #include "../draw/sw/lv_draw_sw_mask_private.h"
 #include "lv_obj_private.h"
 #include "lv_obj_event_private.h"
@@ -320,6 +321,9 @@ lv_result_t lv_inv_area(lv_display_t * disp, const lv_area_t * area_p)
 
     lv_result_t res = lv_display_send_event(disp, LV_EVENT_INVALIDATE_AREA, &com_area);
     if(res != LV_RESULT_OK) return LV_RESULT_INVALID;
+
+    LV_PORT_LAYER_TRACE("L4-REFR", "invalidate area (%d,%d)-(%d,%d)", (int)com_area.x1, (int)com_area.y1,
+                        (int)com_area.x2, (int)com_area.y2);
 
     /*Save only if this area is not in one of the saved areas*/
     uint16_t i;
@@ -782,6 +786,8 @@ static void refr_invalid_areas(void)
 {
     if(disp_refr->inv_p == 0) return;
     LV_PROFILER_REFR_BEGIN;
+
+    LV_PORT_LAYER_TRACE("L4-REFR", "refresh timer: draw %u dirty region(s)", (unsigned)disp_refr->inv_p);
 
     /*Notify the display driven rendering has started*/
     lv_display_send_event(disp_refr, LV_EVENT_RENDER_START, NULL);
@@ -1463,6 +1469,9 @@ static void call_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t *
     LV_PROFILER_REFR_BEGIN;
     LV_TRACE_REFR("Calling flush_cb on (%d;%d)(%d;%d) area with %p image pointer",
                   (int)area->x1, (int)area->y1, (int)area->x2, (int)area->y2, (void *)px_map);
+
+    LV_PORT_LAYER_TRACE("L5-FLUSH", "flush_cb area (%d,%d)-(%d,%d) px=%p",
+                        (int)area->x1, (int)area->y1, (int)area->x2, (int)area->y2, (void *)px_map);
 
     lv_area_t offset_area = {
         .x1 = area->x1 + disp->offset_x,

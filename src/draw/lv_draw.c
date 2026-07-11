@@ -18,11 +18,25 @@
 #include "../display/lv_display_private.h"
 #include "../core/lv_global.h"
 #include "../core/lv_refr_private.h"
+#include "../misc/lv_port_layer_trace.h"
 
 /*********************
  *      DEFINES
  *********************/
 #define _draw_info LV_GLOBAL_DEFAULT()->draw_info
+
+#if LV_USE_PORT_LAYER_TRACE
+static const char * port_draw_task_name(lv_draw_task_type_t type)
+{
+    switch(type) {
+        case LV_DRAW_TASK_TYPE_FILL: return "FILL";
+        case LV_DRAW_TASK_TYPE_BORDER: return "BORDER";
+        case LV_DRAW_TASK_TYPE_LABEL: return "LABEL";
+        case LV_DRAW_TASK_TYPE_IMAGE: return "IMAGE";
+        default: return "OTHER";
+    }
+}
+#endif
 
 /**********************
  *      TYPEDEFS
@@ -122,6 +136,12 @@ lv_draw_task_t * lv_draw_add_task(lv_layer_t * layer, const lv_area_t * coords, 
 
         tail->next = new_task;
     }
+
+#if LV_USE_PORT_LAYER_TRACE
+    LV_PORT_LAYER_TRACE("L3-DRAW", "add task %s at (%d,%d)-(%d,%d)",
+                        port_draw_task_name(type),
+                        (int)coords->x1, (int)coords->y1, (int)coords->x2, (int)coords->y2);
+#endif
 
     LV_PROFILER_DRAW_END;
     return new_task;
