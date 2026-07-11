@@ -104,11 +104,13 @@ function(lvgl_link_pkg_config)
   foreach(_target IN LISTS ARG_TARGETS)
     target_link_libraries(lvgl ${SCOPE} $<BUILD_INTERFACE:${_target}>)
     get_target_property(_inc_dirs ${_target} INTERFACE_INCLUDE_DIRECTORIES)
-    foreach(_dir IN LISTS _inc_dirs)
-      target_include_directories(
-        lvgl ${SCOPE} $<BUILD_INTERFACE:${_dir}>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-    endforeach()
+    if(_inc_dirs AND NOT _inc_dirs STREQUAL "${_target}-NOTFOUND")
+      foreach(_dir IN LISTS _inc_dirs)
+        target_include_directories(
+          lvgl ${SCOPE} $<BUILD_INTERFACE:${_dir}>
+          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+      endforeach()
+    endif()
   endforeach()
 
   if(ARG_PKG_LIB_PRIVATE)
