@@ -14,6 +14,7 @@
 #include "lv_g100_utils.h"
 #include "lv_g100_math.h"
 #include "lv_g100_image_cache.h"
+#include "lv_g100_tex.h"
 #include "../lv_image_decoder_private.h"
 #include "../lv_draw_image_private.h"
 
@@ -102,7 +103,6 @@ void lv_draw_g100_image(lv_draw_task_t * t, const lv_draw_image_dsc_t * dsc, con
     lv_matrix_t image_matrix;
     lv_matrix_identity(&image_matrix);
     image_dsc_to_matrix(&image_matrix, coords->x1, coords->y1, dsc);
-    lv_g100_transform(u->vg, &image_matrix);
 
     int32_t img_ofs_x = 0;
     int32_t img_ofs_y = 0;
@@ -130,6 +130,16 @@ void lv_draw_g100_image(lv_draw_task_t * t, const lv_draw_image_dsc_t * dsc, con
         rect_w = lv_area_get_width(coords);
         rect_h = lv_area_get_height(coords);
     }
+    else {
+        lv_matrix_t draw_matrix = u->ctx.matrix;
+        lv_matrix_multiply(&draw_matrix, &image_matrix);
+        if(lv_g100_tex_draw_image(u, dsc, coords, rect_w, rect_h, image_handle, &clip_area, &draw_matrix)) {
+            LV_PROFILER_DRAW_END;
+            return;
+        }
+    }
+
+    lv_g100_transform(u->vg, &image_matrix);
 
     nvgBeginPath(u->vg);
     lv_g100_path_append_rect(u->vg, 0, 0, rect_w, rect_h, dsc->clip_radius);

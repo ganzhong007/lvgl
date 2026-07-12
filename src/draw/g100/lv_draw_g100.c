@@ -27,6 +27,8 @@
 #include "lv_g100_context.h"
 #include "lv_g100_shader.h"
 #include "lv_g100_grad.h"
+#include "lv_g100_solid.h"
+#include "lv_g100_tex.h"
 
 #if LV_USE_OPENGLES && LV_USE_EGL
     #include "../../drivers/opengles/lv_opengles_private.h"
@@ -138,6 +140,8 @@ void lv_draw_g100_init(void)
     lv_g100_context_init(unit, &unit->ctx);
     lv_g100_shader_init(unit, &unit->ctx, &unit->shader);
     lv_g100_grad_init(unit);
+    lv_g100_solid_init(unit);
+    lv_g100_tex_init(unit);
 
     lv_g100_utils_init(unit);
     lv_g100_image_cache_init(unit);
@@ -474,6 +478,8 @@ static int32_t draw_delete(lv_draw_unit_t * draw_unit)
     lv_g100_utils_deinit(unit);
     lv_g100_shader_deinit(&unit->shader);
     lv_g100_grad_deinit(unit);
+    lv_g100_solid_deinit(unit);
+    lv_g100_tex_deinit(unit);
     lv_g100_context_deinit(&unit->ctx);
     NVG_CTX_DELETE(unit->vg);
     unit->vg = NULL;

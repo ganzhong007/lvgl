@@ -13,6 +13,7 @@
 
 #include "lv_g100_utils.h"
 #include "lv_g100_grad.h"
+#include "lv_g100_solid.h"
 
 /*********************
  *      DEFINES
@@ -67,6 +68,12 @@ void lv_draw_g100_fill(lv_draw_task_t * t, const lv_draw_fill_dsc_t * dsc, const
 #endif
     }
     else {
+        if(lv_g100_solid_fill_rect(u, coords, dsc->color, dsc->opa, (float)dsc->radius, &clip_area,
+                                   &u->ctx.matrix)) {
+            LV_PROFILER_DRAW_END;
+            return;
+        }
+
         nvgBeginPath(u->vg);
 
         lv_g100_path_append_rect(u->vg,

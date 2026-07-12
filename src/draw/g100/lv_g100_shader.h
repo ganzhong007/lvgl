@@ -30,8 +30,10 @@ typedef struct _lv_g100_shader_t {
     int32_t solid_loc_matrix;
     int32_t solid_loc_color;
     uint32_t grad_program;
+    uint32_t tex_program;
     bool ready;
     bool grad_ready;
+    bool tex_ready;
 } lv_g100_shader_t;
 
 /**********************
@@ -53,6 +55,10 @@ uint32_t lv_g100_shader_get_solid_program(const lv_g100_shader_t * shader);
 bool lv_g100_shader_bind_grad(struct _lv_g100_context_t * ctx, lv_g100_shader_t * shader);
 
 bool lv_g100_shader_grad_is_ready(const lv_g100_shader_t * shader);
+
+bool lv_g100_shader_tex_is_ready(const lv_g100_shader_t * shader);
+
+bool lv_g100_shader_bind_tex(struct _lv_g100_context_t * ctx, lv_g100_shader_t * shader);
 
 #endif /*LV_USE_DRAW_G100*/
 

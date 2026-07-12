@@ -27,18 +27,36 @@
 #if LV_G100_SHADER_HAS_GL
 
 static const char g100_vert_src[] =
+    "precision mediump float;\n"
     "attribute vec2 a_pos;\n"
     "uniform mat3 u_matrix;\n"
+    "uniform vec2 u_view_size;\n"
+    "uniform vec4 u_rect;\n"
+    "varying vec2 v_pos;\n"
     "void main(void) {\n"
+    "  v_pos = u_rect.xy + a_pos * u_rect.zw;\n"
     "  vec3 p = u_matrix * vec3(a_pos, 1.0);\n"
-    "  gl_Position = vec4(p.xy, 0.0, 1.0);\n"
+    "  gl_Position = vec4(2.0 * p.x / u_view_size.x - 1.0,\n"
+    "                     1.0 - 2.0 * p.y / u_view_size.y, 0.0, 1.0);\n"
     "}\n";
 
 static const char g100_frag_src[] =
     "precision mediump float;\n"
+    "varying vec2 v_pos;\n"
+    "uniform vec4 u_rect;\n"
+    "uniform float u_radius;\n"
     "uniform vec4 u_color;\n"
     "void main(void) {\n"
-    "  gl_FragColor = u_color;\n"
+    "  if(u_radius > 0.0) {\n"
+    "    vec2 half_size = u_rect.zw * 0.5;\n"
+    "    vec2 c = u_rect.xy + half_size;\n"
+    "    vec2 q = abs(v_pos - c) - half_size + vec2(u_radius);\n"
+    "    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - u_radius;\n"
+    "    if(d > 0.0) discard;\n"
+    "  }\n"
+    "  vec4 c = u_color;\n"
+    "  c.rgb *= c.a;\n"
+    "  gl_FragColor = c;\n"
     "}\n";
 
 static const char g100_grad_vert_src[] =
@@ -141,6 +159,37 @@ static const char g100_grad_frag_src[] =
     "  gl_FragColor = c;\n"
     "}\n";
 
+static const char g100_tex_vert_src[] =
+    "precision mediump float;\n"
+    "attribute vec2 a_pos;\n"
+    "attribute vec2 a_uv;\n"
+    "uniform mat3 u_matrix;\n"
+    "uniform vec2 u_view_size;\n"
+    "varying vec2 v_uv;\n"
+    "void main(void) {\n"
+    "  v_uv = a_uv;\n"
+    "  vec3 p = u_matrix * vec3(a_pos, 1.0);\n"
+    "  gl_Position = vec4(2.0 * p.x / u_view_size.x - 1.0,\n"
+    "                     1.0 - 2.0 * p.y / u_view_size.y, 0.0, 1.0);\n"
+    "}\n";
+
+static const char g100_tex_frag_src[] =
+    "precision mediump float;\n"
+    "varying vec2 v_uv;\n"
+    "uniform sampler2D u_texture;\n"
+    "uniform float u_opa;\n"
+    "uniform vec4 u_recolor;\n"
+    "uniform float u_recolor_opa;\n"
+    "void main(void) {\n"
+    "  vec4 c = texture2D(u_texture, v_uv);\n"
+    "  c.a *= u_opa;\n"
+    "  if(u_recolor_opa > 0.001) {\n"
+    "    c.rgb = mix(c.rgb, u_recolor.rgb, u_recolor_opa);\n"
+    "  }\n"
+    "  c.rgb *= c.a;\n"
+    "  gl_FragColor = c;\n"
+    "}\n";
+
 #endif /*LV_G100_SHADER_HAS_GL*/
 
 /**********************
@@ -204,6 +253,38 @@ void lv_g100_shader_init(lv_draw_g100_unit_t * unit, lv_g100_context_t * ctx, lv
         LV_LOG_WARN("G100 grad shader: compile failed");
     }
 
+    GLuint tvert = compile_shader(GL_VERTEX_SHADER, g100_tex_vert_src);
+    GLuint tfrag = compile_shader(GL_FRAGMENT_SHADER, g100_tex_frag_src);
+    if(tvert && tfrag) {
+        shader->tex_program = glCreateProgram();
+        glAttachShader(shader->tex_program, tvert);
+        glAttachShader(shader->tex_program, tfrag);
+        glBindAttribLocation(shader->tex_program, 0, "a_pos");
+        glBindAttribLocation(shader->tex_program, 1, "a_uv");
+        glLinkProgram(shader->tex_program);
+        glDeleteShader(tvert);
+        glDeleteShader(tfrag);
+
+        GLint ok = 0;
+        glGetProgramiv(shader->tex_program, GL_LINK_STATUS, &ok);
+        if(ok) {
+            shader->tex_ready = true;
+            LV_LOG_INFO("G100 native tex shader ready (program=%u)", (unsigned)shader->tex_program);
+        }
+        else {
+            char log[256];
+            GLsizei len = 0;
+            glGetProgramInfoLog(shader->tex_program, (GLsizei)sizeof(log), &len, log);
+            LV_LOG_WARN("G100 tex shader link: %s", log);
+            delete_program(&shader->tex_program);
+        }
+    }
+    else {
+        if(tvert) glDeleteShader(tvert);
+        if(tfrag) glDeleteShader(tfrag);
+        LV_LOG_WARN("G100 tex shader: compile failed");
+    }
+
     /* Self-test: bind once so apitrace / logs can confirm native path */
     glUseProgram(shader->solid_program);
     lv_g100_context_set_bound_program(ctx, shader->solid_program);
@@ -226,6 +307,7 @@ void lv_g100_shader_deinit(lv_g100_shader_t * shader)
 #if LV_G100_SHADER_HAS_GL
     delete_program(&shader->solid_program);
     delete_program(&shader->grad_program);
+    delete_program(&shader->tex_program);
 #endif
 
     lv_memzero(shader, sizeof(*shader));
@@ -278,6 +360,25 @@ bool lv_g100_shader_bind_grad(lv_g100_context_t * ctx, lv_g100_shader_t * shader
 #if LV_G100_SHADER_HAS_GL
     glUseProgram(shader->grad_program);
     if(ctx) lv_g100_context_set_bound_program(ctx, shader->grad_program);
+    return true;
+#else
+    LV_UNUSED(ctx);
+    return false;
+#endif
+}
+
+bool lv_g100_shader_tex_is_ready(const lv_g100_shader_t * shader)
+{
+    return shader && shader->tex_ready && shader->tex_program != 0;
+}
+
+bool lv_g100_shader_bind_tex(lv_g100_context_t * ctx, lv_g100_shader_t * shader)
+{
+    if(!lv_g100_shader_tex_is_ready(shader)) return false;
+
+#if LV_G100_SHADER_HAS_GL
+    glUseProgram(shader->tex_program);
+    if(ctx) lv_g100_context_set_bound_program(ctx, shader->tex_program);
     return true;
 #else
     LV_UNUSED(ctx);
