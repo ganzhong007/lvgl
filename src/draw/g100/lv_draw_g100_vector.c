@@ -104,23 +104,32 @@ static void draw_fill(lv_draw_g100_unit_t * u, const lv_vector_fill_dsc_t * fill
                 lv_image_header_t header;
                 int image_handle = lv_g100_image_cache_get_handle(u, img_dsc->src, 0, &header);
                 if(image_handle < 0) {
+                    LV_LOG_WARN("G100 vector pattern: image cache miss");
                     LV_PROFILER_DRAW_END;
                     return;
                 }
 
-                float offset_x = 0;
-                float offset_y = 0;
+                float offset_x = 0.0f;
+                float offset_y = 0.0f;
 
                 if(fill_dsc->fill_units == LV_VECTOR_FILL_UNITS_OBJECT_BOUNDING_BOX) {
                     offset_x = offset->x;
                     offset_y = offset->y;
                 }
 
-                NVGpaint paint = nvgImagePattern(u->vg, offset_x, offset_y, header.w, header.h, 0, image_handle,
-                                                 img_dsc->opa / (float)LV_OPA_COVER);
+                nvgPathWinding(u->vg, winding);
+                nvgGlobalCompositeOperation(u->vg, comp_op);
 
+                NVGpaint paint = nvgImagePattern(u->vg, offset_x, offset_y, (float)header.w, (float)header.h, 0.0f,
+                                                 image_handle, img_dsc->opa / (float)LV_OPA_COVER);
                 nvgFillPaint(u->vg, paint);
                 nvgFill(u->vg);
+
+                static bool pattern_logged;
+                if(!pattern_logged) {
+                    pattern_logged = true;
+                    LV_LOG_INFO("G100 vector pattern fill ready (%ux%u)", (unsigned)header.w, (unsigned)header.h);
+                }
             }
             break;
         case LV_VECTOR_DRAW_STYLE_GRADIENT: {
