@@ -70,6 +70,9 @@ int nvgluBlurRegion(NVGLUblurState * state, NVGcontext * ctx, NVGLUframebuffer *
                     int x, int y, int w, int h,
                     const NVGLUblurParams * params);
 
+// Returns GL texture name for an NVGLU framebuffer (0 if invalid).
+unsigned int nvgluFramebufferGetTexture(NVGLUframebuffer * fb);
+
 #endif // NANOVG_GL_UTILS_H
 
 #ifdef NANOVG_GL_IMPLEMENTATION
@@ -187,6 +190,16 @@ void nvgluDeleteFramebuffer(NVGLUframebuffer * fb)
     lv_free(fb);
 #else
     NVG_NOTUSED(fb);
+#endif
+}
+
+GLuint nvgluFramebufferGetTexture(NVGLUframebuffer * fb)
+{
+#ifdef NANOVG_FBO_VALID
+    return fb ? fb->texture : 0;
+#else
+    NVG_NOTUSED(fb);
+    return 0;
 #endif
 }
 

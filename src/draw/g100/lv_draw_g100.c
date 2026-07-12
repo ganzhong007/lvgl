@@ -29,6 +29,7 @@
 #include "lv_g100_grad.h"
 #include "lv_g100_solid.h"
 #include "lv_g100_tex.h"
+#include "lv_g100_blur_kawase.h"
 
 #if LV_USE_OPENGLES && LV_USE_EGL
     #include "../../drivers/opengles/lv_opengles_private.h"
@@ -454,8 +455,7 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
             break;
 
         case LV_DRAW_TASK_TYPE_BLUR:
-            /* Only accept blur if FBO support is available (blur_state was created) */
-            if(u->blur_state == NULL) return 0;
+            if(u->blur_state == NULL && !lv_g100_blur_kawase_ready()) return 0;
             break;
 
         default:
