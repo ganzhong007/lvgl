@@ -70,6 +70,7 @@ typedef enum {
     LV_DRAW_TASK_TYPE_3D_LINE,
     LV_DRAW_TASK_TYPE_3D_CALLBACK,
     LV_DRAW_TASK_TYPE_3D_MESH,
+    LV_DRAW_TASK_TYPE_3D_SCENE,
 #endif
 } lv_draw_task_type_t;
 

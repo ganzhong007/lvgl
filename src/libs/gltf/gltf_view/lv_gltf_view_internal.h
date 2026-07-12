@@ -179,6 +179,9 @@ struct _lv_gltf_t {
     fastgltf::math::fvec3 camera_pos;
 
     bool owns_environment;
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+    lv_layer_t * pass_layer;
+#endif
 };
 
 /**********************

@@ -415,6 +415,20 @@ lv_3dray_t lv_gltf_get_ray_from_2d_coordinate(lv_obj_t * obj, const lv_point_t *
  */
 lv_result_t lv_gltf_world_to_screen(lv_obj_t * obj, const lv_3dpoint_t world_pos, lv_point_t * screen_pos);
 
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+/**
+ * Render glTF scene off-screen for 3D_SCENE draw task (DrawUnit dispatch).
+ * @param obj pointer to a GLTF viewer object
+ * @return OpenGL texture id, or 0 if nothing rendered
+ */
+uint32_t lv_gltf_render_scene(lv_obj_t * obj);
+
+/**
+ * Get texture flip flags used when compositing glTF output.
+ */
+void lv_gltf_get_texture_flip(lv_obj_t * obj, bool * h_flip, bool * v_flip);
+#endif
+
 
 /**********************
  *      MACROS

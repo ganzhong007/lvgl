@@ -17,6 +17,11 @@
 #include "../fastgltf/lv_fastgltf.hpp"
 #include "../../../core/lv_obj_class_private.h"
 #include "assets/lv_gltf_view_shader.h"
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+#include "../../../../include/lvgl/draw/lv_draw_3d_viewport.h"
+#include "../../../../include/lvgl/draw/lv_draw_3d_clear.h"
+#include "../../../../include/lvgl/draw/lv_draw_3d_scene.h"
+#endif
 #include <fastgltf/math.hpp>
 #include <fastgltf/tools.hpp>
 
@@ -52,6 +57,24 @@ static lv_3dray_t make_empty_ray(void);
 static lv_3dplane_t make_empty_plane(void);
 
 static lv_result_t create_default_environment(lv_gltf_t * gltf);
+
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+static void draw_gltf_viewport(lv_event_t * e);
+#endif
+
+uint32_t lv_gltf_render_scene(lv_obj_t * obj)
+{
+    LV_CHECK_OBJ(obj, MY_CLASS, return 0);
+    return (uint32_t)lv_gltf_view_render((lv_gltf_t *)obj);
+}
+
+void lv_gltf_get_texture_flip(lv_obj_t * obj, bool * h_flip, bool * v_flip)
+{
+    LV_CHECK_OBJ(obj, MY_CLASS, return);
+    lv_gltf_t * viewer = (lv_gltf_t *)obj;
+    if(h_flip) *h_flip = viewer->texture.h_flip;
+    if(v_flip) *v_flip = viewer->texture.v_flip;
+}
 
 static void display_refr_end_event_cb(lv_event_t * e);
 
@@ -676,6 +699,9 @@ static void lv_gltf_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
     view->model_loader = lv_gltf_model_loader_create();
 
     lv_array_init(&view->models, LV_GLTF_INITIAL_MODEL_CAPACITY, sizeof(lv_gltf_model_data_t));
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+    view->pass_layer = NULL;
+#endif
 
     LV_TRACE_OBJ_CREATE("end");
 }
@@ -688,8 +714,13 @@ static void lv_gltf_event(const lv_obj_class_t * class_p, lv_event_t * e)
     lv_gltf_t * viewer = (lv_gltf_t *)obj;
 
     if(code == LV_EVENT_DRAW_MAIN) {
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+        draw_gltf_viewport(e);
+        return;
+#else
         GLuint texture_id = lv_gltf_view_render(viewer);
         lv_3dtexture_set_src((lv_obj_t *)&viewer->texture, (lv_3dtexture_id_t)texture_id);
+#endif
     }
 
     lv_result_t res;
@@ -704,6 +735,13 @@ static void lv_gltf_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
 {
     LV_UNUSED(class_p);
     lv_gltf_t * view = (lv_gltf_t *)obj;
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+    if(view->pass_layer != NULL) {
+        lv_display_t * disp = lv_obj_get_display(obj);
+        lv_draw_3d_pass_layer_destroy(view->pass_layer, disp);
+        view->pass_layer = NULL;
+    }
+#endif
     lv_opengl_shader_manager_deinit(&view->shader_manager);
 
     const size_t n = lv_array_size(&view->models);
@@ -883,6 +921,51 @@ static void setup_background_environment(GLuint program, GLuint * vao, GLuint * 
     GL_CALL(glBindVertexArray(0));
     GL_CALL(glUseProgram(0));
 }
+
+
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+static void draw_gltf_viewport(lv_event_t * e)
+{
+    lv_obj_t * obj = (lv_obj_t *)lv_event_get_current_target(e);
+    lv_gltf_t * viewer = (lv_gltf_t *)obj;
+    lv_layer_t * layer = lv_event_get_layer(e);
+
+    lv_area_t coords;
+    lv_obj_get_coords(obj, &coords);
+
+    if(viewer->pass_layer == NULL) {
+        viewer->pass_layer = lv_draw_3d_pass_layer_create(layer, &coords);
+        if(viewer->pass_layer == NULL) return;
+    }
+    else {
+        viewer->pass_layer->buf_area = coords;
+        viewer->pass_layer->_clip_area = coords;
+        viewer->pass_layer->phy_clip_area = coords;
+    }
+
+    viewer->pass_layer->all_tasks_added = false;
+
+    lv_draw_3d_clear_dsc_t clr_dsc;
+    lv_draw_3d_clear_dsc_init(&clr_dsc);
+    clr_dsc.color = lv_color32_make(0, 0, 0, LV_OPA_TRANSP);
+    clr_dsc.opa = LV_OPA_COVER;
+    clr_dsc.clear_depth = true;
+    lv_draw_3d_clear(viewer->pass_layer, &clr_dsc);
+
+    lv_draw_3d_scene_dsc_t scene_dsc;
+    lv_draw_3d_scene_dsc_init(&scene_dsc);
+    scene_dsc.scene_id = obj;
+    lv_draw_3d_scene(viewer->pass_layer, &scene_dsc);
+
+    lv_draw_3d_viewport_dsc_t vp_dsc;
+    lv_draw_3d_viewport_dsc_init(&vp_dsc);
+    vp_dsc.pass_layer = viewer->pass_layer;
+    vp_dsc.opa = lv_obj_get_style_opa(obj, LV_PART_MAIN);
+    lv_draw_3d_viewport(layer, &vp_dsc, &coords);
+
+    lv_draw_3d_viewport_end(viewer->pass_layer);
+}
+#endif /* LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100 */
 
 
 static void display_refr_end_event_cb(lv_event_t * e)

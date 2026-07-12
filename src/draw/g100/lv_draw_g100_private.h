@@ -112,6 +112,11 @@ void lv_draw_g100_3d_cb(lv_draw_task_t * t, const lv_draw_3d_callback_dsc_t * ds
 void lv_draw_g100_3d_mesh_init(void);
 void lv_draw_g100_3d_mesh_deinit(void);
 void lv_draw_g100_3d_mesh(lv_draw_task_t * t, const lv_draw_3d_mesh_dsc_t * dsc);
+#if LV_USE_GLTF
+void lv_draw_g100_3d_scene_init(void);
+void lv_draw_g100_3d_scene_deinit(void);
+void lv_draw_g100_3d_scene(lv_draw_task_t * t, const lv_draw_3d_scene_dsc_t * dsc);
+#endif
 #endif
 
 /**

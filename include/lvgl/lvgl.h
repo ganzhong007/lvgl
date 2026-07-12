@@ -62,6 +62,7 @@
 #include "draw/lv_draw_3d_line.h"
 #include "draw/lv_draw_3d_callback.h"
 #include "draw/lv_draw_3d_mesh.h"
+#include "draw/lv_draw_3d_scene.h"
 #endif
 #include "draw/lv_draw_arc.h"
 #include "draw/lv_draw_blur.h"

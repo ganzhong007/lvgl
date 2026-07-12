@@ -41,6 +41,7 @@
 #include "../../include/lvgl/draw/lv_draw_3d_line.h"
 #include "../../include/lvgl/draw/lv_draw_3d_callback.h"
 #include "../../include/lvgl/draw/lv_draw_3d_mesh.h"
+#include "../../include/lvgl/draw/lv_draw_3d_scene.h"
 #endif
 
 #if LV_USE_OPENGLES && LV_USE_EGL
@@ -179,6 +180,9 @@ void lv_draw_g100_init(void)
     lv_draw_g100_3d_line_init();
     lv_draw_g100_3d_cb_init();
     lv_draw_g100_3d_mesh_init();
+#if LV_USE_GLTF
+    lv_draw_g100_3d_scene_init();
+#endif
     LV_LOG_INFO("G100 3D viewport ready (3D_VIEWPORT + 3D_CLEAR resolve)");
 #endif
     LV_LOG_INFO("DrawUnitG100 ready (bootstrap GLES2 backend, unit_id=%d)", G100_DRAW_UNIT_ID);
@@ -304,6 +308,11 @@ static void draw_execute(lv_draw_g100_unit_t * u, lv_draw_task_t * t)
         case LV_DRAW_TASK_TYPE_3D_MESH:
             lv_draw_g100_3d_mesh(t, t->draw_dsc);
             break;
+#if LV_USE_GLTF
+        case LV_DRAW_TASK_TYPE_3D_SCENE:
+            lv_draw_g100_3d_scene(t, t->draw_dsc);
+            break;
+#endif
 #endif
 
         case LV_DRAW_TASK_TYPE_BLUR:
@@ -521,6 +530,9 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
         case LV_DRAW_TASK_TYPE_3D_LINE:
         case LV_DRAW_TASK_TYPE_3D_CALLBACK:
         case LV_DRAW_TASK_TYPE_3D_MESH:
+#if LV_USE_GLTF
+        case LV_DRAW_TASK_TYPE_3D_SCENE:
+#endif
 #endif
             break;
 
@@ -549,6 +561,9 @@ static int32_t draw_delete(lv_draw_unit_t * draw_unit)
 #if LV_USE_3D_DRAW_TASKS
     lv_draw_g100_3d_line_deinit();
     lv_draw_g100_3d_mesh_deinit();
+#if LV_USE_GLTF
+    lv_draw_g100_3d_scene_deinit();
+#endif
 #endif
     lv_g100_fbo_pool_deinit(unit);
     lv_draw_g100_label_deinit(unit);
