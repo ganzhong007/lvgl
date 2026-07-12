@@ -452,6 +452,17 @@
     #define LV_NANOVG_LETTER_CACHE_CNT 512
 #endif
 
+/** DrawUnitG100 — GLES2.0 hardware GPU (G100) draw unit.
+ * - Mutually exclusive with LV_USE_DRAW_NANOVG and LV_USE_DRAW_OPENGLES.
+ * - Bootstrap (WSLg): uses NanoVG GLES2 renderer inside draw/g100/; LV_USE_NANOVG must be 1.
+ */
+#define LV_USE_DRAW_G100 0
+#if LV_USE_DRAW_G100
+    #define LV_NANOVG_BACKEND   LV_NANOVG_BACKEND_GLES2
+    #define LV_NANOVG_IMAGE_CACHE_CNT 128
+    #define LV_NANOVG_LETTER_CACHE_CNT 512
+#endif
+
 /*=======================
  * FEATURE CONFIGURATION
  *=======================*/

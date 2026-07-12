@@ -1,5 +1,5 @@
 /**
- * @file lv_draw_nanovg.c
+ * @file lv_draw_g100.c
  *
  */
 
@@ -7,19 +7,23 @@
  *      INCLUDES
  *********************/
 
-#include "lv_draw_nanovg.h"
-
-#if LV_USE_DRAW_NANOVG
+#include "lv_draw_g100.h"
 
 #if LV_USE_DRAW_G100
+
+#if LV_USE_DRAW_NANOVG
     #error "LV_USE_DRAW_G100 and LV_USE_DRAW_NANOVG cannot both be enabled."
 #endif
 
+#if LV_USE_DRAW_OPENGLES
+    #error "LV_USE_DRAW_G100 and LV_USE_DRAW_OPENGLES cannot both be enabled."
+#endif
+
 #include "../../core/lv_refr_private.h"
-#include "lv_draw_nanovg_private.h"
-#include "lv_nanovg_utils.h"
-#include "lv_nanovg_image_cache.h"
-#include "lv_nanovg_fbo_cache.h"
+#include "lv_draw_g100_private.h"
+#include "lv_g100_utils.h"
+#include "lv_g100_image_cache.h"
+#include "lv_g100_fbo_cache.h"
 
 #if LV_USE_OPENGLES && LV_USE_EGL
     #include "../../drivers/opengles/lv_opengles_private.h"
@@ -72,7 +76,7 @@
  *      DEFINES
  *********************/
 
-#define NANOVG_DRAW_UNIT_ID 10
+#define G100_DRAW_UNIT_ID 11
 
 /**********************
  *      TYPEDEFS
@@ -112,30 +116,32 @@ static const char * nvg_draw_task_name(lv_draw_task_type_t type)
  *   GLOBAL FUNCTIONS
  **********************/
 
-void lv_draw_nanovg_init(void)
+void lv_draw_g100_init(void)
 {
     static bool initialized = false;
     if(initialized) return;
     initialized = true;
 
-    lv_draw_nanovg_unit_t * unit = lv_draw_create_unit(sizeof(lv_draw_nanovg_unit_t));
+    lv_draw_g100_unit_t * unit = lv_draw_create_unit(sizeof(lv_draw_g100_unit_t));
     unit->base_unit.dispatch_cb = draw_dispatch;
     unit->base_unit.evaluate_cb = draw_evaluate;
     unit->base_unit.delete_cb = draw_delete;
     unit->base_unit.event_cb = draw_event_cb;
-    unit->base_unit.name = "NANOVG";
+    unit->base_unit.name = "G100";
 
     unit->vg = NVG_CTX_CREATE(0);
     LV_ASSERT_MSG(unit->vg != NULL, "NanoVG init failed");
 
-    lv_nanovg_utils_init(unit);
-    lv_nanovg_image_cache_init(unit);
-    lv_nanovg_fbo_cache_init(unit);
-    lv_draw_nanovg_label_init(unit);
-    lv_draw_nanovg_blur_init(unit);
+    lv_g100_utils_init(unit);
+    lv_g100_image_cache_init(unit);
+    lv_g100_fbo_cache_init(unit);
+    lv_draw_g100_label_init(unit);
+    lv_draw_g100_blur_init(unit);
+
+    LV_LOG_INFO("DrawUnitG100 ready (bootstrap GLES2 backend, unit_id=%d)", G100_DRAW_UNIT_ID);
 }
 
-int lv_nanovg_fb_get_image_handle(struct NVGLUframebuffer * fb)
+int lv_g100_fb_get_image_handle(struct NVGLUframebuffer * fb)
 {
     LV_ASSERT_NULL(fb);
     return fb->image;
@@ -145,7 +151,7 @@ int lv_nanovg_fb_get_image_handle(struct NVGLUframebuffer * fb)
  *   STATIC FUNCTIONS
  **********************/
 
-static void draw_execute(lv_draw_nanovg_unit_t * u, lv_draw_task_t * t)
+static void draw_execute(lv_draw_g100_unit_t * u, lv_draw_task_t * t)
 {
     /* remember draw unit for access to unit's context */
     t->draw_unit = (lv_draw_unit_t *)u;
@@ -168,75 +174,75 @@ static void draw_execute(lv_draw_nanovg_unit_t * u, lv_draw_task_t * t)
     }
 
     nvgReset(u->vg);
-    lv_nanovg_transform(u->vg, &global_matrix);
+    lv_g100_transform(u->vg, &global_matrix);
 
-    lv_nanovg_set_clip_area(u->vg, &t->clip_area);
+    lv_g100_set_clip_area(u->vg, &t->clip_area);
 
 #if LV_USE_PORT_LAYER_TRACE
-    LV_PORT_LAYER_TRACE("L3-NVG", "execute %s at (%d,%d)-(%d,%d)",
+    LV_PORT_LAYER_TRACE("L3-G100", "execute %s at (%d,%d)-(%d,%d)",
                         nvg_draw_task_name(t->type),
                         (int)t->area.x1, (int)t->area.y1, (int)t->area.x2, (int)t->area.y2);
 #endif
 
     switch(t->type) {
         case LV_DRAW_TASK_TYPE_FILL:
-            lv_draw_nanovg_fill(t, t->draw_dsc, &t->area);
+            lv_draw_g100_fill(t, t->draw_dsc, &t->area);
             break;
 
         case LV_DRAW_TASK_TYPE_BORDER:
-            lv_draw_nanovg_border(t, t->draw_dsc, &t->area);
+            lv_draw_g100_border(t, t->draw_dsc, &t->area);
             break;
 
         case LV_DRAW_TASK_TYPE_BOX_SHADOW:
-            lv_draw_nanovg_box_shadow(t, t->draw_dsc, &t->area);
+            lv_draw_g100_box_shadow(t, t->draw_dsc, &t->area);
             break;
 
         case LV_DRAW_TASK_TYPE_LETTER:
-            lv_draw_nanovg_letter(t, t->draw_dsc, &t->area);
+            lv_draw_g100_letter(t, t->draw_dsc, &t->area);
             break;
 
         case LV_DRAW_TASK_TYPE_LABEL:
-            lv_draw_nanovg_label(t, t->draw_dsc, &t->area);
+            lv_draw_g100_label(t, t->draw_dsc, &t->area);
             break;
 
         case LV_DRAW_TASK_TYPE_IMAGE:
-            lv_draw_nanovg_image(t, t->draw_dsc, &t->area, -1);
+            lv_draw_g100_image(t, t->draw_dsc, &t->area, -1);
             break;
 
         case LV_DRAW_TASK_TYPE_LAYER:
-            lv_draw_nanovg_layer(t, t->draw_dsc, &t->area);
+            lv_draw_g100_layer(t, t->draw_dsc, &t->area);
             break;
 
         case LV_DRAW_TASK_TYPE_LINE:
-            lv_draw_line_iterate(t, t->draw_dsc, lv_draw_nanovg_line);
+            lv_draw_line_iterate(t, t->draw_dsc, lv_draw_g100_line);
             break;
 
         case LV_DRAW_TASK_TYPE_ARC:
-            lv_draw_nanovg_arc(t, t->draw_dsc, &t->area);
+            lv_draw_g100_arc(t, t->draw_dsc, &t->area);
             break;
 
         case LV_DRAW_TASK_TYPE_TRIANGLE:
-            lv_draw_nanovg_triangle(t, t->draw_dsc);
+            lv_draw_g100_triangle(t, t->draw_dsc);
             break;
 
         case LV_DRAW_TASK_TYPE_MASK_RECTANGLE:
-            lv_draw_nanovg_mask_rect(t, t->draw_dsc);
+            lv_draw_g100_mask_rect(t, t->draw_dsc);
             break;
 
 #if LV_USE_VECTOR_GRAPHIC
         case LV_DRAW_TASK_TYPE_VECTOR:
-            lv_draw_nanovg_vector(t, t->draw_dsc);
+            lv_draw_g100_vector(t, t->draw_dsc);
             break;
 #endif
 
 #if LV_USE_3DTEXTURE
         case LV_DRAW_TASK_TYPE_3D:
-            lv_draw_nanovg_3d(t, t->draw_dsc, &t->area);
+            lv_draw_g100_3d(t, t->draw_dsc, &t->area);
             break;
 #endif
 
         case LV_DRAW_TASK_TYPE_BLUR:
-            lv_draw_nanovg_blur(t, t->draw_dsc, &t->area);
+            lv_draw_g100_blur(t, t->draw_dsc, &t->area);
             break;
 
         default:
@@ -257,7 +263,7 @@ static void on_layer_changed(lv_layer_t * new_layer)
     }
 
     LV_PROFILER_BEGIN_TAG("nvgBindFramebuffer");
-    nvgluBindFramebuffer(lv_nanovg_fbo_cache_entry_to_fb(new_layer->user_data));
+    nvgluBindFramebuffer(lv_g100_fbo_cache_entry_to_fb(new_layer->user_data));
     LV_PROFILER_END_TAG("nvgBindFramebuffer");
 
     /* Clear the off-screen framebuffer */
@@ -269,7 +275,7 @@ static void on_layer_changed(lv_layer_t * new_layer)
     LV_PROFILER_DRAW_END;
 }
 
-static void on_layer_readback(lv_draw_nanovg_unit_t * u, lv_layer_t * layer)
+static void on_layer_readback(lv_draw_g100_unit_t * u, lv_layer_t * layer)
 {
     LV_PROFILER_DRAW_BEGIN;
     LV_ASSERT_NULL(u);
@@ -289,7 +295,7 @@ static void on_layer_readback(lv_draw_nanovg_unit_t * u, lv_layer_t * layer)
         return;
     }
 
-    struct NVGLUframebuffer * fb = lv_nanovg_fbo_cache_entry_to_fb(entry);
+    struct NVGLUframebuffer * fb = lv_g100_fbo_cache_entry_to_fb(entry);
     if(!fb) {
         LV_LOG_ERROR("No framebuffer available for layer: %p", (void *)layer);
         LV_PROFILER_DRAW_END;
@@ -362,11 +368,11 @@ static void on_layer_readback(lv_draw_nanovg_unit_t * u, lv_layer_t * layer)
 
 static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
 {
-    lv_draw_nanovg_unit_t * u = (lv_draw_nanovg_unit_t *)draw_unit;
+    lv_draw_g100_unit_t * u = (lv_draw_g100_unit_t *)draw_unit;
 
-    lv_draw_task_t * t = lv_draw_get_available_task(layer, NULL, NANOVG_DRAW_UNIT_ID);
-    if(!t || t->preferred_draw_unit_id != NANOVG_DRAW_UNIT_ID) {
-        lv_nanovg_end_frame(u);
+    lv_draw_task_t * t = lv_draw_get_available_task(layer, NULL, G100_DRAW_UNIT_ID);
+    if(!t || t->preferred_draw_unit_id != G100_DRAW_UNIT_ID) {
+        lv_g100_end_frame(u);
         return LV_DRAW_UNIT_IDLE;
     }
 
@@ -375,7 +381,7 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
          * rebinding to the new layer's FBO. Otherwise those queued draws
          * get rerouted to the new FBO when nvgEndFrame is eventually
          * called (and the previous layer ends up missing them). */
-        lv_nanovg_end_frame(u);
+        lv_g100_end_frame(u);
         on_layer_changed(layer);
         u->current_layer = layer;
     }
@@ -388,7 +394,7 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
         LV_PROFILER_DRAW_BEGIN_TAG("nvgBeginFrame");
         nvgBeginFrame(u->vg, buf_w, buf_h, 1.0f);
         LV_PROFILER_DRAW_END_TAG("nvgBeginFrame");
-        LV_PORT_LAYER_TRACE("L3-NVG", "nvgBeginFrame %dx%d", (int)buf_w, (int)buf_h);
+        LV_PORT_LAYER_TRACE("L3-G100", "nvgBeginFrame %dx%d", (int)buf_w, (int)buf_h);
         u->is_started = true;
     }
 
@@ -406,7 +412,7 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
 
 static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
 {
-    lv_draw_nanovg_unit_t * u = (lv_draw_nanovg_unit_t *)draw_unit;
+    lv_draw_g100_unit_t * u = (lv_draw_g100_unit_t *)draw_unit;
 
     switch(task->type) {
         case LV_DRAW_TASK_TYPE_FILL:
@@ -441,7 +447,7 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
     if(task->preference_score > 80) {
         /* The draw unit is able to draw this task. */
         task->preference_score = 80;
-        task->preferred_draw_unit_id = NANOVG_DRAW_UNIT_ID;
+        task->preferred_draw_unit_id = G100_DRAW_UNIT_ID;
     }
 
     return 1;
@@ -449,12 +455,12 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
 
 static int32_t draw_delete(lv_draw_unit_t * draw_unit)
 {
-    lv_draw_nanovg_unit_t * unit = (lv_draw_nanovg_unit_t *)draw_unit;
-    lv_draw_nanovg_blur_deinit(unit);
-    lv_draw_nanovg_label_deinit(unit);
-    lv_nanovg_fbo_cache_deinit(unit);
-    lv_nanovg_image_cache_deinit(unit);
-    lv_nanovg_utils_deinit(unit);
+    lv_draw_g100_unit_t * unit = (lv_draw_g100_unit_t *)draw_unit;
+    lv_draw_g100_blur_deinit(unit);
+    lv_draw_g100_label_deinit(unit);
+    lv_g100_fbo_cache_deinit(unit);
+    lv_g100_image_cache_deinit(unit);
+    lv_g100_utils_deinit(unit);
     NVG_CTX_DELETE(unit->vg);
     unit->vg = NULL;
     return 0;
@@ -462,7 +468,7 @@ static int32_t draw_delete(lv_draw_unit_t * draw_unit)
 
 static void draw_event_cb(lv_event_t * e)
 {
-    lv_draw_nanovg_unit_t * u = lv_event_get_current_target(e);
+    lv_draw_g100_unit_t * u = lv_event_get_current_target(e);
     lv_layer_t * layer = lv_event_get_param(e);
 
     switch(lv_event_get_code(e)) {
@@ -470,11 +476,11 @@ static void draw_event_cb(lv_event_t * e)
             LV_PROFILER_DRAW_BEGIN_TAG("nvgCancelFrame");
             nvgCancelFrame(u->vg);
             LV_PROFILER_DRAW_END_TAG("nvgCancelFrame");
-            lv_nanovg_clean_up(u);
+            lv_g100_clean_up(u);
             break;
         case LV_EVENT_CHILD_CREATED: {
                 /* The internal rendering uses RGBA format, which is switched to LVGL BGRA format during readback. */
-                lv_cache_entry_t * entry = lv_nanovg_fbo_cache_get(u, lv_area_get_width(&layer->buf_area),
+                lv_cache_entry_t * entry = lv_g100_fbo_cache_get(u, lv_area_get_width(&layer->buf_area),
                                                                    lv_area_get_height(&layer->buf_area), 0, NVG_TEXTURE_RGBA);
                 layer->user_data = entry;
             }
@@ -482,7 +488,7 @@ static void draw_event_cb(lv_event_t * e)
         case LV_EVENT_CHILD_DELETED: {
                 lv_cache_entry_t * entry = layer->user_data;
                 if(entry) {
-                    lv_nanovg_fbo_cache_release(u, entry);
+                    lv_g100_fbo_cache_release(u, entry);
                     layer->user_data = NULL;
                 }
 
@@ -499,11 +505,11 @@ static void draw_event_cb(lv_event_t * e)
             on_layer_readback(u, layer);
             break;
         case LV_EVENT_INVALIDATE_AREA:
-            lv_nanovg_image_cache_drop(u, lv_event_get_param(e));
+            lv_g100_image_cache_drop(u, lv_event_get_param(e));
             break;
         default:
             break;
     }
 }
 
-#endif /* LV_USE_DRAW_NANOVG */
+#endif /* LV_USE_DRAW_G100 */

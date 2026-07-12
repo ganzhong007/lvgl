@@ -1,5 +1,5 @@
 /**
- * @file lv_nanovg_image_cache.c
+ * @file lv_g100_image_cache.c
  *
  */
 
@@ -7,12 +7,12 @@
  *      INCLUDES
  *********************/
 
-#include "lv_nanovg_image_cache.h"
+#include "lv_g100_image_cache.h"
 
-#if LV_USE_DRAW_NANOVG
+#if LV_USE_DRAW_G100
 
-#include "lv_draw_nanovg_private.h"
-#include "lv_nanovg_utils.h"
+#include "lv_draw_g100_private.h"
+#include "lv_g100_utils.h"
 #include "../lv_image_decoder_private.h"
 #include "../../misc/lv_pending.h"
 #include "../../misc/cache/lv_cache_entry.h"
@@ -28,7 +28,7 @@
 
 typedef struct {
     /* context */
-    lv_draw_nanovg_unit_t * u;
+    lv_draw_g100_unit_t * u;
 
     /* key */
     lv_draw_buf_t src_buf;
@@ -64,7 +64,7 @@ static void image_cache_drop_collect_cb(void * elem);
 *   GLOBAL FUNCTIONS
 **********************/
 
-void lv_nanovg_image_cache_init(struct _lv_draw_nanovg_unit_t * u)
+void lv_g100_image_cache_init(struct _lv_draw_g100_unit_t * u)
 {
     LV_ASSERT_NULL(u);
     LV_ASSERT(u->image_cache == NULL);
@@ -84,7 +84,7 @@ void lv_nanovg_image_cache_init(struct _lv_draw_nanovg_unit_t * u)
     lv_ll_init(&u->image_drop_ll, sizeof(image_item_t));
 }
 
-void lv_nanovg_image_cache_deinit(struct _lv_draw_nanovg_unit_t * u)
+void lv_g100_image_cache_deinit(struct _lv_draw_g100_unit_t * u)
 {
     LV_ASSERT_NULL(u);
     LV_ASSERT(u->image_cache);
@@ -97,7 +97,7 @@ void lv_nanovg_image_cache_deinit(struct _lv_draw_nanovg_unit_t * u)
     u->image_cache = NULL;
 }
 
-int lv_nanovg_image_cache_get_handle(struct _lv_draw_nanovg_unit_t * u,
+int lv_g100_image_cache_get_handle(struct _lv_draw_g100_unit_t * u,
                                      const void * src,
                                      int image_flags,
                                      lv_image_header_t * header)
@@ -146,7 +146,7 @@ int lv_nanovg_image_cache_get_handle(struct _lv_draw_nanovg_unit_t * u,
         size_t free_size = lv_cache_get_free_size(u->image_cache, NULL);
         if(free_size == 0) {
             LV_LOG_INFO("image cache is full, release all pending cache entries");
-            lv_nanovg_end_frame(u);
+            lv_g100_end_frame(u);
         }
 
         cache_node_entry = lv_cache_acquire_or_create(u->image_cache, &search_key, NULL);
@@ -169,7 +169,7 @@ int lv_nanovg_image_cache_get_handle(struct _lv_draw_nanovg_unit_t * u,
     return image_item->image_handle;
 }
 
-void lv_nanovg_image_cache_drop(struct _lv_draw_nanovg_unit_t * u, const void * src)
+void lv_g100_image_cache_drop(struct _lv_draw_g100_unit_t * u, const void * src)
 {
     LV_ASSERT_NULL(u);
     LV_UNUSED(src);
@@ -255,7 +255,7 @@ static bool image_create_cb(image_item_t * item, void * user_data)
     }
     else {
         /* Stride doesn't match, need to copy with tight alignment */
-        lv_draw_buf_t * tmp_buf = lv_nanovg_reshape_global_image(item->u, cf, w, h);
+        lv_draw_buf_t * tmp_buf = lv_g100_reshape_global_image(item->u, cf, w, h);
         if(!tmp_buf) {
             LV_LOG_ERROR("Failed to allocate temp buffer for stride conversion");
             return false;
@@ -342,4 +342,4 @@ static void image_cache_drop_collect_cb(void * elem)
     }
 }
 
-#endif /* LV_USE_DRAW_NANOVG */
+#endif /* LV_USE_DRAW_G100 */

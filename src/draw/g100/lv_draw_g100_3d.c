@@ -1,5 +1,5 @@
 /**
- * @file lv_draw_nanovg_3d.c
+ * @file lv_draw_g100_3d.c
  *
  */
 
@@ -7,13 +7,13 @@
  *      INCLUDES
  *********************/
 
-#include "lv_draw_nanovg_private.h"
+#include "lv_draw_g100_private.h"
 
-#if (LV_USE_DRAW_NANOVG) && LV_USE_3DTEXTURE
+#if (LV_USE_DRAW_G100) && LV_USE_3DTEXTURE
 
 #include "../../drivers/opengles/lv_opengles_private.h"
-#include "lv_nanovg_utils.h"
-#include "lv_nanovg_fbo_cache.h"
+#include "lv_g100_utils.h"
+#include "lv_g100_fbo_cache.h"
 
 /*********************
  *      DEFINES
@@ -39,14 +39,14 @@
  *   GLOBAL FUNCTIONS
  **********************/
 
-void lv_draw_nanovg_3d(lv_draw_task_t * t, const lv_draw_3d_dsc_t * dsc, const lv_area_t * coords)
+void lv_draw_g100_3d(lv_draw_task_t * t, const lv_draw_3d_dsc_t * dsc, const lv_area_t * coords)
 {
     LV_PROFILER_DRAW_BEGIN;
 
-    lv_draw_nanovg_unit_t * u = (lv_draw_nanovg_unit_t *)t->draw_unit;
+    lv_draw_g100_unit_t * u = (lv_draw_g100_unit_t *)t->draw_unit;
 
     /* End NanoVG frame temporarily to allow direct OpenGL rendering */
-    lv_nanovg_end_frame(u);
+    lv_g100_end_frame(u);
 
     lv_layer_t * layer = t->target_layer;
 
@@ -91,4 +91,4 @@ void lv_draw_nanovg_3d(lv_draw_task_t * t, const lv_draw_3d_dsc_t * dsc, const l
  *   STATIC FUNCTIONS
  **********************/
 
-#endif /* LV_USE_DRAW_NANOVG && LV_USE_3DTEXTURE */
+#endif /* LV_USE_DRAW_G100 && LV_USE_3DTEXTURE */

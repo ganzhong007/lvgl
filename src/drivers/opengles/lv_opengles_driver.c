@@ -15,6 +15,7 @@
 
 #include "../../display/lv_display_private.h"
 #include "../../draw/nanovg/lv_draw_nanovg.h"
+#include "../../draw/g100/lv_draw_g100.h"
 #include "../../misc/lv_area_private.h"
 #include "opengl_shader/lv_opengl_shader_internal.h"
 #include "assets/lv_opengles_shader.h"
@@ -127,7 +128,9 @@ void lv_opengles_init(void)
 
 #if LV_USE_DRAW_NANOVG
     lv_draw_nanovg_init();
-#endif /*LV_USE_DRAW_NANOVG*/
+#elif LV_USE_DRAW_G100
+    lv_draw_g100_init();
+#endif /*LV_USE_DRAW_NANOVG / LV_USE_DRAW_G100*/
 
     is_init = true;
 }

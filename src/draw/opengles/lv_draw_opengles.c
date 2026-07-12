@@ -10,8 +10,8 @@
 #include "lv_draw_opengles.h"
 #if LV_USE_DRAW_OPENGLES
 
-#if LV_USE_DRAW_NANOVG
-    #error "LV_USE_DRAW_NANOVG and LV_USE_DRAW_OPENGLES cannot be enabled at the same time. Disable one of them in lv_conf.h or Kconfig."
+#if LV_USE_DRAW_NANOVG || LV_USE_DRAW_G100
+    #error "LV_USE_DRAW_OPENGLES cannot be enabled together with LV_USE_DRAW_NANOVG or LV_USE_DRAW_G100."
 #endif
 
 #include "../lv_draw_private.h"

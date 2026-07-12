@@ -1,5 +1,5 @@
 /**
- * @file lv_draw_nanovg_vector.c
+ * @file lv_draw_g100_vector.c
  *
  */
 
@@ -7,12 +7,12 @@
  *      INCLUDES
  *********************/
 
-#include "lv_draw_nanovg_private.h"
+#include "lv_draw_g100_private.h"
 
-#if (LV_USE_DRAW_NANOVG) && LV_USE_VECTOR_GRAPHIC
+#if (LV_USE_DRAW_G100) && LV_USE_VECTOR_GRAPHIC
 
-#include "lv_nanovg_utils.h"
-#include "lv_nanovg_image_cache.h"
+#include "lv_g100_utils.h"
+#include "lv_g100_image_cache.h"
 #include "../lv_draw_vector_private.h"
 #include "../lv_image_decoder_private.h"
 #include <float.h>
@@ -49,7 +49,7 @@ static enum NVGwinding lv_fill_to_nvg(lv_vector_fill_t fill_rule);
 *   GLOBAL FUNCTIONS
 **********************/
 
-void lv_draw_nanovg_vector(lv_draw_task_t * t, const lv_draw_vector_dsc_t * dsc)
+void lv_draw_g100_vector(lv_draw_task_t * t, const lv_draw_vector_dsc_t * dsc)
 {
     LV_PROFILER_DRAW_BEGIN;
     if(dsc->task_list == NULL) {
@@ -63,7 +63,7 @@ void lv_draw_nanovg_vector(lv_draw_task_t * t, const lv_draw_vector_dsc_t * dsc)
         return;
     }
 
-    lv_draw_nanovg_unit_t * u = (lv_draw_nanovg_unit_t *)t->draw_unit;
+    lv_draw_g100_unit_t * u = (lv_draw_g100_unit_t *)t->draw_unit;
 
     nvgGlobalAlpha(u->vg, t->opa / (float)LV_OPA_COVER);
 
@@ -81,24 +81,24 @@ static NVGcolor lv_color32_to_nvg(lv_color32_t color, lv_opa_t opa)
     return nvgRGBA(color.red, color.green, color.blue, a);
 }
 
-static void draw_fill(lv_draw_nanovg_unit_t * u, const lv_vector_fill_dsc_t * fill_dsc, const lv_fpoint_t * offset,
+static void draw_fill(lv_draw_g100_unit_t * u, const lv_vector_fill_dsc_t * fill_dsc, const lv_fpoint_t * offset,
                       enum NVGcompositeOperation comp_op)
 {
     LV_PROFILER_DRAW_BEGIN;
 
     const enum NVGwinding winding = lv_fill_to_nvg(fill_dsc->fill_rule);
 
-    lv_nanovg_transform(u->vg, &fill_dsc->matrix);
+    lv_g100_transform(u->vg, &fill_dsc->matrix);
 
     switch(fill_dsc->style) {
         case LV_VECTOR_DRAW_STYLE_SOLID: {
-                lv_nanovg_fill(u->vg, winding, comp_op, lv_color32_to_nvg(fill_dsc->color, fill_dsc->opa));
+                lv_g100_fill(u->vg, winding, comp_op, lv_color32_to_nvg(fill_dsc->color, fill_dsc->opa));
             }
             break;
         case LV_VECTOR_DRAW_STYLE_PATTERN: {
                 const lv_draw_image_dsc_t * img_dsc = &fill_dsc->img_dsc;
                 lv_image_header_t header;
-                int image_handle = lv_nanovg_image_cache_get_handle(u, img_dsc->src, 0, &header);
+                int image_handle = lv_g100_image_cache_get_handle(u, img_dsc->src, 0, &header);
                 if(image_handle < 0) {
                     LV_PROFILER_DRAW_END;
                     return;
@@ -120,7 +120,7 @@ static void draw_fill(lv_draw_nanovg_unit_t * u, const lv_vector_fill_dsc_t * fi
             }
             break;
         case LV_VECTOR_DRAW_STYLE_GRADIENT: {
-                lv_nanovg_draw_grad(u->vg, &fill_dsc->gradient, winding, comp_op);
+                lv_g100_draw_grad(u->vg, &fill_dsc->gradient, winding, comp_op);
             }
             break;
         default:
@@ -131,11 +131,11 @@ static void draw_fill(lv_draw_nanovg_unit_t * u, const lv_vector_fill_dsc_t * fi
     LV_PROFILER_DRAW_END;
 }
 
-static void draw_stroke(lv_draw_nanovg_unit_t * u, const lv_vector_stroke_dsc_t * stroke_dsc)
+static void draw_stroke(lv_draw_g100_unit_t * u, const lv_vector_stroke_dsc_t * stroke_dsc)
 {
     LV_PROFILER_DRAW_BEGIN;
 
-    lv_nanovg_transform(u->vg, &stroke_dsc->matrix);
+    lv_g100_transform(u->vg, &stroke_dsc->matrix);
 
     nvgStrokeColor(u->vg, lv_color32_to_nvg(stroke_dsc->color, stroke_dsc->opa));
     nvgStrokeWidth(u->vg, stroke_dsc->width);
@@ -146,7 +146,7 @@ static void draw_stroke(lv_draw_nanovg_unit_t * u, const lv_vector_stroke_dsc_t 
 
         case LV_VECTOR_DRAW_STYLE_GRADIENT: {
                 NVGpaint paint;
-                if(!lv_nanovg_grad_to_paint(u->vg, &stroke_dsc->gradient, &paint)) {
+                if(!lv_g100_grad_to_paint(u->vg, &stroke_dsc->gradient, &paint)) {
                     LV_PROFILER_DRAW_END;
                     return;
                 }
@@ -167,14 +167,14 @@ static void draw_stroke(lv_draw_nanovg_unit_t * u, const lv_vector_stroke_dsc_t 
 static void task_draw_cb(void * ctx, const lv_vector_path_t * path, const lv_vector_path_ctx_t * dsc)
 {
     LV_PROFILER_DRAW_BEGIN;
-    lv_draw_nanovg_unit_t * u = ctx;
+    lv_draw_g100_unit_t * u = ctx;
 
     /* clear area */
     if(!path) {
         NVGcolor c = lv_color32_to_nvg(dsc->fill_dsc.color, dsc->fill_dsc.opa);
         nvgBeginPath(u->vg);
-        lv_nanovg_path_append_area(u->vg, &dsc->scissor_area);
-        lv_nanovg_fill(u->vg, NVG_CCW, NVG_COPY, c);
+        lv_g100_path_append_area(u->vg, &dsc->scissor_area);
+        lv_g100_fill(u->vg, NVG_CCW, NVG_COPY, c);
         LV_PROFILER_DRAW_END;
         return;
     }
@@ -186,12 +186,12 @@ static void task_draw_cb(void * ctx, const lv_vector_path_t * path, const lv_vec
     }
 
     nvgSave(u->vg);
-    lv_nanovg_transform(u->vg, &dsc->matrix);
+    lv_g100_transform(u->vg, &dsc->matrix);
 
     lv_fpoint_t offset = {0, 0};
     lv_path_to_nvg(u->vg, path, &offset);
 
-    lv_nanovg_set_clip_area(u->vg, &dsc->scissor_area);
+    lv_g100_set_clip_area(u->vg, &dsc->scissor_area);
 
     const enum NVGcompositeOperation comp_op = lv_blend_to_nvg(dsc->blend_mode);
     nvgGlobalCompositeOperation(u->vg, comp_op);
@@ -308,4 +308,4 @@ static enum NVGwinding lv_fill_to_nvg(lv_vector_fill_t fill_rule)
     }
 }
 
-#endif /* LV_USE_DRAW_NANOVG */
+#endif /* LV_USE_DRAW_G100 */

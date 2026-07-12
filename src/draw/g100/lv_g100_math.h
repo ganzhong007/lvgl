@@ -1,10 +1,10 @@
 /**
- * @file lv_nanovg_math.h
+ * @file lv_g100_math.h
  *
  */
 
-#ifndef LV_NANOVG_MATH_H
-#define LV_NANOVG_MATH_H
+#ifndef LV_G100_MATH_H
+#define LV_G100_MATH_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,7 +16,7 @@ extern "C" {
 
 #include "../../lvgl_public.h"
 
-#if LV_USE_DRAW_NANOVG
+#if LV_USE_DRAW_G100
 
 #include <math.h>
 #include LV_STDBOOL_INCLUDE
@@ -93,10 +93,10 @@ static inline float nvg_math_inv_sqrtf(float number)
  *      MACROS
  **********************/
 
-#endif /* LV_USE_DRAW_NANOVG */
+#endif /* LV_USE_DRAW_G100 */
 
 #ifdef __cplusplus
 } /*extern "C"*/
 #endif
 
-#endif /*LV_NANOVG_MATH_H*/
+#endif /*LV_G100_MATH_H*/

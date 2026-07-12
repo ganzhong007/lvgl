@@ -1,5 +1,5 @@
 /**
- * @file lv_draw_nanovg_grad.c
+ * @file lv_draw_g100_grad.c
  *
  */
 
@@ -7,13 +7,13 @@
  *      INCLUDES
  *********************/
 
-#include "lv_draw_nanovg_private.h"
+#include "lv_draw_g100_private.h"
 
-#if (LV_USE_DRAW_NANOVG) && LV_USE_VECTOR_GRAPHIC
+#if (LV_USE_DRAW_G100) && LV_USE_VECTOR_GRAPHIC
 
 #include "../../draw/lv_draw_vector_private.h"
 
-#include "lv_nanovg_utils.h"
+#include "lv_g100_utils.h"
 
 /*********************
 *      DEFINES
@@ -39,7 +39,7 @@
 *   GLOBAL FUNCTIONS
 **********************/
 
-bool lv_nanovg_grad_to_paint(NVGcontext * ctx, const lv_vector_gradient_t * grad, NVGpaint * paint)
+bool lv_g100_grad_to_paint(NVGcontext * ctx, const lv_vector_gradient_t * grad, NVGpaint * paint)
 {
     LV_PROFILER_DRAW_BEGIN;
 
@@ -52,8 +52,8 @@ bool lv_nanovg_grad_to_paint(NVGcontext * ctx, const lv_vector_gradient_t * grad
         return false;
     }
 
-    const NVGcolor icol = lv_nanovg_color_convert(grad->stops[0].color, grad->stops[0].opa);
-    const NVGcolor ocol = lv_nanovg_color_convert(grad->stops[1].color, grad->stops[1].opa);
+    const NVGcolor icol = lv_g100_color_convert(grad->stops[0].color, grad->stops[0].opa);
+    const NVGcolor ocol = lv_g100_color_convert(grad->stops[1].color, grad->stops[1].opa);
 
     switch(grad->style) {
         case LV_VECTOR_GRADIENT_STYLE_LINEAR:
@@ -77,7 +77,7 @@ bool lv_nanovg_grad_to_paint(NVGcontext * ctx, const lv_vector_gradient_t * grad
     return true;
 }
 
-void lv_nanovg_draw_grad(
+void lv_g100_draw_grad(
     NVGcontext * ctx,
     const lv_vector_gradient_t * grad,
     enum NVGwinding winding,
@@ -86,7 +86,7 @@ void lv_nanovg_draw_grad(
     LV_PROFILER_DRAW_BEGIN;
 
     NVGpaint paint;
-    if(!lv_nanovg_grad_to_paint(ctx, grad, &paint)) {
+    if(!lv_g100_grad_to_paint(ctx, grad, &paint)) {
         LV_PROFILER_DRAW_END;
         return;
     }
@@ -99,7 +99,7 @@ void lv_nanovg_draw_grad(
     LV_PROFILER_DRAW_END;
 }
 
-void lv_nanovg_draw_grad_helper(
+void lv_g100_draw_grad_helper(
     NVGcontext * ctx,
     const lv_area_t * area,
     const lv_grad_dsc_t * grad_dsc,
@@ -178,11 +178,11 @@ void lv_nanovg_draw_grad_helper(
             return;
     }
 
-    lv_nanovg_draw_grad(ctx, &grad, winding, composite_operation);
+    lv_g100_draw_grad(ctx, &grad, winding, composite_operation);
 }
 
 /**********************
 *   STATIC FUNCTIONS
 **********************/
 
-#endif /* LV_USE_DRAW_NANOVG */
+#endif /* LV_USE_DRAW_G100 */

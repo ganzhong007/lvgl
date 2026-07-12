@@ -172,7 +172,7 @@ static void flush_wait_cb(lv_display_t * disp)
     }
 }
 
-#if LV_USE_DRAW_OPENGLES || LV_USE_DRAW_NANOVG
+#if LV_USE_DRAW_OPENGLES || LV_USE_DRAW_NANOVG || LV_USE_DRAW_G100
 
 static void egl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
 {
@@ -286,7 +286,7 @@ static void * wl_egl_init_display(void * backend_ctx, lv_display_t * display, in
 
     lv_display_set_flush_cb(display, egl_flush_cb);
     lv_display_set_flush_wait_cb(display, flush_wait_cb);
-    lv_display_set_render_mode(display, LV_USE_DRAW_NANOVG ? LV_DISPLAY_RENDER_MODE_FULL : LV_DISPLAY_RENDER_MODE_DIRECT);
+    lv_display_set_render_mode(display, (LV_USE_DRAW_NANOVG || LV_USE_DRAW_G100) ? LV_DISPLAY_RENDER_MODE_FULL : LV_DISPLAY_RENDER_MODE_DIRECT);
 
     return ddata;
 }
@@ -370,7 +370,7 @@ static size_t wl_egl_select_config_cb(void * driver_data, const lv_egl_config_t 
         const bool is_nanovg_compatible = (configs[i].renderable_type & EGL_OPENGL_ES2_BIT) != 0 &&
                                           configs[i].stencil == 8 && configs[i].samples == 4;
         const bool is_window = (configs[i].surface_type & EGL_WINDOW_BIT) != 0;
-        const bool is_compatible_with_draw_unit = is_nanovg_compatible || !LV_USE_DRAW_NANOVG;
+        const bool is_compatible_with_draw_unit = is_nanovg_compatible || (!LV_USE_DRAW_NANOVG && !LV_USE_DRAW_G100);
 
         if(is_window && resolution_matches && config_cf == target_cf && is_compatible_with_draw_unit) {
             LV_LOG_TRACE("Choosing config %zu", i);

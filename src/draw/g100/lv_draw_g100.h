@@ -1,10 +1,10 @@
 /**
- * @file lv_draw_nanovg.h
+ * @file lv_draw_g100.h
  *
  */
 
-#ifndef LV_DRAW_NANOVG_H
-#define LV_DRAW_NANOVG_H
+#ifndef LV_DRAW_G100_H
+#define LV_DRAW_G100_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,7 +16,7 @@ extern "C" {
 
 #include "../../lvgl_public.h"
 
-#if LV_USE_DRAW_NANOVG
+#if LV_USE_DRAW_G100
 
 /*********************
  *      DEFINES
@@ -31,18 +31,19 @@ extern "C" {
  **********************/
 
 /**
- * Initialize NanoVG rendering
+ * Initialize DrawUnitG100 for G100 GLES2.0 hardware GPU.
+ * Called from lv_opengles_init() after EGL context is ready.
  */
-void lv_draw_nanovg_init(void);
+void lv_draw_g100_init(void);
 
 /**********************
  *      MACROS
  **********************/
 
-#endif /* LV_USE_DRAW_NANOVG */
+#endif /* LV_USE_DRAW_G100 */
 
 #ifdef __cplusplus
 } /*extern "C"*/
 #endif
 
-#endif /*LV_DRAW_NANOVG_H*/
+#endif /*LV_DRAW_G100_H*/
