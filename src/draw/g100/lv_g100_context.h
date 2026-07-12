@@ -30,6 +30,9 @@ typedef struct _lv_g100_context_t {
     uint32_t bound_program;
     int32_t viewport_w;
     int32_t viewport_h;
+    lv_matrix_t matrix;
+    lv_area_t clip;
+    bool draw_state_valid;
 } lv_g100_context_t;
 
 /**********************
@@ -46,6 +49,9 @@ void lv_g100_context_set_viewport(lv_g100_context_t * ctx, int32_t w, int32_t h)
 void lv_g100_context_set_bound_program(lv_g100_context_t * ctx, uint32_t program);
 
 uint32_t lv_g100_context_get_bound_program(const lv_g100_context_t * ctx);
+
+void lv_g100_context_set_draw_state(lv_g100_context_t * ctx, const lv_matrix_t * matrix,
+                                    const lv_area_t * clip, int32_t viewport_w, int32_t viewport_h);
 
 #endif /*LV_USE_DRAW_G100*/
 

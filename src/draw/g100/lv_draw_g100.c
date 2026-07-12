@@ -26,6 +26,7 @@
 #include "lv_g100_fbo_cache.h"
 #include "lv_g100_context.h"
 #include "lv_g100_shader.h"
+#include "lv_g100_grad.h"
 
 #if LV_USE_OPENGLES && LV_USE_EGL
     #include "../../drivers/opengles/lv_opengles_private.h"
@@ -136,6 +137,7 @@ void lv_draw_g100_init(void)
 
     lv_g100_context_init(unit, &unit->ctx);
     lv_g100_shader_init(unit, &unit->ctx, &unit->shader);
+    lv_g100_grad_init(unit);
 
     lv_g100_utils_init(unit);
     lv_g100_image_cache_init(unit);
@@ -182,6 +184,10 @@ static void draw_execute(lv_draw_g100_unit_t * u, lv_draw_task_t * t)
     lv_g100_transform(u->vg, &global_matrix);
 
     lv_g100_set_clip_area(u->vg, &t->clip_area);
+
+    lv_g100_context_set_draw_state(&u->ctx, &global_matrix, &t->clip_area,
+                                   lv_area_get_width(&layer->buf_area),
+                                   lv_area_get_height(&layer->buf_area));
 
 #if LV_USE_PORT_LAYER_TRACE
     LV_PORT_LAYER_TRACE("L3-G100", "execute %s at (%d,%d)-(%d,%d)",
@@ -467,6 +473,7 @@ static int32_t draw_delete(lv_draw_unit_t * draw_unit)
     lv_g100_image_cache_deinit(unit);
     lv_g100_utils_deinit(unit);
     lv_g100_shader_deinit(&unit->shader);
+    lv_g100_grad_deinit(unit);
     lv_g100_context_deinit(&unit->ctx);
     NVG_CTX_DELETE(unit->vg);
     unit->vg = NULL;

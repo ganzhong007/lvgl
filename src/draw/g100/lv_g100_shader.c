@@ -41,6 +41,106 @@ static const char g100_frag_src[] =
     "  gl_FragColor = u_color;\n"
     "}\n";
 
+static const char g100_grad_vert_src[] =
+    "precision mediump float;\n"
+    "attribute vec2 a_pos;\n"
+    "uniform mat3 u_matrix;\n"
+    "uniform vec2 u_view_size;\n"
+    "uniform vec4 u_rect;\n"
+    "varying vec2 v_pos;\n"
+    "void main(void) {\n"
+    "  v_pos = u_rect.xy + a_pos * u_rect.zw;\n"
+    "  vec3 p = u_matrix * vec3(a_pos, 1.0);\n"
+    "  gl_Position = vec4(2.0 * p.x / u_view_size.x - 1.0,\n"
+    "                     1.0 - 2.0 * p.y / u_view_size.y, 0.0, 1.0);\n"
+    "}\n";
+
+static const char g100_grad_frag_src[] =
+    "precision mediump float;\n"
+    "varying vec2 v_pos;\n"
+    "uniform int u_dir;\n"
+    "uniform int u_extend;\n"
+    "uniform int u_stops_count;\n"
+    "uniform vec4 u_stop_color[8];\n"
+    "uniform float u_stop_frac[8];\n"
+    "uniform vec4 u_rect;\n"
+    "uniform float u_radius;\n"
+    "uniform vec4 u_linear;\n"
+    "uniform vec4 u_radial0;\n"
+    "uniform vec4 u_radial1;\n"
+    "uniform vec2 u_conical_center;\n"
+    "uniform vec2 u_conical_angles;\n"
+    "float extend_t(float t) {\n"
+    "  if(u_extend == 0) return clamp(t, 0.0, 1.0);\n"
+    "  if(u_extend == 1) return fract(t);\n"
+    "  return 1.0 - abs(mod(t, 2.0) - 1.0);\n"
+    "}\n"
+    "float linear_t(vec2 p, vec4 l) {\n"
+    "  vec2 v = l.zw - l.xy;\n"
+    "  float len2 = dot(v, v);\n"
+    "  if(len2 < 0.0001) return 0.0;\n"
+    "  return dot(p - l.xy, v) / len2;\n"
+    "}\n"
+    "float radial_t(vec2 p) {\n"
+    "  vec2 f = u_radial0.xy;\n"
+    "  vec2 e = u_radial1.xy;\n"
+    "  float r0 = u_radial0.z;\n"
+    "  float r1 = u_radial1.z;\n"
+    "  vec2 fd = e - f;\n"
+    "  if(dot(fd, fd) < 0.0001) {\n"
+    "    return (length(p - f) - r0) / max(r1 - r0, 0.0001);\n"
+    "  }\n"
+    "  float dr = r1 - r0;\n"
+    "  float len_fd = length(fd);\n"
+    "  float inv = 1.0 / max(len_fd * len_fd - dr * dr, 0.0001);\n"
+    "  vec2 q = p - f;\n"
+    "  float b = dot(q, fd) / len_fd;\n"
+    "  float c = dot(q, q) - r0 * r0;\n"
+    "  float disc = b * b - c * inv * len_fd * len_fd;\n"
+    "  if(disc < 0.0) return 0.0;\n"
+    "  float s = sqrt(disc);\n"
+    "  float w = (b - s) * len_fd * inv;\n"
+    "  return w;\n"
+    "}\n"
+    "float conical_t(vec2 p) {\n"
+    "  float a = atan(p.y - u_conical_center.y, p.x - u_conical_center.x);\n"
+    "  return (a - u_conical_angles.x) / u_conical_angles.y;\n"
+    "}\n"
+    "float compute_t(vec2 p) {\n"
+    "  if(u_dir == 1) return (p.y - u_linear.y) / max(u_linear.w - u_linear.y, 0.0001);\n"
+    "  if(u_dir == 2) return (p.x - u_linear.x) / max(u_linear.z - u_linear.x, 0.0001);\n"
+    "  if(u_dir == 3) return linear_t(p, u_linear);\n"
+    "  if(u_dir == 4) return radial_t(p);\n"
+    "  if(u_dir == 5) return conical_t(p);\n"
+    "  return 0.0;\n"
+    "}\n"
+    "vec4 sample_grad(float t) {\n"
+    "  t = extend_t(t);\n"
+    "  if(u_stops_count <= 1) return u_stop_color[0];\n"
+    "  for(int i = 0; i < 7; i++) {\n"
+    "    if(i + 1 >= u_stops_count) break;\n"
+    "    float f0 = u_stop_frac[i];\n"
+    "    float f1 = u_stop_frac[i + 1];\n"
+    "    if(t <= f1 || i + 2 >= u_stops_count) {\n"
+    "      float u = clamp((t - f0) / max(f1 - f0, 0.0001), 0.0, 1.0);\n"
+    "      return mix(u_stop_color[i], u_stop_color[i + 1], u);\n"
+    "    }\n"
+    "  }\n"
+    "  return u_stop_color[u_stops_count - 1];\n"
+    "}\n"
+    "void main(void) {\n"
+    "  if(u_radius > 0.0) {\n"
+    "    vec2 half_size = u_rect.zw * 0.5;\n"
+    "    vec2 c = u_rect.xy + half_size;\n"
+    "    vec2 q = abs(v_pos - c) - half_size + vec2(u_radius);\n"
+    "    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - u_radius;\n"
+    "    if(d > 0.0) discard;\n"
+    "  }\n"
+    "  vec4 c = sample_grad(compute_t(v_pos));\n"
+    "  c.rgb *= c.a;\n"
+    "  gl_FragColor = c;\n"
+    "}\n";
+
 #endif /*LV_G100_SHADER_HAS_GL*/
 
 /**********************
@@ -87,6 +187,23 @@ void lv_g100_shader_init(lv_draw_g100_unit_t * unit, lv_g100_context_t * ctx, lv
     shader->solid_loc_matrix = glGetUniformLocation(shader->solid_program, "u_matrix");
     shader->solid_loc_color = glGetUniformLocation(shader->solid_program, "u_color");
 
+    GLuint gvert = compile_shader(GL_VERTEX_SHADER, g100_grad_vert_src);
+    GLuint gfrag = compile_shader(GL_FRAGMENT_SHADER, g100_grad_frag_src);
+    if(gvert && gfrag) {
+        shader->grad_program = link_program(gvert, gfrag);
+        glDeleteShader(gvert);
+        glDeleteShader(gfrag);
+        if(shader->grad_program) {
+            shader->grad_ready = true;
+            LV_LOG_INFO("G100 native grad shader ready (program=%u)", (unsigned)shader->grad_program);
+        }
+    }
+    else {
+        if(gvert) glDeleteShader(gvert);
+        if(gfrag) glDeleteShader(gfrag);
+        LV_LOG_WARN("G100 grad shader: compile failed");
+    }
+
     /* Self-test: bind once so apitrace / logs can confirm native path */
     glUseProgram(shader->solid_program);
     lv_g100_context_set_bound_program(ctx, shader->solid_program);
@@ -108,6 +225,7 @@ void lv_g100_shader_deinit(lv_g100_shader_t * shader)
 
 #if LV_G100_SHADER_HAS_GL
     delete_program(&shader->solid_program);
+    delete_program(&shader->grad_program);
 #endif
 
     lv_memzero(shader, sizeof(*shader));
@@ -146,6 +264,25 @@ uint32_t lv_g100_shader_get_solid_program(const lv_g100_shader_t * shader)
 {
     if(!shader) return 0;
     return shader->solid_program;
+}
+
+bool lv_g100_shader_grad_is_ready(const lv_g100_shader_t * shader)
+{
+    return shader && shader->grad_ready && shader->grad_program != 0;
+}
+
+bool lv_g100_shader_bind_grad(lv_g100_context_t * ctx, lv_g100_shader_t * shader)
+{
+    if(!lv_g100_shader_grad_is_ready(shader)) return false;
+
+#if LV_G100_SHADER_HAS_GL
+    glUseProgram(shader->grad_program);
+    if(ctx) lv_g100_context_set_bound_program(ctx, shader->grad_program);
+    return true;
+#else
+    LV_UNUSED(ctx);
+    return false;
+#endif
 }
 
 #if LV_G100_SHADER_HAS_GL

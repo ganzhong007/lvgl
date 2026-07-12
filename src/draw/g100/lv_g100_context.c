@@ -60,4 +60,15 @@ uint32_t lv_g100_context_get_bound_program(const lv_g100_context_t * ctx)
     return ctx->bound_program;
 }
 
+void lv_g100_context_set_draw_state(lv_g100_context_t * ctx, const lv_matrix_t * matrix,
+                                    const lv_area_t * clip, int32_t viewport_w, int32_t viewport_h)
+{
+    if(!ctx) return;
+    if(matrix) ctx->matrix = *matrix;
+    if(clip) ctx->clip = *clip;
+    ctx->viewport_w = viewport_w;
+    ctx->viewport_h = viewport_h;
+    ctx->draw_state_valid = matrix && clip;
+}
+
 #endif /*LV_USE_DRAW_G100*/

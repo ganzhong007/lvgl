@@ -92,6 +92,20 @@ void lv_g100_set_clip_area(NVGcontext * ctx, const lv_area_t * area)
     LV_PROFILER_DRAW_END;
 }
 
+void lv_g100_nvg_flush_pending(struct _lv_draw_g100_unit_t * u)
+{
+    LV_ASSERT_NULL(u);
+    if(!u->is_started || !u->current_layer) return;
+
+    LV_PROFILER_DRAW_BEGIN_TAG("nvgFlushPending");
+    nvgEndFrame(u->vg);
+
+    const int32_t buf_w = lv_area_get_width(&u->current_layer->buf_area);
+    const int32_t buf_h = lv_area_get_height(&u->current_layer->buf_area);
+    nvgBeginFrame(u->vg, buf_w, buf_h, 1.0f);
+    LV_PROFILER_DRAW_END_TAG("nvgFlushPending");
+}
+
 void lv_g100_path_append_rect(NVGcontext * ctx, float x, float y, float w, float h, float r)
 {
     LV_ASSERT_NULL(ctx);

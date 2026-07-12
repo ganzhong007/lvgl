@@ -89,6 +89,12 @@ void lv_g100_transform(NVGcontext * ctx, const lv_matrix_t * matrix);
 void lv_g100_set_clip_area(NVGcontext * ctx, const lv_area_t * area);
 
 /**
+ * Flush pending NanoVG draws and restart the frame (keeps is_started true).
+ * Required before interleaving native GLES2 draws with NanoVG batching.
+ */
+void lv_g100_nvg_flush_pending(struct _lv_draw_g100_unit_t * u);
+
+/**
  * Append a rectangle to the path
  * @param ctx the NanoVG context
  * @param x the x coordinate of the rectangle
