@@ -75,7 +75,10 @@ lv_result_t lv_3dmesh_load_obj(lv_obj_t * obj, const char * path)
     char ch;
     lv_result_t res = LV_RESULT_OK;
 
-    while(res == LV_RESULT_OK && lv_fs_read(&f, &ch, 1, NULL) == LV_FS_RES_OK) {
+    while(res == LV_RESULT_OK) {
+        uint32_t br = 0;
+        if(lv_fs_read(&f, &ch, 1, &br) != LV_FS_RES_OK || br == 0) break;
+
         if(ch == '\r') continue;
         if(ch != '\n') {
             if(line_pos + 1 < OBJ_MAX_LINE) line[line_pos++] = ch;
