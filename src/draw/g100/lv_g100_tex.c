@@ -134,6 +134,8 @@ bool lv_g100_tex_draw_image(lv_draw_g100_unit_t * unit,
 
     float xform[6];
     lv_g100_matrix_convert(xform, &draw_matrix);
+    float mat3[9];
+    lv_g100_xform_to_mat3(mat3, xform);
 
     const int32_t vp_w = unit->ctx.viewport_w > 0 ? unit->ctx.viewport_w :
                          lv_area_get_width(&unit->current_layer->buf_area);
@@ -144,19 +146,19 @@ bool lv_g100_tex_draw_image(lv_draw_g100_unit_t * unit,
     const GLuint tex = nvglImageHandleGLES2(unit->vg, image_handle);
     if(tex == 0) return false;
 
+    const lv_color32_t recolor32 = lv_color_to_32(dsc->recolor, dsc->recolor_opa);
     const float recolor[4] = {
-        (float)dsc->recolor.red / 255.f,
-        (float)dsc->recolor.green / 255.f,
-        (float)dsc->recolor.blue / 255.f,
-        (float)dsc->recolor_opa / 255.f,
+        (float)recolor32.red / 255.f,
+        (float)recolor32.green / 255.f,
+        (float)recolor32.blue / 255.f,
+        (float)recolor32.alpha / 255.f,
     };
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    lv_g100_native_gl_prepare(unit, vp_w, vp_h);
     set_scissor(clip_area, vp_h);
 
     lv_g100_shader_bind_tex(&unit->ctx, &unit->shader);
-    glUniformMatrix3fv(g_tex_state.loc_matrix, 1, GL_FALSE, xform);
+    glUniformMatrix3fv(g_tex_state.loc_matrix, 1, GL_FALSE, mat3);
     glUniform2fv(g_tex_state.loc_view_size, 1, view_size);
     glUniform1i(g_tex_state.loc_texture, 0);
     glUniform1f(g_tex_state.loc_opa, (float)dsc->opa / (float)LV_OPA_COVER);
@@ -173,13 +175,9 @@ bool lv_g100_tex_draw_image(lv_draw_g100_unit_t * unit,
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, (const void *)(2 * sizeof(float)));
     glDrawArrays(GL_TRIANGLES, 0, 6);
-    glDisableVertexAttribArray(1);
-    glDisableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindTexture(GL_TEXTURE_2D, 0);
 
     lv_g100_shader_unbind(&unit->ctx);
-    glDisable(GL_SCISSOR_TEST);
+    lv_g100_native_gl_finish();
     return true;
 #else
     LV_UNUSED(rect_w);

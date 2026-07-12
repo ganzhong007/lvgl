@@ -15,6 +15,10 @@
 #include "lv_draw_g100_private.h"
 #include "../../misc/lv_port_layer_trace.h"
 #include "lv_g100_math.h"
+#include "../../libs/nanovg/nanovg_gl_utils.h"
+#if LV_USE_OPENGLES && LV_USE_EGL
+    #include "../../drivers/opengles/lv_opengles_private.h"
+#endif
 #include <float.h>
 #include <math.h>
 
@@ -104,6 +108,39 @@ void lv_g100_nvg_flush_pending(struct _lv_draw_g100_unit_t * u)
     const int32_t buf_h = lv_area_get_height(&u->current_layer->buf_area);
     nvgBeginFrame(u->vg, buf_w, buf_h, 1.0f);
     LV_PROFILER_DRAW_END_TAG("nvgFlushPending");
+}
+
+void lv_g100_native_gl_prepare(struct _lv_draw_g100_unit_t * u, int32_t viewport_w, int32_t viewport_h)
+{
+    LV_ASSERT_NULL(u);
+    LV_UNUSED(u);
+
+#if LV_USE_OPENGLES && LV_USE_EGL
+    nvgluBindFramebuffer(NULL);
+    glViewport(0, 0, viewport_w, viewport_h);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+#else
+    LV_UNUSED(viewport_w);
+    LV_UNUSED(viewport_h);
+#endif
+}
+
+void lv_g100_native_gl_finish(void)
+{
+#if LV_USE_OPENGLES && LV_USE_EGL
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glUseProgram(0);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
+#endif
 }
 
 void lv_g100_path_append_rect(NVGcontext * ctx, float x, float y, float w, float h, float r)

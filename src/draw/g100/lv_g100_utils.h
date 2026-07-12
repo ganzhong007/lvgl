@@ -64,6 +64,36 @@ static inline void lv_g100_matrix_convert(float * xform, const lv_matrix_t * mat
 }
 
 /**
+ * Convert a 3x2 affine matrix to a column-major mat3 for glUniformMatrix3fv.
+ * @param mat3_out 9 floats (column-major)
+ * @param xform 6 floats from lv_g100_matrix_convert / lv_matrix layout
+ */
+static inline void lv_g100_xform_to_mat3(float * mat3_out, const float * xform)
+{
+    LV_ASSERT_NULL(mat3_out);
+    LV_ASSERT_NULL(xform);
+    mat3_out[0] = xform[0];
+    mat3_out[1] = xform[1];
+    mat3_out[2] = 0.f;
+    mat3_out[3] = xform[2];
+    mat3_out[4] = xform[3];
+    mat3_out[5] = 0.f;
+    mat3_out[6] = xform[4];
+    mat3_out[7] = xform[5];
+    mat3_out[8] = 1.f;
+}
+
+/**
+ * Prepare GL state before interleaved native GLES2 draws (after nvg flush).
+ */
+void lv_g100_native_gl_prepare(struct _lv_draw_g100_unit_t * u, int32_t viewport_w, int32_t viewport_h);
+
+/**
+ * Restore GL state after native GLES2 draws so NanoVG can continue batching.
+ */
+void lv_g100_native_gl_finish(void);
+
+/**
  * Convert an LVGL color to a NanoVG color
  * @param color the LVGL color
  * @param opa the opacity

@@ -35,7 +35,7 @@ static const char g100_vert_src[] =
     "varying vec2 v_pos;\n"
     "void main(void) {\n"
     "  v_pos = u_rect.xy + a_pos * u_rect.zw;\n"
-    "  vec3 p = u_matrix * vec3(a_pos, 1.0);\n"
+    "  vec3 p = u_matrix * vec3(v_pos, 1.0);\n"
     "  gl_Position = vec4(2.0 * p.x / u_view_size.x - 1.0,\n"
     "                     1.0 - 2.0 * p.y / u_view_size.y, 0.0, 1.0);\n"
     "}\n";
@@ -68,7 +68,7 @@ static const char g100_grad_vert_src[] =
     "varying vec2 v_pos;\n"
     "void main(void) {\n"
     "  v_pos = u_rect.xy + a_pos * u_rect.zw;\n"
-    "  vec3 p = u_matrix * vec3(a_pos, 1.0);\n"
+    "  vec3 p = u_matrix * vec3(v_pos, 1.0);\n"
     "  gl_Position = vec4(2.0 * p.x / u_view_size.x - 1.0,\n"
     "                     1.0 - 2.0 * p.y / u_view_size.y, 0.0, 1.0);\n"
     "}\n";

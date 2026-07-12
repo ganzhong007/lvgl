@@ -71,7 +71,6 @@ static void pack_geometry(const lv_grad_dsc_t * grad_dsc, const lv_area_t * coor
                           int32_t * dir, int32_t * extend, float * linear, float * radial0, float * radial1,
                           float * conical_center, float * conical_angles, float * rect);
 static void set_scissor(const lv_area_t * clip, int32_t viewport_h);
-static void restore_gl_state(void);
 #endif
 
 /**********************
@@ -168,17 +167,10 @@ bool lv_g100_grad_fill_rect(lv_draw_g100_unit_t * unit,
     pack_geometry(grad_dsc, coords, radius, &dir, &extend, linear, radial0, radial1,
                   conical_center, conical_angles, rect);
 
-    lv_matrix_t grad_matrix = *matrix;
-    lv_matrix_t local;
-    lv_matrix_identity(&local);
-    local.m[0][0] = rect[2];
-    local.m[1][1] = rect[3];
-    local.m[0][2] = rect[0];
-    local.m[1][2] = rect[1];
-    lv_matrix_multiply(&grad_matrix, &local);
-
     float grad_xform[6];
-    lv_g100_matrix_convert(grad_xform, &grad_matrix);
+    lv_g100_matrix_convert(grad_xform, matrix);
+    float grad_mat3[9];
+    lv_g100_xform_to_mat3(grad_mat3, grad_xform);
 
     const int32_t vp_w = unit->ctx.viewport_w > 0 ? unit->ctx.viewport_w :
                          lv_area_get_width(&unit->current_layer->buf_area);
@@ -186,13 +178,12 @@ bool lv_g100_grad_fill_rect(lv_draw_g100_unit_t * unit,
                          lv_area_get_height(&unit->current_layer->buf_area);
     const float view_size[2] = { (float)vp_w, (float)vp_h };
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    lv_g100_native_gl_prepare(unit, vp_w, vp_h);
     set_scissor(clip_area, vp_h);
 
     lv_g100_shader_bind_grad(&unit->ctx, &unit->shader);
 
-    glUniformMatrix3fv(g_grad_state.loc_matrix, 1, GL_FALSE, grad_xform);
+    glUniformMatrix3fv(g_grad_state.loc_matrix, 1, GL_FALSE, grad_mat3);
     glUniform2fv(g_grad_state.loc_view_size, 1, view_size);
     glUniform1i(g_grad_state.loc_dir, dir);
     glUniform1i(g_grad_state.loc_extend, extend);
@@ -211,11 +202,9 @@ bool lv_g100_grad_fill_rect(lv_draw_g100_unit_t * unit,
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * (GLsizei)sizeof(float), NULL);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-    glDisableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     lv_g100_shader_unbind(&unit->ctx);
-    restore_gl_state();
+    lv_g100_native_gl_finish();
     return true;
 #else
     LV_UNUSED(clip_area);
@@ -335,11 +324,6 @@ static void set_scissor(const lv_area_t * clip, int32_t viewport_h)
     const int32_t h = lv_area_get_height(clip);
     glEnable(GL_SCISSOR_TEST);
     glScissor(x, LV_MAX(y, 0), LV_MAX(w, 0), LV_MAX(h, 0));
-}
-
-static void restore_gl_state(void)
-{
-    glDisable(GL_SCISSOR_TEST);
 }
 
 #endif /*LV_G100_GRAD_HAS_GL*/
