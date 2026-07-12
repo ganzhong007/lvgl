@@ -64,6 +64,8 @@
 #include "draw/lv_draw_3d_mesh.h"
 #include "draw/lv_draw_3d_light.h"
 #include "draw/lv_draw_3d_scene.h"
+#include "draw/lv_draw_3d_pick.h"
+#include "misc/lv_3dcaps.h"
 #endif
 #include "draw/lv_draw_arc.h"
 #include "draw/lv_draw_blur.h"

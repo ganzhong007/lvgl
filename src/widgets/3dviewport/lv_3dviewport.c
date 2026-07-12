@@ -128,6 +128,31 @@ void lv_3dviewport_set_orbit(lv_obj_t * obj, float yaw, float pitch, float dista
     lv_obj_invalidate(obj);
 }
 
+lv_3dray_t lv_3dviewport_get_ray_from_point(lv_obj_t * obj, int32_t x, int32_t y)
+{
+    lv_3dray_t ray = { { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f } };
+    LV_CHECK_OBJ(obj, MY_CLASS, return ray);
+    lv_3dviewport_t * vp = (lv_3dviewport_t *)obj;
+    lv_3d_camera_get_ray(&vp->camera, lv_obj_get_width(obj), lv_obj_get_height(obj), x, y, &ray);
+    return ray;
+}
+
+bool lv_3dviewport_pick_at(lv_obj_t * obj, int32_t x, int32_t y, lv_3d_pick_hit_t * hit)
+{
+    LV_CHECK_OBJ(obj, MY_CLASS, return false);
+#if LV_USE_3DMESH
+    lv_3dray_t ray = lv_3dviewport_get_ray_from_point(obj, x, y);
+    lv_memzero(hit, sizeof(*hit));
+    hit->distance = 1e30f;
+    return lv_3dmesh_pick_at_tree(obj, &ray, hit) ? true : false;
+#else
+    LV_UNUSED(x);
+    LV_UNUSED(y);
+    LV_UNUSED(hit);
+    return false;
+#endif
+}
+
 /**********************
  *   STATIC FUNCTIONS
  **********************/
@@ -270,6 +295,7 @@ static void on_pointer_event(lv_event_t * e)
     if(code == LV_EVENT_PRESSED) {
         vp->dragging = true;
         vp->last_drag = p;
+        vp->press_start = p;
     }
     else if(code == LV_EVENT_PRESSING && vp->dragging) {
         int32_t dx = p.x - vp->last_drag.x;
@@ -283,6 +309,20 @@ static void on_pointer_event(lv_event_t * e)
         lv_obj_invalidate(obj);
     }
     else if(code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+#if LV_USE_3DMESH
+        if(vp->dragging) {
+            int32_t dx = p.x - vp->press_start.x;
+            int32_t dy = p.y - vp->press_start.y;
+            if((dx * dx + dy * dy) <= 36) {
+                lv_area_t coords;
+                lv_obj_get_coords(obj, &coords);
+                lv_3d_pick_hit_t hit;
+                if(lv_3dviewport_pick_at(obj, p.x - coords.x1, p.y - coords.y1, &hit)) {
+                    lv_obj_send_event(hit.target, LV_EVENT_CLICKED, &hit);
+                }
+            }
+        }
+#endif
         vp->dragging = false;
     }
 }

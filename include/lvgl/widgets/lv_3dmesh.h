@@ -19,6 +19,7 @@ extern "C" {
 
 #include "../core/lv_obj.h"
 #include "../draw/lv_draw_3d_mesh.h"
+#include "../draw/lv_draw_3d_pick.h"
 
 /*********************
  *      DEFINES
@@ -51,6 +52,12 @@ void lv_3dmesh_set_cull_face(lv_obj_t * obj, bool enable);
 void lv_3dmesh_set_phong(lv_obj_t * obj, bool enable);
 
 void lv_3dmesh_set_shininess(lv_obj_t * obj, float shininess);
+
+void lv_3dmesh_set_pickable(lv_obj_t * obj, bool pickable);
+
+lv_result_t lv_3dmesh_load_obj(lv_obj_t * obj, const char * path);
+
+bool lv_3dmesh_pick_at_tree(lv_obj_t * root, const lv_3dray_t * ray, lv_3d_pick_hit_t * hit);
 
 void lv_3dmesh_submit_tree(lv_obj_t * root, lv_layer_t * pass_layer);
 

@@ -40,6 +40,7 @@ struct _lv_3dviewport_t {
     void * render_user_data;
     bool show_grid;
     lv_point_t last_drag;
+    lv_point_t press_start;
     bool dragging;
 };
 

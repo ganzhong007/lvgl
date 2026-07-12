@@ -33,10 +33,8 @@
 
 static void lv_3dmesh_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
 static void lv_3dmesh_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
-static void free_geometry(lv_3dmesh_t * mesh);
 static bool set_box_geometry(lv_3dmesh_t * mesh, float sx, float sy, float sz);
 static bool set_box_phong_geometry(lv_3dmesh_t * mesh, float sx, float sy, float sz);
-static void build_model_matrix(const lv_3dmesh_t * mesh, float out[LV_3D_MESH_MODEL_SIZE]);
 static void mat4_identity(float m[16]);
 static void mat4_translate(float m[16], float tx, float ty, float tz);
 static void mat4_scale(float m[16], float sx, float sy, float sz);
@@ -144,6 +142,78 @@ void lv_3dmesh_set_shininess(lv_obj_t * obj, float shininess)
     lv_obj_invalidate(lv_obj_get_parent(obj));
 }
 
+void lv_3dmesh_set_pickable(lv_obj_t * obj, bool pickable)
+{
+    LV_CHECK_OBJ(obj, MY_CLASS, return);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    mesh->pickable = pickable;
+}
+
+bool lv_3dmesh_pick(lv_obj_t * obj, const lv_3dray_t * ray, lv_3d_pick_hit_t * hit)
+{
+    LV_CHECK_OBJ(obj, MY_CLASS, return false);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    if(!mesh->pickable || ray == NULL || mesh->vertices == NULL || mesh->indices == NULL) return false;
+
+    float model[LV_3D_MESH_MODEL_SIZE];
+    build_model_matrix(mesh, model);
+
+    float best_t = -1.f;
+    lv_3dpoint_t best_point = { 0.f, 0.f, 0.f };
+
+    for(uint32_t i = 0; i + 2 < mesh->index_count; i += 3) {
+        lv_3dpoint_t tri[3];
+        for(uint32_t c = 0; c < 3; c++) {
+            uint16_t idx = mesh->indices[i + c];
+            lv_3dpoint_t local = {
+                mesh->vertices[idx * 3 + 0],
+                mesh->vertices[idx * 3 + 1],
+                mesh->vertices[idx * 3 + 2],
+            };
+            tri[c].x = model[0] * local.x + model[4] * local.y + model[8] * local.z + model[12];
+            tri[c].y = model[1] * local.x + model[5] * local.y + model[9] * local.z + model[13];
+            tri[c].z = model[2] * local.x + model[6] * local.y + model[10] * local.z + model[14];
+        }
+
+        float t;
+        if(lv_3d_ray_triangle(ray, &tri[0], &tri[1], &tri[2], &t)) {
+            if(best_t < 0.f || t < best_t) {
+                best_t = t;
+                best_point.x = ray->origin.x + ray->direction.x * t;
+                best_point.y = ray->origin.y + ray->direction.y * t;
+                best_point.z = ray->origin.z + ray->direction.z * t;
+            }
+        }
+    }
+
+    if(best_t < 0.f) return false;
+    if(hit) {
+        hit->target = obj;
+        hit->point = best_point;
+        hit->distance = best_t;
+    }
+    return true;
+}
+
+bool lv_3dmesh_pick_at_tree(lv_obj_t * root, const lv_3dray_t * ray, lv_3d_pick_hit_t * hit)
+{
+    if(root == NULL || ray == NULL || hit == NULL) return false;
+
+    uint32_t cnt = lv_obj_get_child_count(root);
+    for(uint32_t i = 0; i < cnt; i++) {
+        lv_obj_t * child = lv_obj_get_child(root, i);
+        if(lv_obj_check_type(child, &lv_3dmesh_class)) {
+            lv_3d_pick_hit_t one;
+            if(lv_3dmesh_pick(child, ray, &one)) {
+                if(hit->target == NULL || one.distance < hit->distance) *hit = one;
+            }
+        }
+        lv_3dmesh_pick_at_tree(child, ray, hit);
+    }
+
+    return hit->target != NULL;
+}
+
 void lv_3dmesh_submit_tree(lv_obj_t * root, lv_layer_t * pass_layer)
 {
     if(root == NULL || pass_layer == NULL) return;
@@ -202,6 +272,7 @@ static void lv_3dmesh_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj
     mesh->scale[0] = mesh->scale[1] = mesh->scale[2] = 1.f;
     mesh->flags = LV_3D_MESH_FLAG_DEPTH_TEST | LV_3D_MESH_FLAG_CULL_FACE;
     mesh->phong = false;
+    mesh->pickable = true;
     mesh->shininess = 32.f;
     mesh->ambient = 0.15f;
 }
@@ -212,7 +283,7 @@ static void lv_3dmesh_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
     free_geometry((lv_3dmesh_t *)obj);
 }
 
-static void free_geometry(lv_3dmesh_t * mesh)
+void free_geometry(lv_3dmesh_t * mesh)
 {
     if(mesh->vertices) {
         lv_free(mesh->vertices);
@@ -325,7 +396,7 @@ static bool set_box_phong_geometry(lv_3dmesh_t * mesh, float sx, float sy, float
     return true;
 }
 
-static void build_model_matrix(const lv_3dmesh_t * mesh, float out[LV_3D_MESH_MODEL_SIZE])
+void build_model_matrix(const lv_3dmesh_t * mesh, float out[LV_3D_MESH_MODEL_SIZE])
 {
     float t[16];
     float rx[16];
