@@ -15,6 +15,7 @@ extern "C" {
  *********************/
 
 #include "../../lvgl_public.h"
+#include "../../../include/lvgl/draw/lv_draw_3d_camera.h"
 
 #if LV_USE_DRAW_G100 && LV_USE_3D_DRAW_TASKS
 
@@ -43,6 +44,9 @@ typedef struct {
 typedef struct {
     uint32_t magic;
     lv_3d_pass_t pass;
+    lv_3d_camera_t camera;
+    float view_proj[LV_3D_CAMERA_MVP_SIZE];
+    bool camera_valid;
 } lv_3d_pass_layer_ud_t;
 
 /**********************
@@ -58,6 +62,16 @@ lv_result_t lv_g100_3d_pass_ensure(lv_3d_pass_t * pass, int32_t w, int32_t h);
 void lv_g100_3d_pass_destroy_fbo(lv_3d_pass_t * pass);
 
 void lv_g100_3d_pass_layer_destroy(lv_layer_t * pass_layer, lv_display_t * disp);
+
+void lv_g100_3d_pass_set_camera(lv_layer_t * pass_layer, const lv_3d_camera_t * camera);
+
+const lv_3d_camera_t * lv_draw_3d_pass_get_camera(const lv_layer_t * pass_layer);
+
+const float * lv_draw_3d_pass_get_view_proj(const lv_layer_t * pass_layer);
+
+bool lv_g100_3d_pass_bind_fbo(lv_layer_t * pass_layer, int32_t * w, int32_t * h, lv_g100_3d_pass_fbo_t ** fbo);
+
+void lv_g100_3d_pass_unbind_fbo(void);
 
 /**********************
  *      MACROS

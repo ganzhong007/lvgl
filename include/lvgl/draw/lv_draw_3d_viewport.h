@@ -15,6 +15,7 @@ extern "C" {
  *********************/
 
 #include "lv_draw.h"
+#include "lv_draw_3d_camera.h"
 
 #if LV_USE_3D_DRAW_TASKS
 
@@ -56,6 +57,8 @@ void lv_draw_3d_viewport(lv_layer_t * layer, const lv_draw_3d_viewport_dsc_t * d
 void lv_draw_3d_viewport_end(lv_layer_t * pass_layer);
 
 void lv_draw_3d_pass_layer_destroy(lv_layer_t * pass_layer, lv_display_t * disp);
+
+void lv_draw_3d_pass_set_camera(lv_layer_t * pass_layer, const lv_3d_camera_t * camera);
 
 /**********************
  *      MACROS

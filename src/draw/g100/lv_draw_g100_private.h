@@ -104,6 +104,11 @@ void lv_draw_g100_3d(lv_draw_task_t * t, const lv_draw_3d_dsc_t * dsc, const lv_
 #include "../../include/lvgl/draw/lv_draw_3d_clear.h"
 void lv_draw_g100_3d_viewport(lv_draw_task_t * t, const lv_draw_3d_viewport_dsc_t * dsc, const lv_area_t * coords);
 void lv_draw_g100_3d_clear(lv_draw_task_t * t, const lv_draw_3d_clear_dsc_t * dsc);
+void lv_draw_g100_3d_line_init(void);
+void lv_draw_g100_3d_line_deinit(void);
+void lv_draw_g100_3d_line(lv_draw_task_t * t, const lv_draw_3d_line_dsc_t * dsc);
+void lv_draw_g100_3d_cb_init(void);
+void lv_draw_g100_3d_cb(lv_draw_task_t * t, const lv_draw_3d_callback_dsc_t * dsc);
 #endif
 
 /**

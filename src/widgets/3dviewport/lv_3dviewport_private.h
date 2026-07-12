@@ -19,6 +19,8 @@ extern "C" {
 #if LV_USE_3DVIEWPORT
 
 #include "../../core/lv_obj_private.h"
+#include "../../include/lvgl/draw/lv_draw_3d_camera.h"
+#include "../../include/lvgl/draw/lv_draw_3d_callback.h"
 
 /*********************
  *      DEFINES
@@ -33,6 +35,12 @@ struct _lv_3dviewport_t {
     lv_layer_t * pass_layer;
     lv_color32_t clear_color;
     bool clear_depth;
+    lv_3d_camera_t camera;
+    lv_draw_3d_cb_t render_cb;
+    void * render_user_data;
+    bool show_grid;
+    lv_point_t last_drag;
+    bool dragging;
 };
 
 /**********************

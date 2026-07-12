@@ -21,6 +21,8 @@ extern "C" {
 #include "../lvgl_public.h"
 #include "../../include/lvgl/draw/lv_draw_3d_viewport.h"
 #include "../../include/lvgl/draw/lv_draw_3d_clear.h"
+#include "../../include/lvgl/draw/lv_draw_3d_line.h"
+#include "../../include/lvgl/draw/lv_draw_3d_callback.h"
 #include "../osal/lv_os_private.h"
 #include "../misc/cache/lv_cache.h"
 #include "../misc/cache/lv_cache_entry.h"

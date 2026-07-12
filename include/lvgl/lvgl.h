@@ -58,6 +58,9 @@
 #if LV_USE_3D_DRAW_TASKS
 #include "draw/lv_draw_3d_viewport.h"
 #include "draw/lv_draw_3d_clear.h"
+#include "draw/lv_draw_3d_camera.h"
+#include "draw/lv_draw_3d_line.h"
+#include "draw/lv_draw_3d_callback.h"
 #endif
 #include "draw/lv_draw_arc.h"
 #include "draw/lv_draw_blur.h"

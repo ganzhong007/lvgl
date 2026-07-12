@@ -126,6 +126,52 @@ void lv_g100_3d_pass_layer_destroy(lv_layer_t * pass_layer, lv_display_t * disp)
     lv_free(pass_layer);
 }
 
+void lv_g100_3d_pass_set_camera(lv_layer_t * pass_layer, const lv_3d_camera_t * camera)
+{
+    if(!lv_g100_3d_pass_layer_is(pass_layer) || camera == NULL) return;
+
+    lv_3d_pass_layer_ud_t * ud = pass_layer->user_data;
+    ud->camera = *camera;
+    int32_t w = lv_area_get_width(&pass_layer->buf_area);
+    int32_t h = lv_area_get_height(&pass_layer->buf_area);
+    lv_3d_camera_compute_mvp(&ud->camera, w, h, ud->view_proj);
+    ud->camera_valid = true;
+}
+
+const lv_3d_camera_t * lv_draw_3d_pass_get_camera(const lv_layer_t * pass_layer)
+{
+    if(!lv_g100_3d_pass_layer_is(pass_layer)) return NULL;
+    lv_3d_pass_layer_ud_t * ud = pass_layer->user_data;
+    return ud->camera_valid ? &ud->camera : NULL;
+}
+
+const float * lv_draw_3d_pass_get_view_proj(const lv_layer_t * pass_layer)
+{
+    if(!lv_g100_3d_pass_layer_is(pass_layer)) return NULL;
+    lv_3d_pass_layer_ud_t * ud = pass_layer->user_data;
+    return ud->camera_valid ? ud->view_proj : NULL;
+}
+
+bool lv_g100_3d_pass_bind_fbo(lv_layer_t * pass_layer, int32_t * w, int32_t * h, lv_g100_3d_pass_fbo_t ** fbo)
+{
+    lv_3d_pass_t * pass = lv_g100_3d_pass_from_layer(pass_layer);
+    if(pass == NULL) return false;
+
+    *w = lv_area_get_width(&pass_layer->buf_area);
+    *h = lv_area_get_height(&pass_layer->buf_area);
+    if(lv_g100_3d_pass_ensure(pass, *w, *h) != LV_RESULT_OK) return false;
+
+    *fbo = &pass->fbo;
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, (*fbo)->framebuffer));
+    GL_CALL(glViewport(0, 0, *w, *h));
+    return true;
+}
+
+void lv_g100_3d_pass_unbind_fbo(void)
+{
+    GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+}
+
 /**********************
  *   STATIC FUNCTIONS
  **********************/

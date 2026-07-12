@@ -694,6 +694,10 @@ static inline size_t get_draw_dsc_size(lv_draw_task_type_t type)
             return sizeof(lv_draw_3d_viewport_dsc_t);
         case LV_DRAW_TASK_TYPE_3D_CLEAR:
             return sizeof(lv_draw_3d_clear_dsc_t);
+        case LV_DRAW_TASK_TYPE_3D_LINE:
+            return sizeof(lv_draw_3d_line_dsc_t);
+        case LV_DRAW_TASK_TYPE_3D_CALLBACK:
+            return sizeof(lv_draw_3d_callback_dsc_t);
 #endif
             /* Note that default is not added here because when adding new draw task type,
              * if forget to add case, the compiler will automatically report a warning.
@@ -718,6 +722,15 @@ static void cleanup_task(lv_draw_task_t * t, lv_display_t * disp)
             draw_line_dsc->points = NULL;
         }
     }
+#if LV_USE_3D_DRAW_TASKS
+    else if(t->type == LV_DRAW_TASK_TYPE_3D_LINE) {
+        lv_draw_3d_line_dsc_t * draw_line_dsc = t->draw_dsc;
+        if(draw_line_dsc->points) {
+            lv_free((void *)draw_line_dsc->points);
+            draw_line_dsc->points = NULL;
+        }
+    }
+#endif
     /*If it was layer drawing free the layer too*/
     else if(t->type == LV_DRAW_TASK_TYPE_LAYER) {
         lv_draw_image_dsc_t * draw_image_dsc = t->draw_dsc;

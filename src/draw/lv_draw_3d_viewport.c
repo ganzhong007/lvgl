@@ -52,6 +52,8 @@ lv_layer_t * lv_draw_3d_pass_layer_create(lv_layer_t * parent_layer, const lv_ar
     }
 
     ud->magic = LV_3D_PASS_LAYER_MAGIC;
+    lv_3d_camera_init(&ud->camera);
+    ud->camera_valid = true;
     pass->user_data = ud;
     return pass;
 #else
@@ -91,6 +93,16 @@ void lv_draw_3d_pass_layer_destroy(lv_layer_t * pass_layer, lv_display_t * disp)
 #else
     LV_UNUSED(pass_layer);
     LV_UNUSED(disp);
+#endif
+}
+
+void lv_draw_3d_pass_set_camera(lv_layer_t * pass_layer, const lv_3d_camera_t * camera)
+{
+#if LV_USE_DRAW_G100
+    lv_g100_3d_pass_set_camera(pass_layer, camera);
+#else
+    LV_UNUSED(pass_layer);
+    LV_UNUSED(camera);
 #endif
 }
 

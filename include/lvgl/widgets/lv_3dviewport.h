@@ -18,6 +18,8 @@ extern "C" {
 #if LV_USE_3DVIEWPORT
 
 #include "../core/lv_obj.h"
+#include "../draw/lv_draw_3d_camera.h"
+#include "../draw/lv_draw_3d_callback.h"
 
 /*********************
  *      DEFINES
@@ -38,6 +40,14 @@ lv_obj_t * lv_3dviewport_create(lv_obj_t * parent);
 void lv_3dviewport_set_clear_color(lv_obj_t * obj, lv_color_t color, lv_opa_t opa);
 
 void lv_3dviewport_set_clear_depth(lv_obj_t * obj, bool clear_depth);
+
+void lv_3dviewport_set_grid_visible(lv_obj_t * obj, bool visible);
+
+void lv_3dviewport_set_render_cb(lv_obj_t * obj, lv_draw_3d_cb_t cb, void * user_data);
+
+lv_3d_camera_t * lv_3dviewport_get_camera(lv_obj_t * obj);
+
+void lv_3dviewport_set_orbit(lv_obj_t * obj, float yaw, float pitch, float distance);
 
 /**********************
  *      MACROS
