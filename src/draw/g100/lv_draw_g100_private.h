@@ -30,6 +30,8 @@ extern "C" {
 #endif
 
 #include "../../libs/nanovg/nanovg.h"
+#include "lv_g100_context.h"
+#include "lv_g100_shader.h"
 
 /*********************
  *      DEFINES
@@ -72,6 +74,9 @@ typedef struct _lv_draw_g100_unit_t {
     struct _lv_pending_t * letter_pending;
 
     lv_cache_t * fbo_cache;
+
+    lv_g100_context_t ctx;
+    lv_g100_shader_t shader;
 
     struct NVGLUblurState * blur_state;
 } lv_draw_g100_unit_t;

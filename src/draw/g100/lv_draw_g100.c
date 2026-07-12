@@ -24,6 +24,8 @@
 #include "lv_g100_utils.h"
 #include "lv_g100_image_cache.h"
 #include "lv_g100_fbo_cache.h"
+#include "lv_g100_context.h"
+#include "lv_g100_shader.h"
 
 #if LV_USE_OPENGLES && LV_USE_EGL
     #include "../../drivers/opengles/lv_opengles_private.h"
@@ -131,6 +133,9 @@ void lv_draw_g100_init(void)
 
     unit->vg = NVG_CTX_CREATE(0);
     LV_ASSERT_MSG(unit->vg != NULL, "NanoVG init failed");
+
+    lv_g100_context_init(unit, &unit->ctx);
+    lv_g100_shader_init(unit, &unit->ctx, &unit->shader);
 
     lv_g100_utils_init(unit);
     lv_g100_image_cache_init(unit);
@@ -461,6 +466,8 @@ static int32_t draw_delete(lv_draw_unit_t * draw_unit)
     lv_g100_fbo_cache_deinit(unit);
     lv_g100_image_cache_deinit(unit);
     lv_g100_utils_deinit(unit);
+    lv_g100_shader_deinit(&unit->shader);
+    lv_g100_context_deinit(&unit->ctx);
     NVG_CTX_DELETE(unit->vg);
     unit->vg = NULL;
     return 0;
