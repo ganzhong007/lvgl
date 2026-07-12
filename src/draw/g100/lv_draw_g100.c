@@ -156,6 +156,7 @@ void lv_draw_g100_init(void)
     LV_LOG_INFO("G100 vector core ready");
 #endif
 
+    LV_LOG_INFO("G100 G5 complete 2D ready (line/arc/layer/mask/grad-extend)");
     LV_LOG_INFO("DrawUnitG100 ready (bootstrap GLES2 backend, unit_id=%d)", G100_DRAW_UNIT_ID);
 }
 
