@@ -34,8 +34,12 @@
 
 static void task_draw_cb(void * ctx, const lv_vector_path_t * path, const lv_vector_path_ctx_t * dsc);
 static void lv_path_to_nvg(NVGcontext * ctx, const lv_vector_path_t * src, lv_fpoint_t * offset);
+static void lv_path_stroke_dashed(NVGcontext * ctx, const lv_vector_path_t * src,
+                                  const lv_vector_stroke_dsc_t * stroke_dsc);
 static enum NVGcompositeOperation lv_blend_to_nvg(lv_vector_blend_t blend);
 static enum NVGwinding lv_fill_to_nvg(lv_vector_fill_t fill_rule);
+static int lv_stroke_cap_to_nvg(lv_vector_stroke_cap_t cap);
+static int lv_stroke_join_to_nvg(lv_vector_stroke_join_t join);
 
 /**********************
 *  STATIC VARIABLES
@@ -131,14 +135,15 @@ static void draw_fill(lv_draw_g100_unit_t * u, const lv_vector_fill_dsc_t * fill
     LV_PROFILER_DRAW_END;
 }
 
-static void draw_stroke(lv_draw_g100_unit_t * u, const lv_vector_stroke_dsc_t * stroke_dsc)
+static bool draw_stroke_prepare(lv_draw_g100_unit_t * u, const lv_vector_stroke_dsc_t * stroke_dsc)
 {
-    LV_PROFILER_DRAW_BEGIN;
-
     lv_g100_transform(u->vg, &stroke_dsc->matrix);
 
     nvgStrokeColor(u->vg, lv_color32_to_nvg(stroke_dsc->color, stroke_dsc->opa));
     nvgStrokeWidth(u->vg, stroke_dsc->width);
+    nvgLineCap(u->vg, lv_stroke_cap_to_nvg(stroke_dsc->cap));
+    nvgLineJoin(u->vg, lv_stroke_join_to_nvg(stroke_dsc->join));
+    nvgMiterLimit(u->vg, stroke_dsc->miter_limit > 0 ? stroke_dsc->miter_limit : 4.0f);
 
     switch(stroke_dsc->style) {
         case LV_VECTOR_DRAW_STYLE_SOLID:
@@ -147,8 +152,7 @@ static void draw_stroke(lv_draw_g100_unit_t * u, const lv_vector_stroke_dsc_t * 
         case LV_VECTOR_DRAW_STYLE_GRADIENT: {
                 NVGpaint paint;
                 if(!lv_g100_grad_to_paint(u->vg, &stroke_dsc->gradient, &paint)) {
-                    LV_PROFILER_DRAW_END;
-                    return;
+                    return false;
                 }
                 nvgStrokePaint(u->vg, paint);
             }
@@ -156,10 +160,35 @@ static void draw_stroke(lv_draw_g100_unit_t * u, const lv_vector_stroke_dsc_t * 
 
         default:
             LV_LOG_WARN("unsupported style: %d", stroke_dsc->style);
-            break;
+            return false;
     }
 
+    return true;
+}
+
+static void draw_stroke(lv_draw_g100_unit_t * u, const lv_vector_stroke_dsc_t * stroke_dsc)
+{
+    LV_PROFILER_DRAW_BEGIN;
+
+    if(!draw_stroke_prepare(u, stroke_dsc)) {
+        LV_PROFILER_DRAW_END;
+        return;
+    }
     nvgStroke(u->vg);
+
+    LV_PROFILER_DRAW_END;
+}
+
+static void draw_stroke_dashed(lv_draw_g100_unit_t * u, const lv_vector_path_t * path,
+                               const lv_vector_stroke_dsc_t * stroke_dsc)
+{
+    LV_PROFILER_DRAW_BEGIN;
+
+    if(!draw_stroke_prepare(u, stroke_dsc)) {
+        LV_PROFILER_DRAW_END;
+        return;
+    }
+    lv_path_stroke_dashed(u->vg, path, stroke_dsc);
 
     LV_PROFILER_DRAW_END;
 }
@@ -201,7 +230,12 @@ static void task_draw_cb(void * ctx, const lv_vector_path_t * path, const lv_vec
     }
 
     if(dsc->stroke_dsc.opa) {
-        draw_stroke(u, &dsc->stroke_dsc);
+        if(lv_array_is_empty(&dsc->stroke_dsc.dash_pattern)) {
+            draw_stroke(u, &dsc->stroke_dsc);
+        }
+        else {
+            draw_stroke_dashed(u, path, &dsc->stroke_dsc);
+        }
     }
 
     nvgRestore(u->vg);
@@ -305,6 +339,184 @@ static enum NVGwinding lv_fill_to_nvg(lv_vector_fill_t fill_rule)
         default:
             LV_LOG_WARN("Unknown supported fill rule: %d", fill_rule);
             return NVG_CCW;
+    }
+}
+
+static int lv_stroke_cap_to_nvg(lv_vector_stroke_cap_t cap)
+{
+    switch(cap) {
+        case LV_VECTOR_STROKE_CAP_BUTT:
+            return NVG_BUTT;
+        case LV_VECTOR_STROKE_CAP_ROUND:
+            return NVG_ROUND;
+        case LV_VECTOR_STROKE_CAP_SQUARE:
+            return NVG_SQUARE;
+        default:
+            return NVG_BUTT;
+    }
+}
+
+static int lv_stroke_join_to_nvg(lv_vector_stroke_join_t join)
+{
+    switch(join) {
+        case LV_VECTOR_STROKE_JOIN_MITER:
+            return NVG_MITER;
+        case LV_VECTOR_STROKE_JOIN_ROUND:
+            return NVG_ROUND;
+        case LV_VECTOR_STROKE_JOIN_BEVEL:
+            return NVG_BEVEL;
+        default:
+            return NVG_MITER;
+    }
+}
+
+#define G100_DASH_FLAT_MAX 512
+
+static void flatten_quad(const lv_fpoint_t * p0, const lv_fpoint_t * p1, const lv_fpoint_t * p2,
+                         lv_fpoint_t * out, uint32_t * out_cnt, uint32_t out_cap)
+{
+    const uint32_t steps = 12;
+    for(uint32_t i = 1; i <= steps && *out_cnt < out_cap; i++) {
+        const float t = (float)i / (float)steps;
+        const float u = 1.0f - t;
+        out[*out_cnt].x = u * u * p0->x + 2.0f * u * t * p1->x + t * t * p2->x;
+        out[*out_cnt].y = u * u * p0->y + 2.0f * u * t * p1->y + t * t * p2->y;
+        (*out_cnt)++;
+    }
+}
+
+static void flatten_cubic(const lv_fpoint_t * p0, const lv_fpoint_t * p1, const lv_fpoint_t * p2,
+                          const lv_fpoint_t * p3, lv_fpoint_t * out, uint32_t * out_cnt, uint32_t out_cap)
+{
+    const uint32_t steps = 16;
+    for(uint32_t i = 1; i <= steps && *out_cnt < out_cap; i++) {
+        const float t = (float)i / (float)steps;
+        const float u = 1.0f - t;
+        const float u2 = u * u;
+        const float u3 = u2 * u;
+        const float t2 = t * t;
+        const float t3 = t2 * t;
+        out[*out_cnt].x = u3 * p0->x + 3.0f * u2 * t * p1->x + 3.0f * u * t2 * p2->x + t3 * p3->x;
+        out[*out_cnt].y = u3 * p0->y + 3.0f * u2 * t * p1->y + 3.0f * u * t2 * p2->y + t3 * p3->y;
+        (*out_cnt)++;
+    }
+}
+
+static void dash_polyline(NVGcontext * ctx, const lv_fpoint_t * pts, uint32_t pt_count,
+                          const float * pattern, uint32_t pattern_count)
+{
+    if(pt_count < 2 || pattern_count == 0) return;
+
+    uint32_t pat_idx = 0;
+    float pat_remaining = pattern[0];
+    bool drawing = true;
+
+    lv_fpoint_t cur = pts[0];
+    for(uint32_t i = 1; i < pt_count; i++) {
+        const lv_fpoint_t end = pts[i];
+        const float dx = end.x - cur.x;
+        const float dy = end.y - cur.y;
+        const float seg_len = sqrtf(dx * dx + dy * dy);
+        if(seg_len < 1e-4f) {
+            cur = end;
+            continue;
+        }
+
+        const float ux = dx / seg_len;
+        const float uy = dy / seg_len;
+        float traveled = 0.0f;
+
+        while(traveled < seg_len - 1e-4f) {
+            const float step = LV_MIN(pat_remaining, seg_len - traveled);
+            const float x0 = cur.x + ux * traveled;
+            const float y0 = cur.y + uy * traveled;
+            const float x1 = cur.x + ux * (traveled + step);
+            const float y1 = cur.y + uy * (traveled + step);
+
+            if(drawing) {
+                nvgBeginPath(ctx);
+                nvgMoveTo(ctx, x0, y0);
+                nvgLineTo(ctx, x1, y1);
+                nvgStroke(ctx);
+            }
+
+            traveled += step;
+            pat_remaining -= step;
+            if(pat_remaining <= 1e-4f) {
+                pat_idx = (pat_idx + 1) % pattern_count;
+                pat_remaining = pattern[pat_idx];
+                drawing = (pat_idx % 2) == 0;
+            }
+        }
+
+        cur = end;
+    }
+}
+
+static void lv_path_stroke_dashed(NVGcontext * ctx, const lv_vector_path_t * src,
+                                  const lv_vector_stroke_dsc_t * stroke_dsc)
+{
+    const lv_vector_path_op_t * ops = lv_array_front(&src->ops);
+    const lv_fpoint_t * point = lv_array_front(&src->points);
+    const uint32_t op_size = lv_array_size(&src->ops);
+    const float * pattern = lv_array_front(&stroke_dsc->dash_pattern);
+    const uint32_t pattern_count = lv_array_size(&stroke_dsc->dash_pattern);
+
+    lv_fpoint_t flat[G100_DASH_FLAT_MAX];
+    uint32_t flat_count = 0;
+    lv_fpoint_t sub_start = {0, 0};
+    lv_fpoint_t cur = {0, 0};
+    bool has_cur = false;
+
+    for(uint32_t i = 0; i < op_size; i++) {
+        switch(ops[i]) {
+            case LV_VECTOR_PATH_OP_MOVE_TO:
+                if(flat_count >= 2) {
+                    dash_polyline(ctx, flat, flat_count, pattern, pattern_count);
+                }
+                flat_count = 0;
+                cur = *point;
+                sub_start = *point;
+                has_cur = true;
+                flat[flat_count++] = cur;
+                point++;
+                break;
+
+            case LV_VECTOR_PATH_OP_LINE_TO:
+                if(!has_cur) break;
+                cur = *point;
+                if(flat_count < G100_DASH_FLAT_MAX) flat[flat_count++] = cur;
+                point++;
+                break;
+
+            case LV_VECTOR_PATH_OP_QUAD_TO:
+                if(!has_cur) break;
+                flatten_quad(&cur, &point[0], &point[1], flat, &flat_count, G100_DASH_FLAT_MAX);
+                cur = point[1];
+                point += 2;
+                break;
+
+            case LV_VECTOR_PATH_OP_CUBIC_TO:
+                if(!has_cur) break;
+                flatten_cubic(&cur, &point[0], &point[1], &point[2], flat, &flat_count, G100_DASH_FLAT_MAX);
+                cur = point[2];
+                point += 3;
+                break;
+
+            case LV_VECTOR_PATH_OP_CLOSE:
+                if(has_cur && flat_count < G100_DASH_FLAT_MAX) {
+                    flat[flat_count++] = sub_start;
+                }
+                break;
+
+            default:
+                LV_LOG_WARN("unknown op: %d", ops[i]);
+                break;
+        }
+    }
+
+    if(flat_count >= 2) {
+        dash_polyline(ctx, flat, flat_count, pattern, pattern_count);
     }
 }
 

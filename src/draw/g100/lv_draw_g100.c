@@ -149,6 +149,10 @@ void lv_draw_g100_init(void)
     lv_draw_g100_label_init(unit);
     lv_draw_g100_blur_init(unit);
 
+#if LV_USE_VECTOR_GRAPHIC
+    LV_LOG_INFO("G100 vector core ready");
+#endif
+
     LV_LOG_INFO("DrawUnitG100 ready (bootstrap GLES2 backend, unit_id=%d)", G100_DRAW_UNIT_ID);
 }
 
