@@ -698,6 +698,8 @@ static inline size_t get_draw_dsc_size(lv_draw_task_type_t type)
             return sizeof(lv_draw_3d_line_dsc_t);
         case LV_DRAW_TASK_TYPE_3D_CALLBACK:
             return sizeof(lv_draw_3d_callback_dsc_t);
+        case LV_DRAW_TASK_TYPE_3D_MESH:
+            return sizeof(lv_draw_3d_mesh_dsc_t);
 #endif
             /* Note that default is not added here because when adding new draw task type,
              * if forget to add case, the compiler will automatically report a warning.
@@ -728,6 +730,17 @@ static void cleanup_task(lv_draw_task_t * t, lv_display_t * disp)
         if(draw_line_dsc->points) {
             lv_free((void *)draw_line_dsc->points);
             draw_line_dsc->points = NULL;
+        }
+    }
+    else if(t->type == LV_DRAW_TASK_TYPE_3D_MESH) {
+        lv_draw_3d_mesh_dsc_t * mesh_dsc = t->draw_dsc;
+        if(mesh_dsc->vertices) {
+            lv_free((void *)mesh_dsc->vertices);
+            mesh_dsc->vertices = NULL;
+        }
+        if(mesh_dsc->indices) {
+            lv_free((void *)mesh_dsc->indices);
+            mesh_dsc->indices = NULL;
         }
     }
 #endif

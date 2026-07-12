@@ -17,6 +17,9 @@
 #include "../../include/lvgl/draw/lv_draw_3d_clear.h"
 #include "../../include/lvgl/draw/lv_draw_3d_line.h"
 #include "../../include/lvgl/draw/lv_draw_3d_callback.h"
+#if LV_USE_3DMESH
+#include "../../include/lvgl/widgets/lv_3dmesh.h"
+#endif
 
 /*********************
  *      DEFINES
@@ -25,6 +28,7 @@
 #define MY_CLASS (&lv_3dviewport_class)
 #define GRID_HALF   2.5f
 #define GRID_STEP   0.5f
+#define GRID_Y      (-0.01f)
 
 /**********************
  *  STATIC PROTOTYPES
@@ -140,12 +144,12 @@ static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     if(grid_point_cnt == 0) {
         uint32_t idx = 0;
         for(float x = -GRID_HALF; x <= GRID_HALF + 0.001f; x += GRID_STEP) {
-            grid_points[idx++] = (lv_3dpoint_t) { x, 0.f, -GRID_HALF };
-            grid_points[idx++] = (lv_3dpoint_t) { x, 0.f, GRID_HALF };
+            grid_points[idx++] = (lv_3dpoint_t) { x, GRID_Y, -GRID_HALF };
+            grid_points[idx++] = (lv_3dpoint_t) { x, GRID_Y, GRID_HALF };
         }
         for(float z = -GRID_HALF; z <= GRID_HALF + 0.001f; z += GRID_STEP) {
-            grid_points[idx++] = (lv_3dpoint_t) { -GRID_HALF, 0.f, z };
-            grid_points[idx++] = (lv_3dpoint_t) { GRID_HALF, 0.f, z };
+            grid_points[idx++] = (lv_3dpoint_t) { -GRID_HALF, GRID_Y, z };
+            grid_points[idx++] = (lv_3dpoint_t) { GRID_HALF, GRID_Y, z };
         }
         grid_point_cnt = idx;
     }
@@ -171,7 +175,8 @@ static void lv_3dviewport_event(const lv_obj_class_t * class_p, lv_event_t * e)
     if(code == LV_EVENT_DRAW_MAIN) {
         draw_3dviewport(e);
     }
-    else if(code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED) {
+    else if(code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED
+            || code == LV_EVENT_PRESS_LOST) {
         on_pointer_event(e);
     }
 }
@@ -208,6 +213,10 @@ static void draw_3dviewport(lv_event_t * e)
     if(vp->show_grid) {
         submit_grid_lines(vp->pass_layer);
     }
+
+#if LV_USE_3DMESH
+    lv_3dmesh_submit_tree(obj, vp->pass_layer);
+#endif
 
     if(vp->render_cb) {
         lv_draw_3d_callback_dsc_t cb_dsc;
@@ -257,13 +266,14 @@ static void on_pointer_event(lv_event_t * e)
         int32_t dx = p.x - vp->last_drag.x;
         int32_t dy = p.y - vp->last_drag.y;
         vp->last_drag = p;
-        vp->camera.yaw += dx * 0.01f;
-        vp->camera.pitch += dy * 0.01f;
+        /* Match gltf demo: drag right → scene moves right; drag down → look down. */
+        vp->camera.yaw -= dx * 0.01f;
+        vp->camera.pitch -= dy * 0.01f;
         if(vp->camera.pitch > 1.4f) vp->camera.pitch = 1.4f;
         if(vp->camera.pitch < -1.4f) vp->camera.pitch = -1.4f;
         lv_obj_invalidate(obj);
     }
-    else if(code == LV_EVENT_RELEASED) {
+    else if(code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         vp->dragging = false;
     }
 }

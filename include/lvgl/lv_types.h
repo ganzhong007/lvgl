@@ -270,6 +270,7 @@ typedef struct _lv_spinner_t lv_spinner_t;
 
 typedef struct _lv_3dtexture_t lv_3dtexture_t;
 typedef struct _lv_3dviewport_t lv_3dviewport_t;
+typedef struct _lv_3dmesh_t lv_3dmesh_t;
 
 typedef struct _lv_gltf_t lv_gltf_t;
 

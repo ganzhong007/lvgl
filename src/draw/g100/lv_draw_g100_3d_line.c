@@ -109,7 +109,11 @@ void lv_draw_g100_3d_line(lv_draw_task_t * t, const lv_draw_3d_line_dsc_t * dsc)
         return;
     }
 
-    if(dsc->depth_test) GL_CALL(glEnable(GL_DEPTH_TEST));
+    if(dsc->depth_test) {
+        GL_CALL(glEnable(GL_DEPTH_TEST));
+        GL_CALL(glDepthMask(GL_TRUE));
+        GL_CALL(glDepthFunc(GL_LEQUAL));
+    }
     else GL_CALL(glDisable(GL_DEPTH_TEST));
     GL_CALL(glLineWidth(dsc->width > 0.f ? dsc->width : 1.f));
 

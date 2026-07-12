@@ -61,6 +61,7 @@
 #include "draw/lv_draw_3d_camera.h"
 #include "draw/lv_draw_3d_line.h"
 #include "draw/lv_draw_3d_callback.h"
+#include "draw/lv_draw_3d_mesh.h"
 #endif
 #include "draw/lv_draw_arc.h"
 #include "draw/lv_draw_blur.h"
@@ -175,6 +176,9 @@
 #include "widgets/lv_3dtexture.h"
 #if LV_USE_3DVIEWPORT
 #include "widgets/lv_3dviewport.h"
+#endif
+#if LV_USE_3DMESH
+#include "widgets/lv_3dmesh.h"
 #endif
 #include "widgets/lv_animimage.h"
 #include "widgets/lv_arc.h"

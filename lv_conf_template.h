@@ -930,6 +930,9 @@
 /** Requires `LV_USE_3D_DRAW_TASKS = 1` */
 #define LV_USE_3DVIEWPORT 0
 
+/** Requires `LV_USE_3D_DRAW_TASKS = 1` */
+#define LV_USE_3DMESH 0
+
 /*==================
  * THEMES
  *==================*/
@@ -1582,6 +1585,9 @@
 
     /** 3D viewport demo (G8.0) */
     #define LV_USE_DEMO_3DVIEWPORT      0
+
+    /** 3D mesh scene demo (G8.2) */
+    #define LV_USE_DEMO_3DSCENE         0
 
     /*---------------------------
      * Demos from lvgl/lv_demos
