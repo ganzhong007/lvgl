@@ -744,6 +744,10 @@ static void cleanup_task(lv_draw_task_t * t, lv_display_t * disp)
             lv_free((void *)mesh_dsc->indices);
             mesh_dsc->indices = NULL;
         }
+        if(mesh_dsc->normals) {
+            lv_free((void *)mesh_dsc->normals);
+            mesh_dsc->normals = NULL;
+        }
     }
 #endif
     /*If it was layer drawing free the layer too*/

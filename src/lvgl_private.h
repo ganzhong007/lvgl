@@ -200,6 +200,9 @@
 #if LV_USE_3DMESH
 #include "widgets/3dmesh/lv_3dmesh_private.h"
 #endif
+#if LV_USE_3DLIGHT
+#include "widgets/3dlight/lv_3dlight_private.h"
+#endif
 #include "widgets/animimage/lv_animimage_private.h"
 #include "widgets/arc/lv_arc_private.h"
 #include "widgets/arclabel/lv_arclabel_private.h"

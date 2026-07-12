@@ -20,6 +20,10 @@
 #if LV_USE_3DMESH
 #include "../../include/lvgl/widgets/lv_3dmesh.h"
 #endif
+#if LV_USE_3DLIGHT
+#include "../../include/lvgl/draw/lv_draw_3d_light.h"
+#include "../../include/lvgl/widgets/lv_3dlight.h"
+#endif
 
 /*********************
  *      DEFINES
@@ -209,6 +213,11 @@ static void draw_3dviewport(lv_event_t * e)
     clr_dsc.opa = LV_OPA_COVER;
     clr_dsc.clear_depth = vp->clear_depth;
     lv_draw_3d_clear(vp->pass_layer, &clr_dsc);
+
+#if LV_USE_3DLIGHT
+    lv_draw_3d_pass_reset_lights(vp->pass_layer);
+    lv_3dlight_submit_tree(obj, vp->pass_layer);
+#endif
 
     if(vp->show_grid) {
         submit_grid_lines(vp->pass_layer);

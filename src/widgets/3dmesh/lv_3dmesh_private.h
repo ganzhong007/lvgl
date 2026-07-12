@@ -32,6 +32,7 @@ extern "C" {
 struct _lv_3dmesh_t {
     lv_obj_t obj;
     float * vertices;
+    float * normals;
     uint32_t vertex_count;
     uint16_t * indices;
     uint32_t index_count;
@@ -40,6 +41,9 @@ struct _lv_3dmesh_t {
     float rotation[3];
     float scale[3];
     lv_draw_3d_mesh_flags_t flags;
+    bool phong;
+    float shininess;
+    float ambient;
 };
 
 /**********************

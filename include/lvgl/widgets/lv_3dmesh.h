@@ -48,6 +48,10 @@ void lv_3dmesh_set_depth_test(lv_obj_t * obj, bool enable);
 
 void lv_3dmesh_set_cull_face(lv_obj_t * obj, bool enable);
 
+void lv_3dmesh_set_phong(lv_obj_t * obj, bool enable);
+
+void lv_3dmesh_set_shininess(lv_obj_t * obj, float shininess);
+
 void lv_3dmesh_submit_tree(lv_obj_t * root, lv_layer_t * pass_layer);
 
 /**********************

@@ -35,6 +35,7 @@ static void lv_3dmesh_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj
 static void lv_3dmesh_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
 static void free_geometry(lv_3dmesh_t * mesh);
 static bool set_box_geometry(lv_3dmesh_t * mesh, float sx, float sy, float sz);
+static bool set_box_phong_geometry(lv_3dmesh_t * mesh, float sx, float sy, float sz);
 static void build_model_matrix(const lv_3dmesh_t * mesh, float out[LV_3D_MESH_MODEL_SIZE]);
 static void mat4_identity(float m[16]);
 static void mat4_translate(float m[16], float tx, float ty, float tz);
@@ -103,7 +104,9 @@ void lv_3dmesh_set_box(lv_obj_t * obj, float sx, float sy, float sz)
 {
     LV_CHECK_OBJ(obj, MY_CLASS, return);
     lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
-    if(!set_box_geometry(mesh, sx, sy, sz)) return;
+    bool ok = mesh->phong ? set_box_phong_geometry(mesh, sx, sy, sz)
+                          : set_box_geometry(mesh, sx, sy, sz);
+    if(!ok) return;
     lv_obj_invalidate(lv_obj_get_parent(obj));
 }
 
@@ -122,6 +125,22 @@ void lv_3dmesh_set_cull_face(lv_obj_t * obj, bool enable)
     lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
     if(enable) mesh->flags |= LV_3D_MESH_FLAG_CULL_FACE;
     else mesh->flags &= ~LV_3D_MESH_FLAG_CULL_FACE;
+    lv_obj_invalidate(lv_obj_get_parent(obj));
+}
+
+void lv_3dmesh_set_phong(lv_obj_t * obj, bool enable)
+{
+    LV_CHECK_OBJ(obj, MY_CLASS, return);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    mesh->phong = enable;
+    lv_obj_invalidate(lv_obj_get_parent(obj));
+}
+
+void lv_3dmesh_set_shininess(lv_obj_t * obj, float shininess)
+{
+    LV_CHECK_OBJ(obj, MY_CLASS, return);
+    lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
+    mesh->shininess = shininess;
     lv_obj_invalidate(lv_obj_get_parent(obj));
 }
 
@@ -154,6 +173,12 @@ void lv_3dmesh_submit(lv_obj_t * obj, lv_layer_t * pass_layer)
     dsc.index_count = mesh->index_count;
     dsc.color = mesh->color;
     dsc.flags = mesh->flags;
+    dsc.shininess = mesh->shininess;
+    dsc.ambient = mesh->ambient;
+    if(mesh->phong && mesh->normals != NULL) {
+        dsc.flags |= LV_3D_MESH_FLAG_PHONG;
+        dsc.normals = mesh->normals;
+    }
     build_model_matrix(mesh, dsc.model_matrix);
     lv_draw_3d_mesh(pass_layer, &dsc);
 }
@@ -167,6 +192,7 @@ static void lv_3dmesh_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj
     LV_UNUSED(class_p);
     lv_3dmesh_t * mesh = (lv_3dmesh_t *)obj;
     mesh->vertices = NULL;
+    mesh->normals = NULL;
     mesh->indices = NULL;
     mesh->vertex_count = 0;
     mesh->index_count = 0;
@@ -175,6 +201,9 @@ static void lv_3dmesh_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj
     mesh->rotation[0] = mesh->rotation[1] = mesh->rotation[2] = 0.f;
     mesh->scale[0] = mesh->scale[1] = mesh->scale[2] = 1.f;
     mesh->flags = LV_3D_MESH_FLAG_DEPTH_TEST | LV_3D_MESH_FLAG_CULL_FACE;
+    mesh->phong = false;
+    mesh->shininess = 32.f;
+    mesh->ambient = 0.15f;
 }
 
 static void lv_3dmesh_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
@@ -188,6 +217,10 @@ static void free_geometry(lv_3dmesh_t * mesh)
     if(mesh->vertices) {
         lv_free(mesh->vertices);
         mesh->vertices = NULL;
+    }
+    if(mesh->normals) {
+        lv_free(mesh->normals);
+        mesh->normals = NULL;
     }
     if(mesh->indices) {
         lv_free(mesh->indices);
@@ -236,6 +269,59 @@ static bool set_box_geometry(lv_3dmesh_t * mesh, float sx, float sy, float sz)
         mesh->vertices[i * 3 + 2] = unit_verts[i * 3 + 2] * sz;
     }
     lv_memcpy(mesh->indices, unit_indices, sizeof(unit_indices));
+    return true;
+}
+
+static bool set_box_phong_geometry(lv_3dmesh_t * mesh, float sx, float sy, float sz)
+{
+    static const float face_data[6][4][6] = {
+        /* +X */
+        { {0.5f, -0.5f, -0.5f, 1, 0, 0}, {0.5f, 0.5f, -0.5f, 1, 0, 0}, {0.5f, 0.5f, 0.5f, 1, 0, 0}, {0.5f, -0.5f, 0.5f, 1, 0, 0} },
+        /* -X */
+        { {-0.5f, -0.5f, 0.5f, -1, 0, 0}, {-0.5f, 0.5f, 0.5f, -1, 0, 0}, {-0.5f, 0.5f, -0.5f, -1, 0, 0}, {-0.5f, -0.5f, -0.5f, -1, 0, 0} },
+        /* +Y */
+        { {-0.5f, 0.5f, -0.5f, 0, 1, 0}, {0.5f, 0.5f, -0.5f, 0, 1, 0}, {0.5f, 0.5f, 0.5f, 0, 1, 0}, {-0.5f, 0.5f, 0.5f, 0, 1, 0} },
+        /* -Y */
+        { {-0.5f, -0.5f, 0.5f, 0, -1, 0}, {0.5f, -0.5f, 0.5f, 0, -1, 0}, {0.5f, -0.5f, -0.5f, 0, -1, 0}, {-0.5f, -0.5f, -0.5f, 0, -1, 0} },
+        /* +Z */
+        { {-0.5f, -0.5f, 0.5f, 0, 0, 1}, {0.5f, -0.5f, 0.5f, 0, 0, 1}, {0.5f, 0.5f, 0.5f, 0, 0, 1}, {-0.5f, 0.5f, 0.5f, 0, 0, 1} },
+        /* -Z */
+        { {0.5f, -0.5f, -0.5f, 0, 0, -1}, {-0.5f, -0.5f, -0.5f, 0, 0, -1}, {-0.5f, 0.5f, -0.5f, 0, 0, -1}, {0.5f, 0.5f, -0.5f, 0, 0, -1} },
+    };
+
+    free_geometry(mesh);
+
+    mesh->vertex_count = 24;
+    mesh->index_count = 36;
+    mesh->vertices = lv_malloc(sizeof(float) * mesh->vertex_count * 3);
+    mesh->normals = lv_malloc(sizeof(float) * mesh->vertex_count * 3);
+    mesh->indices = lv_malloc(sizeof(uint16_t) * mesh->index_count);
+    if(mesh->vertices == NULL || mesh->normals == NULL || mesh->indices == NULL) {
+        free_geometry(mesh);
+        return false;
+    }
+
+    uint32_t v = 0;
+    uint32_t i = 0;
+    for(uint32_t f = 0; f < 6; f++) {
+        for(uint32_t c = 0; c < 4; c++) {
+            mesh->vertices[v * 3 + 0] = face_data[f][c][0] * sx;
+            mesh->vertices[v * 3 + 1] = face_data[f][c][1] * sy;
+            mesh->vertices[v * 3 + 2] = face_data[f][c][2] * sz;
+            mesh->normals[v * 3 + 0] = face_data[f][c][3];
+            mesh->normals[v * 3 + 1] = face_data[f][c][4];
+            mesh->normals[v * 3 + 2] = face_data[f][c][5];
+            v++;
+        }
+        uint16_t base = (uint16_t)(v - 4);
+        mesh->indices[i++] = base;
+        mesh->indices[i++] = base + 1;
+        mesh->indices[i++] = base + 2;
+        mesh->indices[i++] = base;
+        mesh->indices[i++] = base + 2;
+        mesh->indices[i++] = base + 3;
+    }
+
     return true;
 }
 

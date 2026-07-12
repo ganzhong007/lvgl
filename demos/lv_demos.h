@@ -57,6 +57,10 @@ typedef struct _lv_demo_args lv_demo_args_t;
 #include "3dscene/lv_demo_3dscene.h"
 #endif
 
+#if LV_USE_DEMO_3DVIEW
+#include "3dview/lv_demo_3dview.h"
+#endif
+
 /*********************
  *      DEFINES
  *********************/

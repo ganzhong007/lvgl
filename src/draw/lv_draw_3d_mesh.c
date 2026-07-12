@@ -18,6 +18,8 @@ void lv_draw_3d_mesh_dsc_init(lv_draw_3d_mesh_dsc_t * dsc)
     dsc->base.dsc_size = sizeof(lv_draw_3d_mesh_dsc_t);
     dsc->color = lv_color32_make(0xFF, 0xFF, 0xFF, LV_OPA_COVER);
     dsc->flags = LV_3D_MESH_FLAG_DEPTH_TEST | LV_3D_MESH_FLAG_CULL_FACE;
+    dsc->shininess = 32.f;
+    dsc->ambient = 0.15f;
     dsc->model_matrix[0] = dsc->model_matrix[5] = dsc->model_matrix[10] = dsc->model_matrix[15] = 1.f;
 }
 
@@ -43,11 +45,14 @@ void lv_draw_3d_mesh(lv_layer_t * pass_layer, const lv_draw_3d_mesh_dsc_t * dsc)
     new_dsc->base.dsc_size = sizeof(lv_draw_3d_mesh_dsc_t);
     new_dsc->color = dsc->color;
     new_dsc->flags = dsc->flags;
+    new_dsc->shininess = dsc->shininess;
+    new_dsc->ambient = dsc->ambient;
     new_dsc->vertex_count = dsc->vertex_count;
     new_dsc->index_count = dsc->index_count;
     lv_memcpy(new_dsc->model_matrix, dsc->model_matrix, sizeof(new_dsc->model_matrix));
 
     new_dsc->vertices = lv_malloc(sizeof(float) * 3 * dsc->vertex_count);
+    new_dsc->normals = NULL;
     new_dsc->indices = lv_malloc(sizeof(uint16_t) * dsc->index_count);
     if(new_dsc->vertices == NULL || new_dsc->indices == NULL) {
         if(new_dsc->vertices) lv_free((void *)new_dsc->vertices);
@@ -61,6 +66,20 @@ void lv_draw_3d_mesh(lv_layer_t * pass_layer, const lv_draw_3d_mesh_dsc_t * dsc)
 
     lv_memcpy((void *)new_dsc->vertices, dsc->vertices, sizeof(float) * 3 * dsc->vertex_count);
     lv_memcpy((void *)new_dsc->indices, dsc->indices, sizeof(uint16_t) * dsc->index_count);
+
+    if(dsc->normals != NULL) {
+        new_dsc->normals = lv_malloc(sizeof(float) * 3 * dsc->vertex_count);
+        if(new_dsc->normals == NULL) {
+            lv_free((void *)new_dsc->vertices);
+            lv_free((void *)new_dsc->indices);
+            new_dsc->vertices = NULL;
+            new_dsc->indices = NULL;
+            t->state = LV_DRAW_TASK_STATE_FINISHED;
+            LV_PROFILER_DRAW_END;
+            return;
+        }
+        lv_memcpy((void *)new_dsc->normals, dsc->normals, sizeof(float) * 3 * dsc->vertex_count);
+    }
 
     lv_draw_finalize_task_creation(pass_layer, t);
 

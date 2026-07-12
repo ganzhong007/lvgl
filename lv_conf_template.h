@@ -933,6 +933,9 @@
 /** Requires `LV_USE_3D_DRAW_TASKS = 1` */
 #define LV_USE_3DMESH 0
 
+/** Requires `LV_USE_3D_DRAW_TASKS = 1` */
+#define LV_USE_3DLIGHT 0
+
 /*==================
  * THEMES
  *==================*/
@@ -1588,6 +1591,9 @@
 
     /** 3D mesh scene demo (G8.2) */
     #define LV_USE_DEMO_3DSCENE         0
+
+    /** 3D phong lights demo (G8.4) */
+    #define LV_USE_DEMO_3DVIEW          0
 
     /*---------------------------
      * Demos from lvgl/lv_demos

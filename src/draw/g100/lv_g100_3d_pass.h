@@ -16,6 +16,7 @@ extern "C" {
 
 #include "../../lvgl_public.h"
 #include "../../../include/lvgl/draw/lv_draw_3d_camera.h"
+#include "../../../include/lvgl/draw/lv_draw_3d_light.h"
 
 #if LV_USE_DRAW_G100 && LV_USE_3D_DRAW_TASKS
 
@@ -47,6 +48,8 @@ typedef struct {
     lv_3d_camera_t camera;
     float view_proj[LV_3D_CAMERA_MVP_SIZE];
     bool camera_valid;
+    lv_3d_light_dsc_t lights[LV_3D_PASS_MAX_LIGHTS];
+    uint32_t light_count;
 } lv_3d_pass_layer_ud_t;
 
 /**********************

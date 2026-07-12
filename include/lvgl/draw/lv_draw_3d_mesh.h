@@ -33,17 +33,21 @@ typedef enum {
     LV_3D_MESH_FLAG_NONE       = 0,
     LV_3D_MESH_FLAG_DEPTH_TEST = 1 << 0,
     LV_3D_MESH_FLAG_CULL_FACE  = 1 << 1,
+    LV_3D_MESH_FLAG_PHONG      = 1 << 2,
 } lv_draw_3d_mesh_flags_t;
 
 typedef struct {
     lv_draw_dsc_base_t base;
     const float * vertices;
     uint32_t vertex_count;
+    const float * normals;
     const uint16_t * indices;
     uint32_t index_count;
     lv_color32_t color;
     float model_matrix[LV_3D_MESH_MODEL_SIZE];
     lv_draw_3d_mesh_flags_t flags;
+    float shininess;
+    float ambient;
 } lv_draw_3d_mesh_dsc_t;
 
 /**********************
