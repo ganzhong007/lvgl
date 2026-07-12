@@ -49,6 +49,10 @@ typedef struct _lv_demo_args lv_demo_args_t;
 #include "gltf/lv_demo_gltf.h"
 #endif
 
+#if LV_USE_DEMO_3DVIEWPORT
+#include "3dviewport/lv_demo_3dviewport.h"
+#endif
+
 /*********************
  *      DEFINES
  *********************/

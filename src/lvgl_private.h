@@ -196,6 +196,7 @@
 #include "themes/lv_theme_private.h"
 #include "tick/lv_tick_private.h"
 #include "widgets/3dtexture/lv_3dtexture_private.h"
+#include "widgets/3dviewport/lv_3dviewport_private.h"
 #include "widgets/animimage/lv_animimage_private.h"
 #include "widgets/arc/lv_arc_private.h"
 #include "widgets/arclabel/lv_arclabel_private.h"

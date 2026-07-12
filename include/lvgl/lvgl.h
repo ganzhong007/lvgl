@@ -55,6 +55,10 @@
 #include "draw/lv_color_op.h"
 #include "draw/lv_draw.h"
 #include "draw/lv_draw_3d.h"
+#if LV_USE_3D_DRAW_TASKS
+#include "draw/lv_draw_3d_viewport.h"
+#include "draw/lv_draw_3d_clear.h"
+#endif
 #include "draw/lv_draw_arc.h"
 #include "draw/lv_draw_blur.h"
 #include "draw/lv_draw_buf.h"
@@ -166,6 +170,9 @@
 #include "themes/lv_theme_simple.h"
 #include "tick/lv_tick.h"
 #include "widgets/lv_3dtexture.h"
+#if LV_USE_3DVIEWPORT
+#include "widgets/lv_3dviewport.h"
+#endif
 #include "widgets/lv_animimage.h"
 #include "widgets/lv_arc.h"
 #include "widgets/lv_arclabel.h"

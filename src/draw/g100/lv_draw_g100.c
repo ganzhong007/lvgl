@@ -34,6 +34,11 @@
 #include "lv_g100_solid.h"
 #include "lv_g100_tex.h"
 #include "lv_g100_blur_kawase.h"
+#if LV_USE_3D_DRAW_TASKS
+#include "lv_g100_3d_pass.h"
+#include "../../include/lvgl/draw/lv_draw_3d_viewport.h"
+#include "../../include/lvgl/draw/lv_draw_3d_clear.h"
+#endif
 
 #if LV_USE_OPENGLES && LV_USE_EGL
     #include "../../drivers/opengles/lv_opengles_private.h"
@@ -167,6 +172,9 @@ void lv_draw_g100_init(void)
 #if LV_USE_3DTEXTURE
     LV_LOG_INFO("G100 3D BLIT ready (LV_DRAW_TASK_TYPE_3D composite)");
 #endif
+#if LV_USE_3D_DRAW_TASKS
+    LV_LOG_INFO("G100 3D viewport ready (3D_VIEWPORT + 3D_CLEAR resolve)");
+#endif
     LV_LOG_INFO("DrawUnitG100 ready (bootstrap GLES2 backend, unit_id=%d)", G100_DRAW_UNIT_ID);
 }
 
@@ -274,6 +282,15 @@ static void draw_execute(lv_draw_g100_unit_t * u, lv_draw_task_t * t)
             break;
 #endif
 
+#if LV_USE_3D_DRAW_TASKS
+        case LV_DRAW_TASK_TYPE_3D_VIEWPORT:
+            lv_draw_g100_3d_viewport(t, t->draw_dsc, &t->area);
+            break;
+        case LV_DRAW_TASK_TYPE_3D_CLEAR:
+            lv_draw_g100_3d_clear(t, t->draw_dsc);
+            break;
+#endif
+
         case LV_DRAW_TASK_TYPE_BLUR:
             lv_draw_g100_blur(t, t->draw_dsc, &t->area);
             break;
@@ -287,6 +304,14 @@ static void draw_execute(lv_draw_g100_unit_t * u, lv_draw_task_t * t)
 static void on_layer_changed(lv_layer_t * new_layer)
 {
     LV_PROFILER_DRAW_BEGIN;
+
+#if LV_USE_3D_DRAW_TASKS
+    if(lv_g100_3d_pass_layer_is(new_layer)) {
+        nvgluBindFramebuffer(NULL);
+        LV_PROFILER_DRAW_END;
+        return;
+    }
+#endif
 
     if(!new_layer->user_data) {
         /* Bind the default framebuffer for normal rendering */
@@ -419,6 +444,16 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
         u->current_layer = layer;
     }
 
+#if LV_USE_3D_DRAW_TASKS
+    if(lv_g100_3d_pass_layer_is(layer)) {
+        t->state = LV_DRAW_TASK_STATE_IN_PROGRESS;
+        draw_execute(u, t);
+        t->state = LV_DRAW_TASK_STATE_FINISHED;
+        lv_draw_dispatch_request();
+        return 1;
+    }
+#endif
+
     if(!u->is_started) {
         const int32_t buf_w = lv_area_get_width(&layer->buf_area);
         const int32_t buf_h = lv_area_get_height(&layer->buf_area);
@@ -464,6 +499,10 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
 #endif
 #if LV_USE_3DTEXTURE
         case LV_DRAW_TASK_TYPE_3D:
+#endif
+#if LV_USE_3D_DRAW_TASKS
+        case LV_DRAW_TASK_TYPE_3D_VIEWPORT:
+        case LV_DRAW_TASK_TYPE_3D_CLEAR:
 #endif
             break;
 

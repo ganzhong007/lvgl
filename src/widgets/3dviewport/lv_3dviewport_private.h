@@ -1,0 +1,52 @@
+/**
+ * @file lv_3dviewport_private.h
+ *
+ */
+
+#ifndef LV_3DVIEWPORT_PRIVATE_H
+#define LV_3DVIEWPORT_PRIVATE_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*********************
+ *      INCLUDES
+ *********************/
+
+#include "../../lvgl_public.h"
+
+#if LV_USE_3DVIEWPORT
+
+#include "../../core/lv_obj_private.h"
+
+/*********************
+ *      DEFINES
+ *********************/
+
+/**********************
+ *      TYPEDEFS
+ **********************/
+
+struct _lv_3dviewport_t {
+    lv_obj_t obj;
+    lv_layer_t * pass_layer;
+    lv_color32_t clear_color;
+    bool clear_depth;
+};
+
+/**********************
+ * GLOBAL PROTOTYPES
+ **********************/
+
+/**********************
+ *      MACROS
+ **********************/
+
+#endif /*LV_USE_3DVIEWPORT*/
+
+#ifdef __cplusplus
+} /*extern "C"*/
+#endif
+
+#endif /*LV_3DVIEWPORT_PRIVATE_H*/

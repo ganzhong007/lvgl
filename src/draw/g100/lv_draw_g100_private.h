@@ -99,6 +99,13 @@ typedef struct _lv_draw_g100_unit_t {
 void lv_draw_g100_3d(lv_draw_task_t * t, const lv_draw_3d_dsc_t * dsc, const lv_area_t * coords);
 #endif
 
+#if LV_USE_3D_DRAW_TASKS
+#include "../../include/lvgl/draw/lv_draw_3d_viewport.h"
+#include "../../include/lvgl/draw/lv_draw_3d_clear.h"
+void lv_draw_g100_3d_viewport(lv_draw_task_t * t, const lv_draw_3d_viewport_dsc_t * dsc, const lv_area_t * coords);
+void lv_draw_g100_3d_clear(lv_draw_task_t * t, const lv_draw_3d_clear_dsc_t * dsc);
+#endif
+
 /**
  * Draw arc on a NanoVG context
  * @param t pointer to a drawing task

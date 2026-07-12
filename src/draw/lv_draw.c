@@ -286,6 +286,16 @@ bool lv_draw_dispatch_layer(lv_display_t * disp, lv_layer_t * layer)
                     break;
                 }
             }
+#if LV_USE_3D_DRAW_TASKS
+            else if(t_src->type == LV_DRAW_TASK_TYPE_3D_VIEWPORT && t_src->state == LV_DRAW_TASK_STATE_BLOCKED) {
+                lv_draw_3d_viewport_dsc_t * vp_dsc = t_src->draw_dsc;
+                if(vp_dsc->pass_layer == layer) {
+                    t_src->state = LV_DRAW_TASK_STATE_WAITING;
+                    lv_draw_dispatch_request();
+                    break;
+                }
+            }
+#endif
             t_src = t_src->next;
         }
     }
@@ -678,6 +688,12 @@ static inline size_t get_draw_dsc_size(lv_draw_task_type_t type)
 #if LV_USE_3DTEXTURE
         case LV_DRAW_TASK_TYPE_3D:
             return sizeof(lv_draw_3d_dsc_t);
+#endif
+#if LV_USE_3D_DRAW_TASKS
+        case LV_DRAW_TASK_TYPE_3D_VIEWPORT:
+            return sizeof(lv_draw_3d_viewport_dsc_t);
+        case LV_DRAW_TASK_TYPE_3D_CLEAR:
+            return sizeof(lv_draw_3d_clear_dsc_t);
 #endif
             /* Note that default is not added here because when adding new draw task type,
              * if forget to add case, the compiler will automatically report a warning.

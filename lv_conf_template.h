@@ -924,6 +924,12 @@
 
 #define LV_USE_3DTEXTURE  0
 
+/** G100 3D draw task family (VIEWPORT / CLEAR / MESH / …) */
+#define LV_USE_3D_DRAW_TASKS 0
+
+/** Requires `LV_USE_3D_DRAW_TASKS = 1` */
+#define LV_USE_3DVIEWPORT 0
+
 /*==================
  * THEMES
  *==================*/
@@ -1573,6 +1579,9 @@
 
     /** GLTF demo */
     #define LV_USE_DEMO_GLTF            0
+
+    /** 3D viewport demo (G8.0) */
+    #define LV_USE_DEMO_3DVIEWPORT      0
 
     /*---------------------------
      * Demos from lvgl/lv_demos
