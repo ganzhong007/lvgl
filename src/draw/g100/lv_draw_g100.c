@@ -157,6 +157,9 @@ void lv_draw_g100_init(void)
 #endif
 
     LV_LOG_INFO("G100 G5 complete 2D ready (line/arc/layer/mask/grad-extend)");
+#if LV_USE_3DTEXTURE
+    LV_LOG_INFO("G100 3D BLIT ready (LV_DRAW_TASK_TYPE_3D composite)");
+#endif
     LV_LOG_INFO("DrawUnitG100 ready (bootstrap GLES2 backend, unit_id=%d)", G100_DRAW_UNIT_ID);
 }
 
