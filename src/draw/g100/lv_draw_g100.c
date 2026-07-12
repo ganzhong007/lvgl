@@ -24,6 +24,7 @@
 #include "lv_g100_utils.h"
 #include "lv_g100_image_cache.h"
 #include "lv_g100_fbo_cache.h"
+#include "lv_g100_fbo_pool.h"
 #include "lv_g100_context.h"
 #include "lv_g100_shader.h"
 #include "lv_g100_grad.h"
@@ -147,6 +148,7 @@ void lv_draw_g100_init(void)
     lv_g100_utils_init(unit);
     lv_g100_image_cache_init(unit);
     lv_g100_fbo_cache_init(unit);
+    lv_g100_fbo_pool_init(unit);
     lv_draw_g100_label_init(unit);
     lv_draw_g100_blur_init(unit);
 
@@ -476,6 +478,7 @@ static int32_t draw_delete(lv_draw_unit_t * draw_unit)
 {
     lv_draw_g100_unit_t * unit = (lv_draw_g100_unit_t *)draw_unit;
     lv_draw_g100_blur_deinit(unit);
+    lv_g100_fbo_pool_deinit(unit);
     lv_draw_g100_label_deinit(unit);
     lv_g100_fbo_cache_deinit(unit);
     lv_g100_image_cache_deinit(unit);

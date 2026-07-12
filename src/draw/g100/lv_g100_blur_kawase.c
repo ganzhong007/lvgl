@@ -8,6 +8,7 @@
 
 #include "lv_draw_g100_private.h"
 #include "../../libs/nanovg/nanovg_gl_utils.h"
+#include "lv_g100_fbo_pool.h"
 
 #if LV_USE_OPENGLES && LV_USE_EGL
     #include "../../drivers/opengles/lv_opengles_private.h"
@@ -30,10 +31,6 @@ typedef struct {
     GLint up_loc_recolor;
     GLint attr_pos;
     GLint attr_uv;
-    NVGLUframebuffer * ping;
-    NVGLUframebuffer * pong;
-    int fb_w;
-    int fb_h;
     GLuint capture_tex;
     int capture_w;
     int capture_h;
@@ -127,25 +124,6 @@ static GLuint link_program(GLuint vs, GLuint fs)
         return 0;
     }
     return prog;
-}
-
-static void ensure_fbs(NVGcontext * ctx, int w, int h)
-{
-    if(g_kawase.ping && g_kawase.pong && g_kawase.fb_w >= w && g_kawase.fb_h >= h) return;
-
-    if(g_kawase.ping) {
-        nvgluDeleteFramebuffer(g_kawase.ping);
-        g_kawase.ping = NULL;
-    }
-    if(g_kawase.pong) {
-        nvgluDeleteFramebuffer(g_kawase.pong);
-        g_kawase.pong = NULL;
-    }
-
-    g_kawase.ping = nvgluCreateFramebuffer(ctx, w, h, 0, NVG_TEXTURE_RGBA);
-    g_kawase.pong = nvgluCreateFramebuffer(ctx, w, h, 0, NVG_TEXTURE_RGBA);
-    g_kawase.fb_w = g_kawase.ping ? w : 0;
-    g_kawase.fb_h = g_kawase.pong ? h : 0;
 }
 
 static void ensure_capture(int w, int h)
@@ -253,8 +231,6 @@ void lv_g100_blur_kawase_deinit(lv_draw_g100_unit_t * unit)
     LV_UNUSED(unit);
 
 #if LV_G100_KAWASE_HAS_GL
-    if(g_kawase.ping) nvgluDeleteFramebuffer(g_kawase.ping);
-    if(g_kawase.pong) nvgluDeleteFramebuffer(g_kawase.pong);
     if(g_kawase.capture_tex) glDeleteTextures(1, &g_kawase.capture_tex);
     if(g_kawase.vbo) glDeleteBuffers(1, &g_kawase.vbo);
     if(g_kawase.down_prog) glDeleteProgram(g_kawase.down_prog);
@@ -285,8 +261,9 @@ int lv_g100_blur_kawase_region(lv_draw_g100_unit_t * unit, NVGLUframebuffer * fb
 #else
     if(!g_kawase.ready || !unit || !unit->vg || w <= 0 || h <= 0 || radius <= 0) return -1;
 
-    ensure_fbs(unit->vg, w, h);
-    if(!g_kawase.ping || !g_kawase.pong) return -1;
+    NVGLUframebuffer * ping = lv_g100_fbo_pool_acquire(unit, w, h, 0);
+    NVGLUframebuffer * pong = lv_g100_fbo_pool_acquire(unit, w, h, 1);
+    if(!ping || !pong) return -1;
 
     const bool is_root = (fb == NULL);
     const int passes = calc_passes(radius);
@@ -326,12 +303,12 @@ int lv_g100_blur_kawase_region(lv_draw_g100_unit_t * unit, NVGLUframebuffer * fb
         glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, x, y, w, h);
     }
 
-    nvgluBindFramebuffer(g_kawase.ping);
+    nvgluBindFramebuffer(ping);
     draw_kawase_pass(g_kawase.up_prog, g_kawase.capture_tex, w, h,
                      0.5f / (float)w, 0.5f / (float)h, NULL, true);
 
-    NVGLUframebuffer * cur = g_kawase.ping;
-    NVGLUframebuffer * nxt = g_kawase.pong;
+    NVGLUframebuffer * cur = ping;
+    NVGLUframebuffer * nxt = pong;
     int cur_w = w;
     int cur_h = h;
 
