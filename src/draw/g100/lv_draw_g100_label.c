@@ -13,6 +13,7 @@
 
 #include "lv_g100_utils.h"
 #include "lv_g100_image_cache.h"
+#include "lv_g100_text_hash.h"
 #include "../lv_draw_label_private.h"
 #include "../lv_draw_image_private.h"
 #include "../../misc/cache/lv_cache_entry_private.h"
@@ -67,6 +68,7 @@ void lv_draw_g100_label_init(lv_draw_g100_unit_t * u)
     LV_ASSERT_NULL(u);
     LV_ASSERT(u->letter_cache == NULL);
     LV_ASSERT(u->letter_pending == NULL);
+    LV_ASSERT(u->label_text_cache == NULL);
 
     const lv_cache_ops_t ops = {
         .compare_cb = (lv_cache_compare_cb_t)letter_compare_cb,
@@ -78,6 +80,11 @@ void lv_draw_g100_label_init(lv_draw_g100_unit_t * u)
     lv_cache_set_name(u->letter_cache, "NVG_LETTER");
     u->letter_pending = lv_pending_create(sizeof(lv_cache_entry_t *), 4);
     lv_pending_set_free_cb(u->letter_pending, letter_cache_release_cb, u->letter_cache);
+
+    u->label_text_cache = lv_malloc_zeroed(sizeof(lv_g100_label_text_cache_t));
+    LV_ASSERT_MALLOC(u->label_text_cache);
+    lv_g100_label_text_cache_init(u->label_text_cache);
+    LV_LOG_INFO("G100 label text hash ready");
 }
 
 void lv_draw_g100_label_deinit(lv_draw_g100_unit_t * u)
@@ -91,6 +98,11 @@ void lv_draw_g100_label_deinit(lv_draw_g100_unit_t * u)
 
     lv_cache_destroy(u->letter_cache, NULL);
     u->letter_cache = NULL;
+
+    if(u->label_text_cache) {
+        lv_free(u->label_text_cache);
+        u->label_text_cache = NULL;
+    }
 }
 
 void lv_draw_g100_letter(lv_draw_task_t * t, const lv_draw_letter_dsc_t * dsc, const lv_area_t * coords)
@@ -128,6 +140,12 @@ void lv_draw_g100_letter(lv_draw_task_t * t, const lv_draw_letter_dsc_t * dsc, c
 void lv_draw_g100_label(lv_draw_task_t * t, const lv_draw_label_dsc_t * dsc, const lv_area_t * coords)
 {
     LV_PROFILER_DRAW_BEGIN;
+    if(t && t->draw_unit && dsc) {
+        lv_draw_g100_unit_t * u = (lv_draw_g100_unit_t *)t->draw_unit;
+        if(u->label_text_cache) {
+            lv_g100_label_text_cache_touch(u->label_text_cache, dsc);
+        }
+    }
     lv_draw_label_iterate_characters(t, dsc, coords, draw_letter_cb);
     LV_PROFILER_DRAW_END;
 }

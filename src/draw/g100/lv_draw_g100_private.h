@@ -33,6 +33,8 @@ extern "C" {
 #include "lv_g100_context.h"
 #include "lv_g100_shader.h"
 
+struct _lv_g100_label_text_cache_t;
+
 /*********************
  *      DEFINES
  *********************/
@@ -77,6 +79,8 @@ typedef struct _lv_draw_g100_unit_t {
 
     lv_g100_context_t ctx;
     lv_g100_shader_t shader;
+
+    struct _lv_g100_label_text_cache_t * label_text_cache;
 
     struct NVGLUblurState * blur_state;
 } lv_draw_g100_unit_t;
