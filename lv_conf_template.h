@@ -461,6 +461,8 @@
     #define LV_NANOVG_BACKEND   LV_NANOVG_BACKEND_GLES2
     #define LV_NANOVG_IMAGE_CACHE_CNT 128
     #define LV_NANOVG_LETTER_CACHE_CNT 512
+    /** Optional: GLES2 runtime in libs/g100 (path B); draw/g100 remains LVGL adapter */
+    #define LV_USE_G100_LIB 0
 #endif
 
 /*=======================

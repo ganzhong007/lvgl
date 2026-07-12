@@ -27,6 +27,9 @@
 #include "lv_g100_fbo_pool.h"
 #include "lv_g100_context.h"
 #include "lv_g100_shader.h"
+#if LV_USE_G100_LIB
+#include "../../libs/g100/lv_g100_lib.h"
+#endif
 #include "lv_g100_grad.h"
 #include "lv_g100_solid.h"
 #include "lv_g100_tex.h"
@@ -139,8 +142,12 @@ void lv_draw_g100_init(void)
     unit->vg = NVG_CTX_CREATE(0);
     LV_ASSERT_MSG(unit->vg != NULL, "NanoVG init failed");
 
+#if LV_USE_G100_LIB
+    lv_g100_lib_init(unit);
+#else
     lv_g100_context_init(unit, &unit->ctx);
     lv_g100_shader_init(unit, &unit->ctx, &unit->shader);
+#endif
     lv_g100_grad_init(unit);
     lv_g100_solid_init(unit);
     lv_g100_tex_init(unit);
@@ -487,11 +494,15 @@ static int32_t draw_delete(lv_draw_unit_t * draw_unit)
     lv_g100_fbo_cache_deinit(unit);
     lv_g100_image_cache_deinit(unit);
     lv_g100_utils_deinit(unit);
+#if LV_USE_G100_LIB
+    lv_g100_lib_deinit(unit);
+#else
     lv_g100_shader_deinit(&unit->shader);
+    lv_g100_context_deinit(&unit->ctx);
+#endif
     lv_g100_grad_deinit(unit);
     lv_g100_solid_deinit(unit);
     lv_g100_tex_deinit(unit);
-    lv_g100_context_deinit(&unit->ctx);
     NVG_CTX_DELETE(unit->vg);
     unit->vg = NULL;
     return 0;
