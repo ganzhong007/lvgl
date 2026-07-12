@@ -13,6 +13,7 @@
 #if LV_USE_3DLIGHT
 
 #include "../../core/lv_obj_class_private.h"
+#include "../../include/lvgl/misc/lv_style_3d.h"
 
 #include <math.h>
 
@@ -28,6 +29,7 @@
 
 static void lv_3dlight_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
 static void normalize3(float v[3]);
+static void lv_3dlight_event(const lv_obj_class_t * class_p, lv_event_t * e);
 
 /**********************
  *  STATIC VARIABLES
@@ -35,6 +37,7 @@ static void normalize3(float v[3]);
 
 const lv_obj_class_t lv_3dlight_class = {
     .constructor_cb = lv_3dlight_constructor,
+    .event_cb = lv_3dlight_event,
     .width_def = 0,
     .height_def = 0,
     .instance_size = sizeof(lv_3dlight_t),
@@ -125,6 +128,16 @@ static void lv_3dlight_constructor(const lv_obj_class_t * class_p, lv_obj_t * ob
     light->dsc.color = lv_color32_make(0xFF, 0xFF, 0xFF, LV_OPA_COVER);
     light->dsc.intensity = 1.f;
     light->dsc.range = 0.f;
+}
+
+static void lv_3dlight_event(const lv_obj_class_t * class_p, lv_event_t * e)
+{
+    lv_result_t res = lv_obj_event_base(class_p, e);
+    if(res != LV_RESULT_OK) return;
+
+    if(lv_event_get_code(e) == LV_EVENT_STYLE_CHANGED) {
+        lv_3dstyle_apply_light(lv_event_get_current_target(e));
+    }
 }
 
 static void normalize3(float v[3])

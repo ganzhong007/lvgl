@@ -39,6 +39,7 @@ struct _lv_3dviewport_t {
     lv_draw_3d_cb_t render_cb;
     void * render_user_data;
     bool show_grid;
+    lv_color32_t grid_color;
     lv_point_t last_drag;
     lv_point_t press_start;
     bool dragging;

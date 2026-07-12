@@ -14,6 +14,7 @@
 
 #include "../../core/lv_obj_class_private.h"
 #include "../../include/lvgl/draw/lv_draw_3d_mesh.h"
+#include "../../include/lvgl/misc/lv_style_3d.h"
 
 #include <math.h>
 
@@ -42,6 +43,7 @@ static void mat4_rotate_y(float m[16], float radians);
 static void mat4_rotate_x(float m[16], float radians);
 static void mat4_rotate_z(float m[16], float radians);
 static void mat4_mul(float out[16], const float a[16], const float b[16]);
+static void lv_3dmesh_event(const lv_obj_class_t * class_p, lv_event_t * e);
 
 /**********************
  *  STATIC VARIABLES
@@ -50,6 +52,7 @@ static void mat4_mul(float out[16], const float a[16], const float b[16]);
 const lv_obj_class_t lv_3dmesh_class = {
     .constructor_cb = lv_3dmesh_constructor,
     .destructor_cb = lv_3dmesh_destructor,
+    .event_cb = lv_3dmesh_event,
     .width_def = 0,
     .height_def = 0,
     .instance_size = sizeof(lv_3dmesh_t),
@@ -281,6 +284,16 @@ static void lv_3dmesh_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
 {
     LV_UNUSED(class_p);
     free_geometry((lv_3dmesh_t *)obj);
+}
+
+static void lv_3dmesh_event(const lv_obj_class_t * class_p, lv_event_t * e)
+{
+    lv_result_t res = lv_obj_event_base(class_p, e);
+    if(res != LV_RESULT_OK) return;
+
+    if(lv_event_get_code(e) == LV_EVENT_STYLE_CHANGED) {
+        lv_3dstyle_apply_mesh(lv_event_get_current_target(e));
+    }
 }
 
 void free_geometry(lv_3dmesh_t * mesh)

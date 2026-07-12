@@ -54,8 +54,6 @@ lv_obj_t * lv_demo_3dview(void)
     lv_obj_t * vp = lv_3dviewport_create(scr);
     lv_obj_set_size(vp, 420, 280);
     lv_obj_center(vp);
-    lv_3dviewport_set_clear_color(vp, lv_color_hex(0x121212), LV_OPA_COVER);
-    lv_3dviewport_set_grid_visible(vp, true);
 
     lv_obj_t * sun = lv_3dlight_create(vp);
     lv_3dlight_set_directional(sun, 0.4f, -1.f, 0.3f, lv_color_hex(0xFFF8E1), LV_OPA_COVER, 1.1f);
@@ -94,7 +92,7 @@ lv_obj_t * lv_demo_3dview(void)
     lv_timer_create(cube_anim_cb, 33, NULL);
 
     lv_obj_t * label = lv_label_create(scr);
-    lv_label_set_text(label, "G8.4/5 phong+pick+OBJ (D3-13/14); click mesh / orbit drag");
+    lv_label_set_text(label, "G8.6 theme + phong/pick/OBJ (D3-15); click mesh / orbit drag");
     lv_obj_set_style_text_color(label, lv_color_white(), LV_PART_MAIN);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 12);
 

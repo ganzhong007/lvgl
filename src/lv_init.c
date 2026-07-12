@@ -266,6 +266,10 @@ void lv_init(void)
 
     lv_obj_style_init();
 
+#if LV_USE_3D_DRAW_TASKS
+    lv_style_3d_init();
+#endif
+
     /*Initialize the screen refresh system*/
     lv_refr_init();
 

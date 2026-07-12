@@ -25,6 +25,7 @@ uint32_t lv_3dcaps_get(void)
 #if LV_USE_3DMESH
     caps |= LV_3D_CAP_PICK | LV_3D_CAP_OBJ_LOADER;
 #endif
+    caps |= LV_3D_CAP_THEME;
     return caps;
 }
 

@@ -150,6 +150,16 @@ typedef struct {
 #if LV_USE_SCALE
     lv_style_t scale;
 #endif
+
+#if LV_USE_3DVIEWPORT
+    lv_style_t d3_viewport;
+#endif
+#if LV_USE_3DMESH
+    lv_style_t d3_mesh;
+#endif
+#if LV_USE_3DLIGHT
+    lv_style_t d3_light;
+#endif
 } my_theme_styles_t;
 
 typedef enum {
@@ -614,6 +624,32 @@ static void style_init(my_theme_t * theme)
     lv_style_set_arc_color(&theme->styles.scale, theme->color_text);
     lv_style_set_arc_width(&theme->styles.scale, LV_DPX_CALC(theme->disp_dpi, 2));
     lv_style_set_length(&theme->styles.scale, LV_DPX_CALC(theme->disp_dpi, 6));
+#endif
+
+#if LV_USE_3DVIEWPORT
+    style_init_reset(&theme->styles.d3_viewport);
+    lv_style_set_3d_clear_color(&theme->styles.d3_viewport,
+                                (theme->base.flags & MODE_DARK) ? lv_color_hex(0x121212) : lv_color_hex(0xECEFF1));
+    lv_style_set_3d_clear_opa(&theme->styles.d3_viewport, LV_OPA_COVER);
+    lv_style_set_3d_grid_visible(&theme->styles.d3_viewport, true);
+    lv_style_set_3d_grid_color(&theme->styles.d3_viewport,
+                               (theme->base.flags & MODE_DARK) ? lv_color_hex(0x808080) : lv_color_hex(0x9E9E9E));
+#endif
+
+#if LV_USE_3DMESH
+    style_init_reset(&theme->styles.d3_mesh);
+    lv_style_set_3d_mesh_color(&theme->styles.d3_mesh, theme->base.color_primary);
+    lv_style_set_3d_mesh_opa(&theme->styles.d3_mesh, LV_OPA_COVER);
+    lv_style_set_3d_phong(&theme->styles.d3_mesh, true);
+    lv_style_set_3d_shininess(&theme->styles.d3_mesh, 32.f);
+    lv_style_set_3d_ambient(&theme->styles.d3_mesh, 0.15f);
+#endif
+
+#if LV_USE_3DLIGHT
+    style_init_reset(&theme->styles.d3_light);
+    lv_style_set_3d_light_color(&theme->styles.d3_light, lv_color_hex(0xFFF8E1));
+    lv_style_set_3d_light_opa(&theme->styles.d3_light, LV_OPA_COVER);
+    lv_style_set_3d_light_intensity(&theme->styles.d3_light, 1.1f);
 #endif
 }
 
@@ -1221,6 +1257,24 @@ static void theme_apply(lv_theme_t * th, lv_obj_t * obj)
         lv_obj_add_style(obj, &theme->styles.scale, LV_PART_MAIN);
         lv_obj_add_style(obj, &theme->styles.scale, LV_PART_INDICATOR);
         lv_obj_add_style(obj, &theme->styles.scale, LV_PART_ITEMS);
+    }
+#endif
+
+#if LV_USE_3DVIEWPORT
+    else if(lv_obj_check_type(obj, &lv_3dviewport_class)) {
+        lv_obj_add_style(obj, &theme->styles.d3_viewport, 0);
+    }
+#endif
+
+#if LV_USE_3DMESH
+    else if(lv_obj_check_type(obj, &lv_3dmesh_class)) {
+        lv_obj_add_style(obj, &theme->styles.d3_mesh, 0);
+    }
+#endif
+
+#if LV_USE_3DLIGHT
+    else if(lv_obj_check_type(obj, &lv_3dlight_class)) {
+        lv_obj_add_style(obj, &theme->styles.d3_light, 0);
     }
 #endif
 }

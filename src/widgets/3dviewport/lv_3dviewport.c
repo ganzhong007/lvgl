@@ -24,6 +24,7 @@
 #include "../../include/lvgl/draw/lv_draw_3d_light.h"
 #include "../../include/lvgl/widgets/lv_3dlight.h"
 #endif
+#include "../../include/lvgl/misc/lv_style_3d.h"
 
 /*********************
  *      DEFINES
@@ -42,8 +43,9 @@ static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t *
 static void lv_3dviewport_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj);
 static void lv_3dviewport_event(const lv_obj_class_t * class_p, lv_event_t * e);
 static void draw_3dviewport(lv_event_t * e);
-static void submit_grid_lines(lv_layer_t * pass_layer);
+static void submit_grid_lines(lv_layer_t * pass_layer, const lv_3dviewport_t * vp);
 static void on_pointer_event(lv_event_t * e);
+static void on_style_changed(lv_event_t * e);
 
 /**********************
  *  STATIC VARIABLES
@@ -165,6 +167,7 @@ static void lv_3dviewport_constructor(const lv_obj_class_t * class_p, lv_obj_t *
     vp->clear_color = lv_color32_make(0x12, 0x12, 0x12, LV_OPA_COVER);
     vp->clear_depth = true;
     vp->show_grid = true;
+    vp->grid_color = lv_color32_make(0x80, 0x80, 0x80, LV_OPA_COVER);
     vp->render_cb = NULL;
     vp->render_user_data = NULL;
     vp->dragging = false;
@@ -204,10 +207,19 @@ static void lv_3dviewport_event(const lv_obj_class_t * class_p, lv_event_t * e)
     if(code == LV_EVENT_DRAW_MAIN) {
         draw_3dviewport(e);
     }
+    else if(code == LV_EVENT_STYLE_CHANGED) {
+        on_style_changed(e);
+    }
     else if(code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED
             || code == LV_EVENT_PRESS_LOST) {
         on_pointer_event(e);
     }
+}
+
+static void on_style_changed(lv_event_t * e)
+{
+    lv_obj_t * obj = lv_event_get_current_target(e);
+    lv_3dstyle_apply_viewport(obj);
 }
 
 static void draw_3dviewport(lv_event_t * e)
@@ -245,7 +257,7 @@ static void draw_3dviewport(lv_event_t * e)
 #endif
 
     if(vp->show_grid) {
-        submit_grid_lines(vp->pass_layer);
+        submit_grid_lines(vp->pass_layer, vp);
     }
 
 #if LV_USE_3DMESH
@@ -269,13 +281,13 @@ static void draw_3dviewport(lv_event_t * e)
     lv_draw_3d_viewport_end(vp->pass_layer);
 }
 
-static void submit_grid_lines(lv_layer_t * pass_layer)
+static void submit_grid_lines(lv_layer_t * pass_layer, const lv_3dviewport_t * vp)
 {
     lv_draw_3d_line_dsc_t line_dsc;
     lv_draw_3d_line_dsc_init(&line_dsc);
     line_dsc.points = grid_points;
     line_dsc.point_cnt = grid_point_cnt;
-    line_dsc.color = lv_color32_make(0x80, 0x80, 0x80, LV_OPA_COVER);
+    line_dsc.color = vp->grid_color;
     line_dsc.width = 1.f;
     line_dsc.depth_test = true;
     lv_draw_3d_line(pass_layer, &line_dsc);

@@ -28,6 +28,7 @@ typedef enum {
     LV_3D_CAP_PHONG      = 1 << 0,
     LV_3D_CAP_PICK       = 1 << 1,
     LV_3D_CAP_OBJ_LOADER = 1 << 2,
+    LV_3D_CAP_THEME      = 1 << 3,
 } lv_3d_cap_flag_t;
 
 /**********************
