@@ -181,7 +181,7 @@ lv_result_t lv_3dmesh_load_obj(lv_obj_t * obj, const char * path)
 
     if(!s_obj_loader_ready) {
         s_obj_loader_ready = true;
-        LV_LOG_INFO("G100 OBJ loader ready (wavefront subset)");
+        LV_LOG_INFO("EVGPU OBJ loader ready (wavefront subset)");
     }
 
     lv_obj_invalidate(lv_obj_get_parent(obj));

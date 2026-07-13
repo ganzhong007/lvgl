@@ -41,7 +41,7 @@ void lv_3d_camera_get_ray(const lv_3d_camera_t * cam, int32_t w, int32_t h, int3
     static bool s_pick_ready;
     if(!s_pick_ready) {
         s_pick_ready = true;
-        LV_LOG_INFO("G100 3D pick ready (ray-mesh intersection)");
+        LV_LOG_INFO("EVGPU 3D pick ready (ray-mesh intersection)");
     }
 
     if(cam == NULL || ray == NULL || w <= 0 || h <= 0) return;

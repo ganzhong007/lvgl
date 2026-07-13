@@ -415,7 +415,7 @@ lv_3dray_t lv_gltf_get_ray_from_2d_coordinate(lv_obj_t * obj, const lv_point_t *
  */
 lv_result_t lv_gltf_world_to_screen(lv_obj_t * obj, const lv_3dpoint_t world_pos, lv_point_t * screen_pos);
 
-#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_EVGPU
 /**
  * Render glTF scene off-screen for 3D_SCENE draw task (DrawUnit dispatch).
  * @param obj pointer to a GLTF viewer object

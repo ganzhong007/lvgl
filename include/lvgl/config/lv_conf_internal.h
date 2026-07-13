@@ -45,6 +45,12 @@
 #define LV_NANOVG_BACKEND_GLES2     3
 #define LV_NANOVG_BACKEND_GLES3     4
 
+/** EVGPU EVGR backend enum (same numeric values as LV_NANOVG_BACKEND_*). */
+#define LV_EVGR_BACKEND_GL2       LV_NANOVG_BACKEND_GL2
+#define LV_EVGR_BACKEND_GL3       LV_NANOVG_BACKEND_GL3
+#define LV_EVGR_BACKEND_GLES2     LV_NANOVG_BACKEND_GLES2
+#define LV_EVGR_BACKEND_GLES3     LV_NANOVG_BACKEND_GLES3
+
 #define LV_CHECK_ARG_LOG_MODE_NONE    0
 #define LV_CHECK_ARG_LOG_MODE_MINIMAL 1
 #define LV_CHECK_ARG_LOG_MODE_VERBOSE 2
@@ -1269,6 +1275,44 @@
             #define LV_NANOVG_LETTER_CACHE_CNT CONFIG_LV_NANOVG_LETTER_CACHE_CNT
         #else
             #define LV_NANOVG_LETTER_CACHE_CNT 512
+        #endif
+    #endif
+#endif
+
+#ifndef LV_USE_DRAW_EVGPU
+    #ifdef CONFIG_LV_USE_DRAW_EVGPU
+        #define LV_USE_DRAW_EVGPU CONFIG_LV_USE_DRAW_EVGPU
+    #else
+        #define LV_USE_DRAW_EVGPU 0
+    #endif
+#endif
+#if LV_USE_DRAW_EVGPU
+    #ifndef LV_EVGR_BACKEND
+        #ifdef CONFIG_LV_EVGR_BACKEND
+            #define LV_EVGR_BACKEND CONFIG_LV_EVGR_BACKEND
+        #else
+            #define LV_EVGR_BACKEND LV_EVGR_BACKEND_GLES2
+        #endif
+    #endif
+    #ifndef LV_EVGR_IMAGE_CACHE_CNT
+        #ifdef CONFIG_LV_EVGR_IMAGE_CACHE_CNT
+            #define LV_EVGR_IMAGE_CACHE_CNT CONFIG_LV_EVGR_IMAGE_CACHE_CNT
+        #else
+            #define LV_EVGR_IMAGE_CACHE_CNT 128
+        #endif
+    #endif
+    #ifndef LV_EVGR_LETTER_CACHE_CNT
+        #ifdef CONFIG_LV_EVGR_LETTER_CACHE_CNT
+            #define LV_EVGR_LETTER_CACHE_CNT CONFIG_LV_EVGR_LETTER_CACHE_CNT
+        #else
+            #define LV_EVGR_LETTER_CACHE_CNT 512
+        #endif
+    #endif
+    #ifndef LV_USE_EVGPU_LIB
+        #ifdef CONFIG_LV_USE_EVGPU_LIB
+            #define LV_USE_EVGPU_LIB CONFIG_LV_USE_EVGPU_LIB
+        #else
+            #define LV_USE_EVGPU_LIB 0
         #endif
     #endif
 #endif

@@ -17,7 +17,7 @@
 #include "../fastgltf/lv_fastgltf.hpp"
 #include "../../../core/lv_obj_class_private.h"
 #include "assets/lv_gltf_view_shader.h"
-#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_EVGPU
 #include "../../../../include/lvgl/draw/lv_draw_3d_viewport.h"
 #include "../../../../include/lvgl/draw/lv_draw_3d_clear.h"
 #include "../../../../include/lvgl/draw/lv_draw_3d_scene.h"
@@ -58,7 +58,7 @@ static lv_3dplane_t make_empty_plane(void);
 
 static lv_result_t create_default_environment(lv_gltf_t * gltf);
 
-#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_EVGPU
 static void draw_gltf_viewport(lv_event_t * e);
 #endif
 
@@ -699,7 +699,7 @@ static void lv_gltf_constructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
     view->model_loader = lv_gltf_model_loader_create();
 
     lv_array_init(&view->models, LV_GLTF_INITIAL_MODEL_CAPACITY, sizeof(lv_gltf_model_data_t));
-#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_EVGPU
     view->pass_layer = NULL;
 #endif
 
@@ -714,7 +714,7 @@ static void lv_gltf_event(const lv_obj_class_t * class_p, lv_event_t * e)
     lv_gltf_t * viewer = (lv_gltf_t *)obj;
 
     if(code == LV_EVENT_DRAW_MAIN) {
-#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_EVGPU
         draw_gltf_viewport(e);
         return;
 #else
@@ -735,7 +735,7 @@ static void lv_gltf_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
 {
     LV_UNUSED(class_p);
     lv_gltf_t * view = (lv_gltf_t *)obj;
-#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_EVGPU
     if(view->pass_layer != NULL) {
         lv_display_t * disp = lv_obj_get_display(obj);
         lv_draw_3d_pass_layer_destroy(view->pass_layer, disp);
@@ -923,7 +923,7 @@ static void setup_background_environment(GLuint program, GLuint * vao, GLuint * 
 }
 
 
-#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100
+#if LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_EVGPU
 static void draw_gltf_viewport(lv_event_t * e)
 {
     lv_obj_t * obj = (lv_obj_t *)lv_event_get_current_target(e);
@@ -965,7 +965,7 @@ static void draw_gltf_viewport(lv_event_t * e)
 
     lv_draw_3d_viewport_end(viewer->pass_layer);
 }
-#endif /* LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_G100 */
+#endif /* LV_USE_3D_DRAW_TASKS && LV_USE_DRAW_EVGPU */
 
 
 static void display_refr_end_event_cb(lv_event_t * e)

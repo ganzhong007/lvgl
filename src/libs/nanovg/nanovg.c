@@ -18,7 +18,7 @@
 
 #include "../../lvgl_public.h"
 
-#if LV_USE_NANOVG
+#if LV_USE_NANOVG && LV_USE_DRAW_NANOVG
 
 #include <math.h>
 
@@ -2571,4 +2571,4 @@ void nvgTextMetrics(NVGcontext * ctx, float * ascender, float * descender, float
 }
 // vim: ft=c nu noet ts=4
 
-#endif /* LV_USE_NANOVG */
+#endif /* LV_USE_NANOVG && LV_USE_DRAW_NANOVG */

@@ -11,8 +11,8 @@
 
 #if LV_USE_DRAW_NANOVG
 
-#if LV_USE_DRAW_G100
-    #error "LV_USE_DRAW_G100 and LV_USE_DRAW_NANOVG cannot both be enabled."
+#if LV_USE_DRAW_EVGPU
+    #error "LV_USE_DRAW_EVGPU and LV_USE_DRAW_NANOVG cannot both be enabled."
 #endif
 
 #include "../../core/lv_refr_private.h"

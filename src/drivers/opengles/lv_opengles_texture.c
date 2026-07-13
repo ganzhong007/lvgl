@@ -122,7 +122,7 @@ static void lv_opengles_texture_attach_to_display(lv_opengles_texture_t * textur
 {
     LV_ASSERT_NULL(display);
     LV_UNUSED(texture);
-#if !LV_USE_DRAW_NANOVG && !LV_USE_DRAW_G100
+#if !LV_USE_DRAW_NANOVG && !LV_USE_DRAW_EVGPU
     display->layer_head->user_data = (void *)(lv_uintptr_t)texture->texture_id;
 #endif
 }

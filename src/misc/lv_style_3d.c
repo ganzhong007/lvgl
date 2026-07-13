@@ -66,7 +66,7 @@ void lv_style_3d_init(void)
     LV_STYLE_3D_LIGHT_INTENSITY = lv_style_register_prop(LV_STYLE_PROP_FLAG_NONE);
 
     s_inited = true;
-    LV_LOG_INFO("G100 3D theme ready (LV_STYLE_3D_* props)");
+    LV_LOG_INFO("EVGPU 3D theme ready (LV_STYLE_3D_* props)");
 }
 
 void lv_3dstyle_apply_viewport(lv_obj_t * obj)

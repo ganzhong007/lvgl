@@ -452,17 +452,23 @@
     #define LV_NANOVG_LETTER_CACHE_CNT 512
 #endif
 
-/** DrawUnitG100 — GLES2.0 hardware GPU (G100) draw unit.
+/** DrawUnitEVGPU — GLES2.0 hardware GPU (EVGPU) draw unit.
  * - Mutually exclusive with LV_USE_DRAW_NANOVG and LV_USE_DRAW_OPENGLES.
- * - Bootstrap (WSLg): uses NanoVG GLES2 renderer inside draw/g100/; LV_USE_NANOVG must be 1.
+ * - 2D vector runtime: libs/evgpu/evgpu_evgr* (EVGR GLES backend).
  */
-#define LV_USE_DRAW_G100 0
-#if LV_USE_DRAW_G100
-    #define LV_NANOVG_BACKEND   LV_NANOVG_BACKEND_GLES2
-    #define LV_NANOVG_IMAGE_CACHE_CNT 128
-    #define LV_NANOVG_LETTER_CACHE_CNT 512
-    /** Optional: GLES2 runtime in libs/g100 (path B); draw/g100 remains LVGL adapter */
-    #define LV_USE_G100_LIB 0
+#define LV_USE_DRAW_EVGPU 0
+#if LV_USE_DRAW_EVGPU
+    /** OpenGL backend for EVGPU vector renderer (EVGR backend enum):
+     * - LV_EVGR_BACKEND_GL2:   OpenGL 2.0
+     * - LV_EVGR_BACKEND_GL3:   OpenGL 3.0+
+     * - LV_EVGR_BACKEND_GLES2: OpenGL ES 2.0
+     * - LV_EVGR_BACKEND_GLES3: OpenGL ES 3.0+
+     */
+    #define LV_EVGR_BACKEND   LV_EVGR_BACKEND_GLES2
+    #define LV_EVGR_IMAGE_CACHE_CNT 128
+    #define LV_EVGR_LETTER_CACHE_CNT 512
+    /** Optional: GLES2 runtime in libs/evgpu (path B); draw/evgpu remains LVGL adapter */
+    #define LV_USE_EVGPU_LIB 0
 #endif
 
 /*=======================
@@ -924,7 +930,7 @@
 
 #define LV_USE_3DTEXTURE  0
 
-/** G100 3D draw task family (VIEWPORT / CLEAR / MESH / …) */
+/** EVGPU 3D draw task family (VIEWPORT / CLEAR / MESH / …) */
 #define LV_USE_3D_DRAW_TASKS 0
 
 /** Requires `LV_USE_3D_DRAW_TASKS = 1` */
