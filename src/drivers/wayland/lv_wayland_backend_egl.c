@@ -363,18 +363,33 @@ static size_t wl_egl_select_config_cb(void * driver_data, const lv_egl_config_t 
                      configs[i].stencil, configs[i].surface_type);
     }
 
-    for(size_t i = 0; i < config_count; ++i) {
-        lv_color_format_t config_cf = lv_opengles_egl_color_format_from_egl_config(&configs[i]);
-        const bool resolution_matches = configs[i].max_width >= target_w &&
-                                        configs[i].max_height >= target_h;
-        const bool is_nanovg_compatible = (configs[i].renderable_type & EGL_OPENGL_ES2_BIT) != 0 &&
-                                          configs[i].stencil == 8 && configs[i].samples == 4;
-        const bool is_window = (configs[i].surface_type & EGL_WINDOW_BIT) != 0;
-        const bool is_compatible_with_draw_unit = is_nanovg_compatible || (!LV_USE_DRAW_NANOVG && !LV_USE_DRAW_EVGPU);
+    /* Two passes: prefer a non-multisampled config first. On some GPUs
+     * (e.g. Mali-400/lima) the MSAA resolve of a wl_egl_window's buffer is
+     * not handed to the compositor correctly and the window shows up black,
+     * even though the rendering itself is fine. A single-sample config avoids
+     * that broken resolve path. Fall back to a 4x MSAA config if that is the
+     * only stencil-capable option available. */
+    for(int pass = 0; pass < 2; ++pass) {
+        const int wanted_samples = (pass == 0) ? 0 : 4;
+        for(size_t i = 0; i < config_count; ++i) {
+            lv_color_format_t config_cf = lv_opengles_egl_color_format_from_egl_config(&configs[i]);
+            const bool resolution_matches = configs[i].max_width >= target_w &&
+                                            configs[i].max_height >= target_h;
+            const bool is_nanovg_compatible = (configs[i].renderable_type & EGL_OPENGL_ES2_BIT) != 0 &&
+                                              configs[i].stencil == 8 && configs[i].samples == wanted_samples;
+            const bool is_window = (configs[i].surface_type & EGL_WINDOW_BIT) != 0;
+            const bool is_compatible_with_draw_unit = is_nanovg_compatible ||
+                                                      (!LV_USE_DRAW_NANOVG && !LV_USE_DRAW_EVGPU);
 
-        if(is_window && resolution_matches && config_cf == target_cf && is_compatible_with_draw_unit) {
-            LV_LOG_TRACE("Choosing config %zu", i);
-            return i;
+            if(is_window && resolution_matches && config_cf == target_cf && is_compatible_with_draw_unit) {
+                LV_LOG_INFO("Choosing EGL config %zu (rgba=%d%d%d%d depth=%d stencil=%d samples=%d)",
+                            i, configs[i].r_bits, configs[i].g_bits, configs[i].b_bits, configs[i].a_bits,
+                            configs[i].depth, configs[i].stencil, configs[i].samples);
+                return i;
+            }
+        }
+        if(!LV_USE_DRAW_NANOVG && !LV_USE_DRAW_EVGPU) {
+            break; /* sample count is irrelevant, the first pass already matched */
         }
     }
 

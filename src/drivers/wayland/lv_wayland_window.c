@@ -41,6 +41,25 @@ static void delete_event(lv_event_t * e);
  **********************/
 
 /**********************
+ *   STATIC FUNCTIONS
+ **********************/
+
+/* Mark the whole window body opaque so the compositor ignores the buffer's
+ * alpha channel. EGL/EVGPU buffers can carry alpha=0, which otherwise makes
+ * the window fully transparent (appears black/invisible). Must be refreshed
+ * whenever the surface is resized. */
+static void set_window_opaque_region(lv_wl_window_t * window, int32_t w, int32_t h)
+{
+    struct wl_region * opaque = wl_compositor_create_region(lv_wl_ctx.wl_compositor);
+    if(!opaque) {
+        return;
+    }
+    wl_region_add(opaque, 0, 0, w, h);
+    wl_surface_set_opaque_region(window->body, opaque);
+    wl_region_destroy(opaque);
+}
+
+/**********************
  *   GLOBAL FUNCTIONS
  **********************/
 
@@ -87,6 +106,9 @@ lv_display_t * lv_wayland_window_create(uint32_t hor_res, uint32_t ver_res, char
     window->backend_display_data = wl_backend_ops.init_display(lv_wl_ctx.backend_data, window->lv_disp, hor_res, ver_res);
 
     lv_wayland_xdg_configure_surface(window);
+
+    set_window_opaque_region(window, (int32_t)hor_res, (int32_t)ver_res);
+    wl_surface_commit(window->body);
 
     lv_display_add_event_cb(window->lv_disp, res_changed_event, LV_EVENT_COLOR_FORMAT_CHANGED, NULL);
     lv_display_add_event_cb(window->lv_disp, res_changed_event, LV_EVENT_RESOLUTION_CHANGED, NULL);
@@ -338,6 +360,8 @@ static void res_changed_event(lv_event_t * e)
     lv_display_t * display = (lv_display_t *) lv_event_get_target(e);
     lv_wl_window_t * window = lv_display_get_driver_data(display);
     window->backend_display_data = wl_backend_ops.resize_display(lv_wl_ctx.backend_data, display);
+    set_window_opaque_region(window, lv_display_get_horizontal_resolution(display),
+                             lv_display_get_vertical_resolution(display));
 }
 
 #endif /* LV_USE_WAYLAND */
