@@ -87,7 +87,7 @@ typedef struct _lv_draw_evgpu_unit_t {
 
 #if LV_USE_3DTEXTURE
 /**
- * Draw 3D texture on a NanoVG context
+ * Draw 3D texture on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a 3D draw descriptor
  * @param coords the coordinates of the 3D texture
@@ -116,7 +116,7 @@ void lv_draw_evgpu_3d_scene(lv_draw_task_t * t, const lv_draw_3d_scene_dsc_t * d
 #endif
 
 /**
- * Draw arc on a NanoVG context
+ * Draw arc on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to an arc descriptor
  * @param coords the coordinates of the arc
@@ -124,7 +124,7 @@ void lv_draw_evgpu_3d_scene(lv_draw_task_t * t, const lv_draw_3d_scene_dsc_t * d
 void lv_draw_evgpu_arc(lv_draw_task_t * t, const lv_draw_arc_dsc_t * dsc, const lv_area_t * coords);
 
 /**
- * Draw border on a NanoVG context
+ * Draw border on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a border descriptor
  * @param coords the coordinates of the border
@@ -132,7 +132,7 @@ void lv_draw_evgpu_arc(lv_draw_task_t * t, const lv_draw_arc_dsc_t * dsc, const 
 void lv_draw_evgpu_border(lv_draw_task_t * t, const lv_draw_border_dsc_t * dsc, const lv_area_t * coords);
 
 /**
- * Draw box on a NanoVG context
+ * Draw box on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a box descriptor
  * @param coords the coordinates of the box
@@ -140,7 +140,7 @@ void lv_draw_evgpu_border(lv_draw_task_t * t, const lv_draw_border_dsc_t * dsc, 
 void lv_draw_evgpu_box_shadow(lv_draw_task_t * t, const lv_draw_box_shadow_dsc_t * dsc, const lv_area_t * coords);
 
 /**
- * Fill a rectangle on a NanoVG context
+ * Fill a rectangle on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a fill descriptor
  * @param coords the coordinates of the rectangle
@@ -148,7 +148,7 @@ void lv_draw_evgpu_box_shadow(lv_draw_task_t * t, const lv_draw_box_shadow_dsc_t
 void lv_draw_evgpu_fill(lv_draw_task_t * t, const lv_draw_fill_dsc_t * dsc, const lv_area_t * coords);
 
 /**
- * Draw image on a NanoVG context
+ * Draw image on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to an image descriptor
  * @param coords the coordinates of the image
@@ -158,19 +158,19 @@ void lv_draw_evgpu_image(lv_draw_task_t * t, const lv_draw_image_dsc_t * dsc, co
                           int image_handle);
 
 /**
- * Initialize draw label on a NanoVG context
- * @param u pointer to a NanoVG unit
+ * Initialize draw label on a EVGR context
+ * @param u pointer to a EVGPU unit
  */
 void lv_draw_evgpu_label_init(lv_draw_evgpu_unit_t * u);
 
 /**
- * Deinitialize draw label on a NanoVG context
- * @param u pointer to a NanoVG unit
+ * Deinitialize draw label on a EVGR context
+ * @param u pointer to a EVGPU unit
  */
 void lv_draw_evgpu_label_deinit(lv_draw_evgpu_unit_t * u);
 
 /**
- * Draw letter on a NanoVG context
+ * Draw letter on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a letter descriptor
  * @param coords the coordinates of the letter
@@ -178,7 +178,7 @@ void lv_draw_evgpu_label_deinit(lv_draw_evgpu_unit_t * u);
 void lv_draw_evgpu_letter(lv_draw_task_t * t, const lv_draw_letter_dsc_t * dsc, const lv_area_t * coords);
 
 /**
- * Draw label on a NanoVG context
+ * Draw label on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a label descriptor
  * @param coords the coordinates of the label
@@ -186,7 +186,7 @@ void lv_draw_evgpu_letter(lv_draw_task_t * t, const lv_draw_letter_dsc_t * dsc, 
 void lv_draw_evgpu_label(lv_draw_task_t * t, const lv_draw_label_dsc_t * dsc, const lv_area_t * coords);
 
 /**
- * Draw layer on a NanoVG context
+ * Draw layer on a EVGR context
  * @param t pointer to a drawing task
  * @param draw_dsc pointer to an image descriptor
  * @param coords the coordinates of the layer
@@ -194,21 +194,21 @@ void lv_draw_evgpu_label(lv_draw_task_t * t, const lv_draw_label_dsc_t * dsc, co
 void lv_draw_evgpu_layer(lv_draw_task_t * t, const lv_draw_image_dsc_t * draw_dsc, const lv_area_t * coords);
 
 /**
- * Draw line on a NanoVG context
+ * Draw line on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a line descriptor
  */
 void lv_draw_evgpu_line(lv_draw_task_t * t, const lv_draw_line_dsc_t * dsc);
 
 /**
- * Draw triangle on a NanoVG context
+ * Draw triangle on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a triangle descriptor
  */
 void lv_draw_evgpu_triangle(lv_draw_task_t * t, const lv_draw_triangle_dsc_t * dsc);
 
 /**
- * Draw mask rectangles on a NanoVG context
+ * Draw mask rectangles on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a mask descriptor
  */
@@ -222,14 +222,14 @@ void lv_draw_evgpu_mask_rect(lv_draw_task_t * t, const lv_draw_mask_rect_dsc_t *
 int lv_evgpu_fb_get_image_handle(struct EVGRLUframebuffer * fb);
 
 /**
- * Initialize the blur draw unit state on the given nanovg unit
- * @param u pointer to the nanovg unit
+ * Initialize the blur draw unit state on the given EVGPU unit
+ * @param u pointer to the EVGPU unit
  */
 void lv_draw_evgpu_blur_init(lv_draw_evgpu_unit_t * u);
 
 /**
- * Deinitialize the blur draw unit state on the given nanovg unit
- * @param u pointer to the nanovg unit
+ * Deinitialize the blur draw unit state on the given EVGPU unit
+ * @param u pointer to the EVGPU unit
  */
 void lv_draw_evgpu_blur_deinit(lv_draw_evgpu_unit_t * u);
 
@@ -243,7 +243,7 @@ void lv_draw_evgpu_blur(lv_draw_task_t * t, const lv_draw_blur_dsc_t * dsc, cons
 
 #if LV_USE_VECTOR_GRAPHIC
 /**
- * Draw vector graphics on a NanoVG context
+ * Draw vector graphics on a EVGR context
  * @param t pointer to a drawing task
  * @param dsc pointer to a vector descriptor
  */
@@ -251,7 +251,7 @@ void lv_draw_evgpu_vector(lv_draw_task_t * t, const lv_draw_vector_dsc_t * dsc);
 
 /**
  * @brief Convert a gradient to a paint
- * @param ctx the nanovg context
+ * @param ctx the EVGR context
  * @param grad the gradient descriptor
  * @param paint the paint to store the result
  */
@@ -259,7 +259,7 @@ bool lv_evgpu_grad_to_paint(EVGRcontext * ctx, const lv_vector_gradient_t * grad
 
 /**
  * @brief Draw a gradient
- * @param ctx the nanovg context
+ * @param ctx the EVGR context
  * @param grad the gradient descriptor
  * @param winding the fill rule
  * @param composite_operation the blend mode
@@ -272,7 +272,7 @@ void lv_evgpu_draw_grad(
 
 /**
  * @brief Draw a gradient with helper
- * @param ctx the nanovg context
+ * @param ctx the EVGR context
  * @param area the area to draw the gradient on
  * @param grad_dsc the gradient descriptor
  * @param winding the fill rule

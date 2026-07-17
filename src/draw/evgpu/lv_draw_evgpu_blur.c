@@ -1,9 +1,9 @@
 /**
  * @file lv_draw_evgpu_blur.c
  *
- * NanoVG blur draw task handler. Translates LVGL blur tasks into
+ * EVGPU blur draw task handler. Translates LVGL blur tasks into
  * evgrluBlurRegion() calls — the actual shader/FBO logic lives in
- * nanovg_gl_utils.h for backend portability.
+ * evgpu_evgr_gl.h for backend portability.
  */
 
 /*********************
@@ -46,7 +46,7 @@ void lv_draw_evgpu_blur_init(lv_draw_evgpu_unit_t * u)
     LV_ASSERT_NULL(u);
     u->blur_state = evgrluCreateBlurState();
     if(u->blur_state == NULL) {
-        LV_LOG_WARN("nanovg blur: failed to create blur state (FBO not supported?)");
+        LV_LOG_WARN("evgpu blur: failed to create blur state (FBO not supported?)");
     }
     lv_evgpu_blur_kawase_init(u);
 }
@@ -104,7 +104,7 @@ void lv_draw_evgpu_blur(lv_draw_task_t * t, const lv_draw_blur_dsc_t * dsc, cons
         }
     }
 
-    /* Flush pending NanoVG draws before raw GL operations */
+    /* Flush pending EVGR draws before raw GL operations */
     lv_evgpu_end_frame(u);
 
     EVGRcolor recolor = evgrRGBA(0, 0, 0, 0);
@@ -127,7 +127,7 @@ void lv_draw_evgpu_blur(lv_draw_task_t * t, const lv_draw_blur_dsc_t * dsc, cons
 
     EVGRLUblurState * state = u->blur_state;
     if(state == NULL) {
-        LV_LOG_WARN("nanovg blur: state not initialized (FBO not supported?), skipping");
+        LV_LOG_WARN("evgpu blur: state not initialized (FBO not supported?), skipping");
         LV_PROFILER_DRAW_END;
         return;
     }
@@ -139,10 +139,10 @@ void lv_draw_evgpu_blur(lv_draw_task_t * t, const lv_draw_blur_dsc_t * dsc, cons
                      ? EVGRLU_BLUR_QUALITY_SPEED : EVGRLU_BLUR_QUALITY_NORMAL;
     params.recolor = recolor;
 
-    /* Call the NanoVG blur utility */
+    /* Call the EVGR blur utility */
     int ret = evgrluBlurRegion(state, u->evgr, src_fb, rel_x, gl_y, blur_w, blur_h, &params);
     if(ret != 0) {
-        LV_LOG_WARN("nanovg blur: evgrluBlurRegion failed (ret=%d)", ret);
+        LV_LOG_WARN("evgpu blur: evgrluBlurRegion failed (ret=%d)", ret);
     }
 
     LV_PROFILER_DRAW_END;

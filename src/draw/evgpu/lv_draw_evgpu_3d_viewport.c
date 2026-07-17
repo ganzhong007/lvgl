@@ -60,7 +60,7 @@ void lv_draw_evgpu_3d_viewport(lv_draw_task_t * t, const lv_draw_3d_viewport_dsc
     params.disp_w = layer_w;
     params.disp_h = layer_h;
     params.texture_clip_area = &clip_area;
-    /* FBO pass is rendered as GL RGBA (not NanoVG BGR); match gltf display orientation. */
+    /* FBO pass is rendered as GL RGBA (not EVGR BGR); match gltf display orientation. */
     params.h_flip = false;
     params.v_flip = true;
     params.rb_swap = false;

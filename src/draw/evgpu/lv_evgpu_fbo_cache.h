@@ -36,19 +36,19 @@ struct EVGRLUframebuffer;
 
 /**
  * @brief Initialize the FBO cache
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  */
 void lv_evgpu_fbo_cache_init(struct _lv_draw_evgpu_unit_t * u);
 
 /**
  * @brief Deinitialize the FBO cache
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  */
 void lv_evgpu_fbo_cache_deinit(struct _lv_draw_evgpu_unit_t * u);
 
 /**
  * @brief Get the FBO from the cache, create a new one if not found
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  * @param width the width of the FBO
  * @param height the height of the FBO
  * @param flags the FBO flags
@@ -60,7 +60,7 @@ struct _lv_cache_entry_t * lv_evgpu_fbo_cache_get(struct _lv_draw_evgpu_unit_t *
 
 /**
  * @brief Release the FBO from the cache
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  * @param entry the FBO cache entry to release
  */
 void lv_evgpu_fbo_cache_release(struct _lv_draw_evgpu_unit_t * u, struct _lv_cache_entry_t * entry);

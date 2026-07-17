@@ -35,20 +35,20 @@ struct _lv_draw_evgpu_unit_t;
  **********************/
 
 /**
- * Initialize NanoVG utilities
- * @param u pointer to the nanovg unit
+ * Initialize EVGR utilities
+ * @param u pointer to the EVGPU unit
  */
 void lv_evgpu_utils_init(struct _lv_draw_evgpu_unit_t * u);
 
 /**
- * Deinitialize NanoVG utilities
- * @param u pointer to the nanovg unit
+ * Deinitialize EVGR utilities
+ * @param u pointer to the EVGPU unit
  */
 void lv_evgpu_utils_deinit(struct _lv_draw_evgpu_unit_t * u);
 
 /**
- * Convert an LVGL matrix to a NanoVG transform (3x2 matrix)
- * @param xform the NanoVG transform array (6 floats)
+ * Convert an LVGL matrix to a EVGR transform (3x2 matrix)
+ * @param xform the EVGR transform array (6 floats)
  * @param matrix the LVGL matrix
  */
 static inline void lv_evgpu_matrix_convert(float * xform, const lv_matrix_t * matrix)
@@ -89,15 +89,15 @@ static inline void lv_evgpu_xform_to_mat3(float * mat3_out, const float * xform)
 void lv_evgpu_native_gl_prepare(struct _lv_draw_evgpu_unit_t * u, int32_t viewport_w, int32_t viewport_h);
 
 /**
- * Restore GL state after native GLES2 draws so NanoVG can continue batching.
+ * Restore GL state after native GLES2 draws so EVGR can continue batching.
  */
 void lv_evgpu_native_gl_finish(void);
 
 /**
- * Convert an LVGL color to a NanoVG color
+ * Convert an LVGL color to a EVGR color
  * @param color the LVGL color
  * @param opa the opacity
- * @return the NanoVG color
+ * @return the EVGR color
  */
 static inline EVGRcolor lv_evgpu_color_convert(lv_color_t color, lv_opa_t opa)
 {
@@ -105,28 +105,28 @@ static inline EVGRcolor lv_evgpu_color_convert(lv_color_t color, lv_opa_t opa)
 }
 
 /**
- * Apply a transform matrix to the NanoVG context
- * @param ctx the NanoVG context
+ * Apply a transform matrix to the EVGR context
+ * @param ctx the EVGR context
  * @param matrix the transform matrix
  */
 void lv_evgpu_transform(EVGRcontext * ctx, const lv_matrix_t * matrix);
 
 /**
  * Set the clipping area
- * @param ctx the NanoVG context
+ * @param ctx the EVGR context
  * @param area the clipping area
  */
 void lv_evgpu_set_clip_area(EVGRcontext * ctx, const lv_area_t * area);
 
 /**
- * Flush pending NanoVG draws and restart the frame (keeps is_started true).
- * Required before interleaving native GLES2 draws with NanoVG batching.
+ * Flush pending EVGR draws and restart the frame (keeps is_started true).
+ * Required before interleaving native GLES2 draws with EVGR batching.
  */
 void lv_evgpu_evgr_flush_pending(struct _lv_draw_evgpu_unit_t * u);
 
 /**
  * Append a rectangle to the path
- * @param ctx the NanoVG context
+ * @param ctx the EVGR context
  * @param x the x coordinate of the rectangle
  * @param y the y coordinate of the rectangle
  * @param w the width of the rectangle
@@ -137,14 +137,14 @@ void lv_evgpu_path_append_rect(EVGRcontext * ctx, float x, float y, float w, flo
 
 /**
  * Append an area to the path
- * @param ctx the NanoVG context
+ * @param ctx the EVGR context
  * @param area the area
  */
 void lv_evgpu_path_append_area(EVGRcontext * ctx, const lv_area_t * area);
 
 /**
  * Append a right angle arc to the path
- * @param ctx the NanoVG context
+ * @param ctx the EVGR context
  * @param start_x the starting x coordinate
  * @param start_y the starting y coordinate
  * @param center_x the center x coordinate
@@ -159,7 +159,7 @@ void lv_evgpu_path_append_arc_right_angle(EVGRcontext * ctx,
 
 /**
  * Append an arc to the path
- * @param ctx the NanoVG context
+ * @param ctx the EVGR context
  * @param cx the center x coordinate
  * @param cy the center y coordinate
  * @param radius the radius
@@ -176,7 +176,7 @@ void lv_evgpu_path_append_arc(EVGRcontext * ctx,
 
 /**
  * Fill the current path
- * @param ctx the NanoVG context
+ * @param ctx the EVGR context
  * @param winding the winding rule
  * @param composite_operation the blend mode
  * @param color the fill color
@@ -186,19 +186,19 @@ void lv_evgpu_fill(EVGRcontext * ctx, enum EVGRwinding winding, enum EVGRcomposi
 
 /**
  * End the current frame
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  */
 void lv_evgpu_end_frame(struct _lv_draw_evgpu_unit_t * u);
 
 /**
- * Clean up the NanoVG unit (e.g. at the end of task)
- * @param u pointer to the nanovg unit
+ * Clean up the EVGR unit (e.g. at the end of task)
+ * @param u pointer to the EVGPU unit
  */
 void lv_evgpu_clean_up(struct _lv_draw_evgpu_unit_t * u);
 
 /**
  * Reshape the global image buffer
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  * @param cf the color format
  * @param w the new width
  * @param h the new height

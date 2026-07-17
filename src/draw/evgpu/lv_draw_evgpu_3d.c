@@ -45,7 +45,7 @@ void lv_draw_evgpu_3d(lv_draw_task_t * t, const lv_draw_3d_dsc_t * dsc, const lv
 
     lv_draw_evgpu_unit_t * u = (lv_draw_evgpu_unit_t *)t->draw_unit;
 
-    /* End NanoVG frame temporarily to allow direct OpenGL rendering */
+    /* End EVGR frame temporarily to allow direct OpenGL rendering */
     lv_evgpu_end_frame(u);
 
     lv_layer_t * layer = t->target_layer;
@@ -62,7 +62,7 @@ void lv_draw_evgpu_3d(lv_draw_task_t * t, const lv_draw_3d_dsc_t * dsc, const lv
     lv_area_t clip_area = t->clip_area;
     lv_area_move(&clip_area, -layer->buf_area.x1, -layer->buf_area.y1);
 
-    /* Reinitialize OpenGL ES driver state after NanoVG modified it */
+    /* Reinitialize OpenGL ES driver state after EVGR modified it */
     lv_opengles_reinit_state();
 
     /* Use LVGL's OpenGL ES rendering infrastructure */

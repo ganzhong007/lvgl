@@ -36,19 +36,19 @@ struct _lv_draw_evgpu_unit_t;
 
 /**
  * @brief Initialize the image cache
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  */
 void lv_evgpu_image_cache_init(struct _lv_draw_evgpu_unit_t * u);
 
 /**
  * @brief Deinitialize the image cache
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  */
 void lv_evgpu_image_cache_deinit(struct _lv_draw_evgpu_unit_t * u);
 
 /**
  * @brief Get the image handle from the cache, create a new one if not found
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  * @param src the source image data
  * @param image_flags the image flags
  * @param header the image header to fill (can be NULL)
@@ -61,7 +61,7 @@ int lv_evgpu_image_cache_get_handle(struct _lv_draw_evgpu_unit_t * u,
 
 /**
  * @brief Drop the image from the cache
- * @param u pointer to the nanovg unit
+ * @param u pointer to the EVGPU unit
  * @param src the source image data
  */
 void lv_evgpu_image_cache_drop(struct _lv_draw_evgpu_unit_t * u, const void * src);

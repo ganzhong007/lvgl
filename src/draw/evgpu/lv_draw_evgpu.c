@@ -75,7 +75,7 @@
     #define EVGR_CTX_CREATE evgrCreateGLES3
     #define EVGR_CTX_DELETE evgrDeleteGLES3
 #else
-    #error "No NanoVG implementation defined"
+    #error "No EVGR implementation defined"
 #endif
 
 #include "../../libs/evgpu/evgpu_evgr_gl.h"
@@ -149,7 +149,7 @@ void lv_draw_evgpu_init(void)
     unit->base_unit.name = "EVGPU";
 
     unit->evgr = EVGR_CTX_CREATE(0);
-    LV_ASSERT_MSG(unit->evgr != NULL, "NanoVG init failed");
+    LV_ASSERT_MSG(unit->evgr != NULL, "EVGR init failed");
 
 #if LV_USE_EVGPU_LIB
     lv_evgpu_lib_init(unit);
@@ -215,7 +215,7 @@ static void draw_execute(lv_draw_evgpu_unit_t * u, lv_draw_task_t * t)
     lv_matrix_multiply(&global_matrix, &layer_matrix);
 #endif
 
-    /* NanoVG will output premultiplied image, set the flag correspondingly. */
+    /* EVGR will output premultiplied image, set the flag correspondingly. */
     if(layer->draw_buf) {
         lv_draw_buf_set_flag(layer->draw_buf, LV_IMAGE_FLAGS_PREMULTIPLIED);
     }
