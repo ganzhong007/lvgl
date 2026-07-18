@@ -1317,6 +1317,19 @@
     #endif
 #endif
 
+#ifndef LV_USE_DRAW_EVGPUGANESH
+    #ifdef CONFIG_LV_USE_DRAW_EVGPUGANESH
+        #define LV_USE_DRAW_EVGPUGANESH CONFIG_LV_USE_DRAW_EVGPUGANESH
+    #else
+        #define LV_USE_DRAW_EVGPUGANESH 0
+    #endif
+#endif
+#if LV_USE_DRAW_EVGPUGANESH
+    #ifndef LV_USE_DRAW_EVGPU
+        #error "LV_USE_DRAW_EVGPUGANESH requires LV_USE_DRAW_EVGPU"
+    #endif
+#endif
+
 /*=======================
  * FEATURE CONFIGURATION
  *=======================*/

@@ -16,6 +16,7 @@
 #include "../../display/lv_display_private.h"
 #include "../../draw/nanovg/lv_draw_nanovg.h"
 #include "../../draw/evgpu/lv_draw_evgpu.h"
+#include "../../draw/evgpuganesh/lv_draw_evgpuganesh.h"
 #include "../../misc/lv_area_private.h"
 #include "opengl_shader/lv_opengl_shader_internal.h"
 #include "assets/lv_opengles_shader.h"
@@ -131,6 +132,10 @@ void lv_opengles_init(void)
 #elif LV_USE_DRAW_EVGPU
     lv_draw_evgpu_init();
 #endif /*LV_USE_DRAW_NANOVG / LV_USE_DRAW_EVGPU*/
+
+#if LV_USE_DRAW_EVGPUGANESH
+    lv_draw_evgpuganesh_init();
+#endif
 
     is_init = true;
 }
