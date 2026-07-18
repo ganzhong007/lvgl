@@ -1330,6 +1330,19 @@
     #endif
 #endif
 
+#ifndef LV_USE_DRAW_EVGPU_C_R_T
+    #ifdef CONFIG_LV_USE_DRAW_EVGPU_C_R_T
+        #define LV_USE_DRAW_EVGPU_C_R_T CONFIG_LV_USE_DRAW_EVGPU_C_R_T
+    #else
+        #define LV_USE_DRAW_EVGPU_C_R_T 0
+    #endif
+#endif
+#if LV_USE_DRAW_EVGPU_C_R_T
+    #ifndef LV_USE_DRAW_EVGPU
+        #error "LV_USE_DRAW_EVGPU_C_R_T requires LV_USE_DRAW_EVGPU"
+    #endif
+#endif
+
 /*=======================
  * FEATURE CONFIGURATION
  *=======================*/

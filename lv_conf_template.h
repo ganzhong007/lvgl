@@ -471,6 +471,25 @@
     #define LV_USE_EVGPU_LIB 0
 #endif
 
+/** DrawUnit EVGPUGANESH — Ganesh-style direct GL rendering for 2D tasks.
+ *  - Alternative to EVGPU's evgr backend for 2D primitives.
+ *  - Requires LV_USE_DRAW_EVGPU 1 (3D tasks pass through to EVGPU).
+ *  - Requires LV_USE_OPENGLES 1.
+ */
+#define LV_USE_DRAW_EVGPUGANESH 0
+#if LV_USE_DRAW_EVGPUGANESH
+    #define LV_EVGPUGANESH_LOG_LEVEL LV_LOG_LEVEL_WARN
+#endif
+
+/** DrawUnit EVGPU_C_R_T — Optimized EVGPU variant combining Cairo/Rive/ThorVG patterns.
+ *  Features: client-memory VBO, state caching, solid batching, gradient texture caching.
+ *  Requires LV_USE_DRAW_EVGPU 1 and LV_USE_OPENGLES 1.
+ */
+#define LV_USE_DRAW_EVGPU_C_R_T 0
+#if LV_USE_DRAW_EVGPU_C_R_T
+    #define LV_EVGPU_C_R_T_LOG_LEVEL LV_LOG_LEVEL_WARN
+#endif
+
 /*=======================
  * FEATURE CONFIGURATION
  *=======================*/

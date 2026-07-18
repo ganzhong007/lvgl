@@ -177,7 +177,7 @@ void lv_evgpuganesh_gl_init(lv_evgpuganesh_gl_t * gl) {
     glGenBuffers(1, &gl->vbo);
 #if !defined(__EMSCRIPTEN__) && !defined(ANDROID)
     GLuint vao = 0;
-    glGenVertexArraysOES(1, &vao);
+    glGenVertexArrays(1, &vao);
     gl->vao = vao;
 #else
     gl->vao = 0;
@@ -199,7 +199,7 @@ void lv_evgpuganesh_gl_deinit(lv_evgpuganesh_gl_t * gl) {
     if(gl->grad_prog) glDeleteProgram(gl->grad_prog);
     if(gl->vbo) glDeleteBuffers(1, &gl->vbo);
 #if !defined(__EMSCRIPTEN__) && !defined(ANDROID)
-    if(gl->vao) glDeleteVertexArraysOES(1, &gl->vao);
+    if(gl->vao) glDeleteVertexArrays(1, &gl->vao);
 #endif
 }
 

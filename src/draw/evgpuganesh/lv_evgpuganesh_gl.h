@@ -10,6 +10,7 @@ extern "C" {
 #if LV_USE_DRAW_EVGPUGANESH
 
 #include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
 
 #define EVGPUGANESH_UNIT_ID 12
 

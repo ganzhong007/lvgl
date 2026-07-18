@@ -1,14 +1,14 @@
-#include "lv_draw_evgpuganesh.h"
-#if LV_USE_DRAW_EVGPUGANESH
+#include "lv_draw_evgpu_c_r_t.h"
+#if LV_USE_DRAW_EVGPU_C_R_T
 
-#include "lv_draw_evgpuganesh_private.h"
+#include "lv_draw_evgpu_c_r_t_private.h"
 #include "../lv_draw_label_private.h"
 #include <GLES2/gl2.h>
 
 static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
                            lv_draw_fill_dsc_t * fill_dsc, const lv_area_t * fill_area);
 
-void lv_draw_evgpuganesh_letter(lv_draw_task_t * t, const lv_draw_letter_dsc_t * dsc, const lv_area_t * coords)
+void lv_draw_evgpu_c_r_t_letter(lv_draw_task_t * t, const lv_draw_letter_dsc_t * dsc, const lv_area_t * coords)
 {
     LV_PROFILER_DRAW_BEGIN;
 
@@ -36,7 +36,7 @@ void lv_draw_evgpuganesh_letter(lv_draw_task_t * t, const lv_draw_letter_dsc_t *
     LV_PROFILER_DRAW_END;
 }
 
-void lv_draw_evgpuganesh_label(lv_draw_task_t * t, const lv_draw_label_dsc_t * dsc, const lv_area_t * coords)
+void lv_draw_evgpu_c_r_t_label(lv_draw_task_t * t, const lv_draw_label_dsc_t * dsc, const lv_area_t * coords)
 {
     LV_PROFILER_DRAW_BEGIN;
 
@@ -53,7 +53,7 @@ static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
 
     if(!glyph_dsc) return;
 
-    lv_draw_evgpuganesh_unit_t * u = (lv_draw_evgpuganesh_unit_t *)t->draw_unit;
+    lv_draw_evgpu_c_r_t_unit_t * u = (lv_draw_evgpu_c_r_t_unit_t *)t->draw_unit;
 
     lv_font_glyph_dsc_t * g = glyph_dsc->g;
     if(!g) return;
@@ -63,11 +63,11 @@ static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
         return;
     }
 
-    lv_evgpuganesh_gl_set_scissor(clip_area.x1, clip_area.y1,
+    lv_evgpu_c_r_t_gl_set_scissor(clip_area.x1, clip_area.y1,
                                    lv_area_get_width(&clip_area),
                                    lv_area_get_height(&clip_area));
 
-    uint32_t color = lv_evgpuganesh_color_to_gl_alpha(glyph_dsc->color, glyph_dsc->opa);
+    uint32_t color = lv_evgpu_c_r_t_color_to_gl_alpha(glyph_dsc->color, glyph_dsc->opa);
 
     if(g->format == LV_FONT_GLYPH_FORMAT_IMAGE) {
         lv_draw_image_dsc_t image_dsc;
@@ -75,8 +75,8 @@ static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
         image_dsc.opa = glyph_dsc->opa;
         image_dsc.src = glyph_dsc->glyph_data;
         image_dsc.rotation = glyph_dsc->rotation;
-        lv_draw_evgpuganesh_image(t, &image_dsc, glyph_dsc->letter_coords, -1);
-        lv_evgpuganesh_gl_disable_scissor();
+        lv_draw_evgpu_c_r_t_image(t, &image_dsc, glyph_dsc->letter_coords, -1);
+        lv_evgpu_c_r_t_gl_disable_scissor();
         return;
     }
 
@@ -88,20 +88,20 @@ static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
         case LV_FONT_GLYPH_FORMAT_A8:
             break;
         default:
-            lv_evgpuganesh_gl_disable_scissor();
+            lv_evgpu_c_r_t_gl_disable_scissor();
             return;
     }
 
     const void * bitmap = lv_font_get_glyph_bitmap(g, glyph_dsc->_draw_buf);
     if(!bitmap) {
-        lv_evgpuganesh_gl_disable_scissor();
+        lv_evgpu_c_r_t_gl_disable_scissor();
         return;
     }
 
     int32_t bw = g->box_w;
     int32_t bh = g->box_h;
     if(bw == 0 || bh == 0) {
-        lv_evgpuganesh_gl_disable_scissor();
+        lv_evgpu_c_r_t_gl_disable_scissor();
         return;
     }
 
@@ -119,7 +119,7 @@ static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
     int32_t x2 = glyph_dsc->letter_coords->x2;
     int32_t y2 = glyph_dsc->letter_coords->y2;
 
-    lv_evgpuganesh_gl_draw_quad_tex(&u->gl,
+    lv_evgpu_c_r_t_gl_draw_quad_tex(&u->gl,
                                      (float)x1, (float)y1,
                                      (float)(x2 + 1), (float)(y2 + 1),
                                      0.0f, 0.0f, 1.0f, 1.0f,
@@ -127,7 +127,7 @@ static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
 
     glDeleteTextures(1, &texture);
 
-    lv_evgpuganesh_gl_disable_scissor();
+    lv_evgpu_c_r_t_gl_disable_scissor();
 }
 
 #endif
