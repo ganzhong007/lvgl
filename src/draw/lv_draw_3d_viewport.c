@@ -12,8 +12,8 @@
 
 #if LV_USE_3D_DRAW_TASKS
 
-#if LV_USE_DRAW_EVGPU
-#include "evgpu/lv_evgpu_3d_pass.h"
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
+#include "lv_draw_3d_pass.h"
 #endif
 
 /*********************
@@ -41,7 +41,7 @@ lv_draw_3d_viewport_dsc_t * lv_draw_task_get_3d_viewport_dsc(lv_draw_task_t * ta
 
 lv_layer_t * lv_draw_3d_pass_layer_create(lv_layer_t * parent_layer, const lv_area_t * area)
 {
-#if LV_USE_DRAW_EVGPU
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
     lv_layer_t * pass = lv_draw_layer_create(parent_layer, LV_COLOR_FORMAT_ARGB8888, area);
     if(pass == NULL) return NULL;
 
@@ -88,7 +88,7 @@ void lv_draw_3d_viewport_end(lv_layer_t * pass_layer)
 
 void lv_draw_3d_pass_layer_destroy(lv_layer_t * pass_layer, lv_display_t * disp)
 {
-#if LV_USE_DRAW_EVGPU
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
     lv_evgpu_3d_pass_layer_destroy(pass_layer, disp);
 #else
     LV_UNUSED(pass_layer);
@@ -98,7 +98,7 @@ void lv_draw_3d_pass_layer_destroy(lv_layer_t * pass_layer, lv_display_t * disp)
 
 void lv_draw_3d_pass_set_camera(lv_layer_t * pass_layer, const lv_3d_camera_t * camera)
 {
-#if LV_USE_DRAW_EVGPU
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
     lv_evgpu_3d_pass_set_camera(pass_layer, camera);
 #else
     LV_UNUSED(pass_layer);

@@ -63,11 +63,9 @@ static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
         return;
     }
 
-    lv_evgpu_c_r_t_gl_set_scissor(clip_area.x1, clip_area.y1,
+    lv_evgpu_c_r_t_gl_set_scissor(&u->gl, clip_area.x1, clip_area.y1,
                                    lv_area_get_width(&clip_area),
                                    lv_area_get_height(&clip_area));
-
-    uint32_t color = lv_evgpu_c_r_t_color_to_gl_alpha(glyph_dsc->color, glyph_dsc->opa);
 
     if(g->format == LV_FONT_GLYPH_FORMAT_IMAGE) {
         lv_draw_image_dsc_t image_dsc;
@@ -92,8 +90,9 @@ static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
             return;
     }
 
-    const void * bitmap = lv_font_get_glyph_bitmap(g, glyph_dsc->_draw_buf);
-    if(!bitmap) {
+    const lv_draw_buf_t * bitmap_db =
+        (const lv_draw_buf_t *)lv_font_get_glyph_bitmap(g, glyph_dsc->_draw_buf);
+    if(!bitmap_db || !bitmap_db->data) {
         lv_evgpu_c_r_t_gl_disable_scissor();
         return;
     }
@@ -112,18 +111,46 @@ static void draw_letter_cb(lv_draw_task_t * t, lv_draw_glyph_dsc_t * glyph_dsc,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, bw, bh, 0, GL_ALPHA, GL_UNSIGNED_BYTE, bitmap);
+
+    /* lv_font_get_glyph_bitmap returns an lv_draw_buf_t*, not raw A8 bytes.
+     * Copy out with stride into tightly packed RGBA (GLES2 has no ROW_LENGTH). */
+    {
+        const uint8_t * src_base = bitmap_db->data;
+        uint32_t stride = bitmap_db->header.stride;
+        if(stride < (uint32_t)bw) stride = (uint32_t)bw;
+        uint8_t * rgba = (uint8_t *)lv_malloc((size_t)bw * (size_t)bh * 4u);
+        if(!rgba) {
+            glDeleteTextures(1, &texture);
+            lv_evgpu_c_r_t_gl_disable_scissor();
+            return;
+        }
+        for(int32_t y = 0; y < bh; y++) {
+            const uint8_t * src = src_base + (uint32_t)y * stride;
+            uint8_t * dst = rgba + (size_t)y * (size_t)bw * 4u;
+            for(int32_t x = 0; x < bw; x++) {
+                uint8_t a = src[x];
+                dst[x * 4 + 0] = 255;
+                dst[x * 4 + 1] = 255;
+                dst[x * 4 + 2] = 255;
+                dst[x * 4 + 3] = a;
+            }
+        }
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bw, bh, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        lv_free(rgba);
+    }
 
     int32_t x1 = glyph_dsc->letter_coords->x1;
     int32_t y1 = glyph_dsc->letter_coords->y1;
     int32_t x2 = glyph_dsc->letter_coords->x2;
     int32_t y2 = glyph_dsc->letter_coords->y2;
 
+    /* Recolor RGB from glyph color; alpha only via u_alpha (avoid double opa). */
+    uint32_t recolor = lv_evgpu_c_r_t_color_to_gl(glyph_dsc->color);
     lv_evgpu_c_r_t_gl_draw_quad_tex(&u->gl,
                                      (float)x1, (float)y1,
                                      (float)(x2 + 1), (float)(y2 + 1),
                                      0.0f, 0.0f, 1.0f, 1.0f,
-                                     texture, color, LV_OPA_COVER, glyph_dsc->opa);
+                                     texture, recolor, LV_OPA_COVER, glyph_dsc->opa);
 
     glDeleteTextures(1, &texture);
 

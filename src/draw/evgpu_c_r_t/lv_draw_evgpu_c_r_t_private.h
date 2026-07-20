@@ -43,6 +43,37 @@ void lv_draw_evgpu_c_r_t_gradient(lv_draw_task_t * t, const lv_draw_fill_dsc_t *
 void lv_draw_evgpu_c_r_t_vector(lv_draw_task_t * t, const lv_draw_vector_dsc_t * dsc);
 #endif
 
+#if LV_USE_3DTEXTURE
+void lv_draw_evgpu_c_r_t_3d(lv_draw_task_t * t, const lv_draw_3d_dsc_t * dsc, const lv_area_t * coords);
+#endif
+
+#if LV_USE_3D_DRAW_TASKS
+#include "../../include/lvgl/draw/lv_draw_3d_viewport.h"
+#include "../../include/lvgl/draw/lv_draw_3d_clear.h"
+#include "../../include/lvgl/draw/lv_draw_3d_line.h"
+#include "../../include/lvgl/draw/lv_draw_3d_callback.h"
+#include "../../include/lvgl/draw/lv_draw_3d_mesh.h"
+#if LV_USE_GLTF
+#include "../../include/lvgl/draw/lv_draw_3d_scene.h"
+#endif
+
+void lv_draw_evgpu_c_r_t_3d_viewport(lv_draw_task_t * t, const lv_draw_3d_viewport_dsc_t * dsc, const lv_area_t * coords);
+void lv_draw_evgpu_c_r_t_3d_clear(lv_draw_task_t * t, const lv_draw_3d_clear_dsc_t * dsc);
+void lv_draw_evgpu_c_r_t_3d_line_init(void);
+void lv_draw_evgpu_c_r_t_3d_line_deinit(void);
+void lv_draw_evgpu_c_r_t_3d_line(lv_draw_task_t * t, const lv_draw_3d_line_dsc_t * dsc);
+void lv_draw_evgpu_c_r_t_3d_cb_init(void);
+void lv_draw_evgpu_c_r_t_3d_cb(lv_draw_task_t * t, const lv_draw_3d_callback_dsc_t * dsc);
+void lv_draw_evgpu_c_r_t_3d_mesh_init(void);
+void lv_draw_evgpu_c_r_t_3d_mesh_deinit(void);
+void lv_draw_evgpu_c_r_t_3d_mesh(lv_draw_task_t * t, const lv_draw_3d_mesh_dsc_t * dsc);
+#if LV_USE_GLTF
+void lv_draw_evgpu_c_r_t_3d_scene_init(void);
+void lv_draw_evgpu_c_r_t_3d_scene_deinit(void);
+void lv_draw_evgpu_c_r_t_3d_scene(lv_draw_task_t * t, const lv_draw_3d_scene_dsc_t * dsc);
+#endif
+#endif /* LV_USE_3D_DRAW_TASKS */
+
 void lv_evgpu_c_r_t_end_frame(lv_draw_evgpu_c_r_t_unit_t * u);
 void lv_evgpu_c_r_t_clean_up(lv_draw_evgpu_c_r_t_unit_t * u);
 

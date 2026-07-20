@@ -125,14 +125,13 @@ lv_wl_seat_pointer_t * lv_wayland_seat_pointer_create(struct wl_seat * seat, str
 
     struct wl_cursor_theme * cursor_theme = wl_cursor_theme_load(NULL, 32, lv_wl_ctx.wl_shm);
     if(!cursor_theme) {
-        LV_LOG_WARN("Failed to load cursor theme for pointer");
-        return NULL;
+        LV_LOG_WARN("No cursor theme found — pointer input will work without visible cursor");
     }
 
     struct wl_pointer * pointer = wl_seat_get_pointer(seat);
     if(!pointer) {
         LV_LOG_WARN("Failed to get seat pointer");
-        wl_cursor_theme_destroy(cursor_theme);
+        if(cursor_theme) wl_cursor_theme_destroy(cursor_theme);
         return NULL;
     }
 
@@ -141,7 +140,7 @@ lv_wl_seat_pointer_t * lv_wayland_seat_pointer_create(struct wl_seat * seat, str
     if(!wl_seat_pointer) {
         LV_LOG_WARN("Failed to allocate memory for wayland pointer");
         wl_pointer_destroy(pointer);
-        wl_cursor_theme_destroy(cursor_theme);
+        if(cursor_theme) wl_cursor_theme_destroy(cursor_theme);
         return NULL;
     }
     wl_pointer_add_listener(pointer, &pointer_listener, NULL);
@@ -161,7 +160,7 @@ void lv_wayland_seat_pointer_delete(lv_wl_seat_pointer_t * seat_pointer)
     lv_wayland_update_indevs(pointer_read, NULL);
     lv_wayland_update_indevs(pointeraxis_read, NULL);
     wl_pointer_destroy(seat_pointer->wl_pointer);
-    wl_cursor_theme_destroy(seat_pointer->cursor_theme);
+    if(seat_pointer->cursor_theme) wl_cursor_theme_destroy(seat_pointer->cursor_theme);
     lv_free(seat_pointer);
 }
 
@@ -203,14 +202,16 @@ static void pointer_handle_enter(void * data, struct wl_pointer * pointer, uint3
     seat_pointer->point.x = pos_x;
     seat_pointer->point.y = pos_y;
 
-    struct wl_cursor * wl_cursor = wl_cursor_theme_get_cursor(seat_pointer->cursor_theme, LV_WAYLAND_DEFAULT_CURSOR_NAME);
-    struct wl_cursor_image * cursor_image = wl_cursor->images[0];
+    if(seat_pointer->cursor_theme) {
+        struct wl_cursor * wl_cursor = wl_cursor_theme_get_cursor(seat_pointer->cursor_theme, LV_WAYLAND_DEFAULT_CURSOR_NAME);
+        struct wl_cursor_image * cursor_image = wl_cursor->images[0];
 
-    wl_pointer_set_cursor(pointer, serial, seat_pointer->cursor_surface, cursor_image->hotspot_x, cursor_image->hotspot_y);
+        wl_pointer_set_cursor(pointer, serial, seat_pointer->cursor_surface, cursor_image->hotspot_x, cursor_image->hotspot_y);
 
-    wl_surface_attach(seat_pointer->cursor_surface, wl_cursor_image_get_buffer(cursor_image), 0, 0);
-    wl_surface_damage(seat_pointer->cursor_surface, 0, 0, cursor_image->width, cursor_image->height);
-    wl_surface_commit(seat_pointer->cursor_surface);
+        wl_surface_attach(seat_pointer->cursor_surface, wl_cursor_image_get_buffer(cursor_image), 0, 0);
+        wl_surface_damage(seat_pointer->cursor_surface, 0, 0, cursor_image->width, cursor_image->height);
+        wl_surface_commit(seat_pointer->cursor_surface);
+    }
 }
 
 

@@ -48,7 +48,7 @@ static void draw_core_cb(lv_draw_task_t * t, const lv_draw_image_dsc_t * draw_ds
         return;
     }
 
-    lv_evgpu_c_r_t_gl_set_scissor(clipped_img_area->x1, clipped_img_area->y1,
+    lv_evgpu_c_r_t_gl_set_scissor(&u->gl, clipped_img_area->x1, clipped_img_area->y1,
                                    lv_area_get_width(clipped_img_area),
                                    lv_area_get_height(clipped_img_area));
 

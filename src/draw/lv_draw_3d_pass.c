@@ -1,5 +1,5 @@
 /**
- * @file lv_evgpu_3d_pass.c
+ * @file lv_draw_3d_pass.c
  *
  */
 
@@ -7,13 +7,13 @@
  *      INCLUDES
  *********************/
 
-#include "lv_evgpu_3d_pass.h"
+#include "lv_draw_3d_pass.h"
 
-#if LV_USE_DRAW_EVGPU && LV_USE_3D_DRAW_TASKS
+#if (LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T) && LV_USE_3D_DRAW_TASKS
 
-#include "../../display/lv_display_private.h"
-#include "../../drivers/opengles/lv_opengles_private.h"
-#include "../../drivers/opengles/lv_opengles_debug.h"
+#include "../display/lv_display_private.h"
+#include "../drivers/opengles/lv_opengles_private.h"
+#include "../drivers/opengles/lv_opengles_debug.h"
 
 /*********************
  *      DEFINES
@@ -196,4 +196,4 @@ static void destroy_fbo_resources(lv_evgpu_3d_pass_fbo_t * fbo)
     fbo->h = 0;
 }
 
-#endif /* LV_USE_DRAW_EVGPU && LV_USE_3D_DRAW_TASKS */
+#endif /* (LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T) && LV_USE_3D_DRAW_TASKS */

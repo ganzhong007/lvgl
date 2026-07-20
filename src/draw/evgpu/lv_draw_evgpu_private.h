@@ -35,18 +35,11 @@ struct _lv_evgpu_label_text_cache_t;
  *      DEFINES
  *********************/
 
-/* Select EVGPU vector GL backend (evgpu_evgr_gl) based on LV_EVGR_BACKEND */
-#if LV_EVGR_BACKEND == LV_EVGR_BACKEND_GL2
-#define EVGR_GL2_IMPLEMENTATION
-#elif LV_EVGR_BACKEND == LV_EVGR_BACKEND_GL3
-#define EVGR_GL3_IMPLEMENTATION
-#elif LV_EVGR_BACKEND == LV_EVGR_BACKEND_GLES2
-#define EVGR_GLES2_IMPLEMENTATION
-#elif LV_EVGR_BACKEND == LV_EVGR_BACKEND_GLES3
-#define EVGR_GLES3_IMPLEMENTATION
-#else
-#error "Invalid LV_EVGR_BACKEND value"
+/* DrawUnitEVGPU is GLES2-only */
+#if LV_EVGR_BACKEND != LV_EVGR_BACKEND_GLES2
+#error "LV_USE_DRAW_EVGPU requires LV_EVGR_BACKEND_GLES2"
 #endif
+#define EVGR_GLES2_IMPLEMENTATION
 
 /**********************
  *      TYPEDEFS

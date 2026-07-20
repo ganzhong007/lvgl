@@ -452,18 +452,13 @@
     #define LV_NANOVG_LETTER_CACHE_CNT 512
 #endif
 
-/** DrawUnitEVGPU — GLES2.0 hardware GPU (EVGPU) draw unit.
+/** DrawUnitEVGPU — GLES2-only hardware GPU (EVGPU) draw unit.
  * - Mutually exclusive with LV_USE_DRAW_NANOVG and LV_USE_DRAW_OPENGLES.
- * - 2D vector runtime: libs/evgpu/evgpu_evgr* (EVGR GLES backend).
+ * - 2D vector runtime: libs/evgpu/evgpu_evgr* (EVGR GLES2 backend only).
+ * - Desktop GL / GLES3 backends are not supported for this draw unit.
  */
 #define LV_USE_DRAW_EVGPU 0
 #if LV_USE_DRAW_EVGPU
-    /** OpenGL backend for EVGPU vector renderer (EVGR backend enum):
-     * - LV_EVGR_BACKEND_GL2:   OpenGL 2.0
-     * - LV_EVGR_BACKEND_GL3:   OpenGL 3.0+
-     * - LV_EVGR_BACKEND_GLES2: OpenGL ES 2.0
-     * - LV_EVGR_BACKEND_GLES3: OpenGL ES 3.0+
-     */
     #define LV_EVGR_BACKEND   LV_EVGR_BACKEND_GLES2
     #define LV_EVGR_IMAGE_CACHE_CNT 128
     #define LV_EVGR_LETTER_CACHE_CNT 512
@@ -481,9 +476,10 @@
     #define LV_EVGPUGANESH_LOG_LEVEL LV_LOG_LEVEL_WARN
 #endif
 
-/** DrawUnit EVGPU_C_R_T — Optimized EVGPU variant combining Cairo/Rive/ThorVG patterns.
+/** DrawUnit EVGPU_C_R_T — GLES2 DrawUnit (Cairo/Rive/ThorVG-style patterns).
  *  Features: client-memory VBO, state caching, solid batching, gradient texture caching.
- *  Requires LV_USE_DRAW_EVGPU 1 and LV_USE_OPENGLES 1.
+ *  Owns 2D and 3D draw tasks independently of EVGPU (no EVGR).
+ *  Requires LV_USE_OPENGLES 1. Can run with LV_USE_DRAW_EVGPU 0.
  */
 #define LV_USE_DRAW_EVGPU_C_R_T 0
 #if LV_USE_DRAW_EVGPU_C_R_T

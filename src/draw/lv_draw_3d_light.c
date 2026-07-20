@@ -12,8 +12,8 @@
 
 #if LV_USE_3D_DRAW_TASKS
 
-#if LV_USE_DRAW_EVGPU
-#include "evgpu/lv_evgpu_3d_pass.h"
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
+#include "lv_draw_3d_pass.h"
 #endif
 
 /**********************
@@ -22,7 +22,7 @@
 
 void lv_draw_3d_pass_reset_lights(lv_layer_t * pass_layer)
 {
-#if LV_USE_DRAW_EVGPU
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
     if(!lv_evgpu_3d_pass_layer_is(pass_layer)) return;
     lv_3d_pass_layer_ud_t * ud = pass_layer->user_data;
     ud->light_count = 0;
@@ -33,7 +33,7 @@ void lv_draw_3d_pass_reset_lights(lv_layer_t * pass_layer)
 
 bool lv_draw_3d_pass_add_light(lv_layer_t * pass_layer, const lv_3d_light_dsc_t * light)
 {
-#if LV_USE_DRAW_EVGPU
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
     if(!lv_evgpu_3d_pass_layer_is(pass_layer) || light == NULL) return false;
 
     lv_3d_pass_layer_ud_t * ud = pass_layer->user_data;
@@ -50,7 +50,7 @@ bool lv_draw_3d_pass_add_light(lv_layer_t * pass_layer, const lv_3d_light_dsc_t 
 
 uint32_t lv_draw_3d_pass_get_light_count(const lv_layer_t * pass_layer)
 {
-#if LV_USE_DRAW_EVGPU
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
     if(!lv_evgpu_3d_pass_layer_is(pass_layer)) return 0;
     lv_3d_pass_layer_ud_t * ud = pass_layer->user_data;
     return ud->light_count;
@@ -62,7 +62,7 @@ uint32_t lv_draw_3d_pass_get_light_count(const lv_layer_t * pass_layer)
 
 const lv_3d_light_dsc_t * lv_draw_3d_pass_get_lights(const lv_layer_t * pass_layer)
 {
-#if LV_USE_DRAW_EVGPU
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
     if(!lv_evgpu_3d_pass_layer_is(pass_layer)) return NULL;
     lv_3d_pass_layer_ud_t * ud = pass_layer->user_data;
     return ud->lights;

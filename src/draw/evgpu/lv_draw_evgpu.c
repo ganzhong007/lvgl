@@ -50,33 +50,14 @@
     #define EVGR_GL_STATIC_LINK
 #endif
 
-#if defined(EVGR_GL2_IMPLEMENTATION)
-    #ifdef EVGR_GL_STATIC_LINK
-        #include <GL/glew.h>
-    #endif
-    #define EVGR_CTX_CREATE evgrCreateGL2
-    #define EVGR_CTX_DELETE evgrDeleteGL2
-#elif defined(EVGR_GL3_IMPLEMENTATION)
-    #ifdef EVGR_GL_STATIC_LINK
-        #include <GL/glew.h>
-    #endif
-    #define EVGR_CTX_CREATE evgrCreateGL3
-    #define EVGR_CTX_DELETE evgrDeleteGL3
-#elif defined(EVGR_GLES2_IMPLEMENTATION)
-    #ifdef EVGR_GL_STATIC_LINK
-        #include <GLES2/gl2.h>
-    #endif
-    #define EVGR_CTX_CREATE evgrCreateGLES2
-    #define EVGR_CTX_DELETE evgrDeleteGLES2
-#elif defined(EVGR_GLES3_IMPLEMENTATION)
-    #ifdef EVGR_GL_STATIC_LINK
-        #include <GLES3/gl3.h>
-    #endif
-    #define EVGR_CTX_CREATE evgrCreateGLES3
-    #define EVGR_CTX_DELETE evgrDeleteGLES3
-#else
-    #error "No EVGR implementation defined"
+#if !defined(EVGR_GLES2_IMPLEMENTATION)
+    #error "LV_USE_DRAW_EVGPU requires EVGR_GLES2_IMPLEMENTATION"
 #endif
+#ifdef EVGR_GL_STATIC_LINK
+    #include <GLES2/gl2.h>
+#endif
+#define EVGR_CTX_CREATE evgrCreateGLES2
+#define EVGR_CTX_DELETE evgrDeleteGLES2
 
 #include "../../libs/evgpu/evgpu_evgr_gl.h"
 #include "../../libs/evgpu/evgpu_evgr_gl_utils.h"

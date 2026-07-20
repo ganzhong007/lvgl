@@ -1287,12 +1287,13 @@
     #endif
 #endif
 #if LV_USE_DRAW_EVGPU
-    #ifndef LV_EVGR_BACKEND
-        #ifdef CONFIG_LV_EVGR_BACKEND
-            #define LV_EVGR_BACKEND CONFIG_LV_EVGR_BACKEND
-        #else
-            #define LV_EVGR_BACKEND LV_EVGR_BACKEND_GLES2
+    /* DrawUnitEVGPU is GLES2-only (Mali-400 / lima target). */
+    #ifdef LV_EVGR_BACKEND
+        #if LV_EVGR_BACKEND != LV_EVGR_BACKEND_GLES2
+            #error "LV_USE_DRAW_EVGPU requires LV_EVGR_BACKEND_GLES2"
         #endif
+    #else
+        #define LV_EVGR_BACKEND LV_EVGR_BACKEND_GLES2
     #endif
     #ifndef LV_EVGR_IMAGE_CACHE_CNT
         #ifdef CONFIG_LV_EVGR_IMAGE_CACHE_CNT
@@ -1338,8 +1339,8 @@
     #endif
 #endif
 #if LV_USE_DRAW_EVGPU_C_R_T
-    #ifndef LV_USE_DRAW_EVGPU
-        #error "LV_USE_DRAW_EVGPU_C_R_T requires LV_USE_DRAW_EVGPU"
+    #ifndef LV_USE_OPENGLES
+        #error "LV_USE_DRAW_EVGPU_C_R_T requires LV_USE_OPENGLES"
     #endif
 #endif
 

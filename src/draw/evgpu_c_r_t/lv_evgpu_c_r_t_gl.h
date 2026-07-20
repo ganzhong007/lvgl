@@ -9,8 +9,9 @@ extern "C" {
 
 #if LV_USE_DRAW_EVGPU_C_R_T
 
+#ifndef LV_EVGPU_C_R_T_SKIP_SYSTEM_GLES
 #include <GLES2/gl2.h>
-#include <GLES3/gl3.h>
+#endif
 
 #define EVGPU_C_R_T_UNIT_ID 13
 
@@ -51,6 +52,23 @@ typedef struct {
     GLint solid_u_color;
     GLint solid_u_alpha;
     GLint solid_u_proj;
+
+    GLuint round_prog;
+    GLint round_u_color;
+    GLint round_u_proj;
+    GLint round_u_rect;
+    GLint round_u_radius;
+    GLint round_u_border;
+
+    GLuint radial_prog;
+    GLint radial_u_proj;
+    GLint radial_u_rect;
+    GLint radial_u_radius;
+    GLint radial_u_center;
+    GLint radial_u_radii;
+    GLint radial_u_stops_count;
+    GLint radial_u_stop_color;
+    GLint radial_u_stop_frac;
 
     GLuint tex_prog;
     GLint tex_u_texture;
@@ -98,6 +116,22 @@ void lv_evgpu_c_r_t_gl_draw_quad_solid(lv_evgpu_c_r_t_gl_t * gl,
                                        float x1, float y1, float x2, float y2,
                                        uint32_t color, uint8_t alpha);
 
+/** Rounded fill (border_w=0) or rounded border ring (border_w>0). */
+void lv_evgpu_c_r_t_gl_draw_round_rect(lv_evgpu_c_r_t_gl_t * gl,
+                                       float x1, float y1, float x2, float y2,
+                                       float radius, float border_w,
+                                       uint32_t color, uint8_t alpha);
+
+/** Multi-stop radial gradient (concentric), clipped to rounded/circle rect. */
+#define EVGPU_C_R_T_RADIAL_MAX_STOPS 8
+void lv_evgpu_c_r_t_gl_draw_radial_grad(lv_evgpu_c_r_t_gl_t * gl,
+                                        float x1, float y1, float x2, float y2,
+                                        float clip_radius,
+                                        float cx, float cy, float r0, float r1,
+                                        const float * stop_rgba, /* stops_count * 4 */
+                                        const float * stop_fracs,
+                                        int stops_count);
+
 void lv_evgpu_c_r_t_gl_draw_quad_tex(lv_evgpu_c_r_t_gl_t * gl,
                                      float x1, float y1, float x2, float y2,
                                      float u1, float v1, float u2, float v2,
@@ -121,18 +155,19 @@ void lv_evgpu_c_r_t_gl_blur_quad(lv_evgpu_c_r_t_gl_t * gl,
                                   GLuint texture, float dir_x, float dir_y,
                                   float radius, float size_w, float size_h);
 
-void lv_evgpu_c_r_t_gl_set_scissor(int32_t x, int32_t y, int32_t w, int32_t h);
+/** Set GL scissor from LVGL top-left coords (flips Y using gl->view_h). */
+void lv_evgpu_c_r_t_gl_set_scissor(lv_evgpu_c_r_t_gl_t * gl, int32_t x, int32_t y, int32_t w, int32_t h);
 void lv_evgpu_c_r_t_gl_disable_scissor(void);
 
 void lv_evgpu_c_r_t_gl_clear(GLfloat r, GLfloat g, GLfloat b, GLfloat a);
 
+/** Pack as 0xAARRGGBB to match shader unpack (R>>16, G>>8, B>>0). */
 static inline uint32_t lv_evgpu_c_r_t_color_to_gl(lv_color_t c) {
-    return (uint32_t)c.red << 0 | (uint32_t)c.green << 8 | (uint32_t)c.blue << 16 | 0xFF000000;
+    return ((uint32_t)c.red << 16) | ((uint32_t)c.green << 8) | (uint32_t)c.blue | 0xFF000000u;
 }
 
 static inline uint32_t lv_evgpu_c_r_t_color_to_gl_alpha(lv_color_t c, lv_opa_t opa) {
-    uint32_t a = opa;
-    return ((uint32_t)c.blue << 16) | ((uint32_t)c.green << 8) | (uint32_t)c.red | (a << 24);
+    return ((uint32_t)opa << 24) | ((uint32_t)c.red << 16) | ((uint32_t)c.green << 8) | (uint32_t)c.blue;
 }
 
 #endif

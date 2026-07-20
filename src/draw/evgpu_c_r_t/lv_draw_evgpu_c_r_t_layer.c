@@ -26,7 +26,7 @@ void lv_draw_evgpu_c_r_t_layer(lv_draw_task_t * t, const lv_draw_image_dsc_t * d
         return;
     }
 
-    lv_evgpu_c_r_t_gl_set_scissor(clip_area.x1, clip_area.y1,
+    lv_evgpu_c_r_t_gl_set_scissor(&u->gl, clip_area.x1, clip_area.y1,
                                    lv_area_get_width(&clip_area),
                                    lv_area_get_height(&clip_area));
 

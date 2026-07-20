@@ -3,10 +3,16 @@
 
 #include "lv_draw_evgpu_c_r_t_private.h"
 #include "lv_evgpu_c_r_t_fbo.h"
+#include "lv_evgpu_c_r_t_kawase.h"
 #include "../../core/lv_refr_private.h"
 #include "../../misc/lv_port_layer_trace.h"
-#include "../evgpu/lv_draw_evgpu_private.h"
+#if LV_USE_3D_DRAW_TASKS
+#include "../lv_draw_3d_pass.h"
+#endif
 #include <GLES2/gl2.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef GL_BGRA
     #ifdef GL_BGRA_EXT
@@ -36,6 +42,16 @@ void lv_draw_evgpu_c_r_t_init(void)
     unit->base_unit.name = "EVGPU_C_R_T";
 
     lv_evgpu_c_r_t_gl_init(&unit->gl);
+    lv_evgpu_c_r_t_kawase_init();
+
+#if LV_USE_3D_DRAW_TASKS
+    lv_draw_evgpu_c_r_t_3d_line_init();
+    lv_draw_evgpu_c_r_t_3d_cb_init();
+    lv_draw_evgpu_c_r_t_3d_mesh_init();
+#if LV_USE_GLTF
+    lv_draw_evgpu_c_r_t_3d_scene_init();
+#endif
+#endif
 
     LV_LOG_INFO("DrawUnitEVGPU_C_R_T ready (unit_id=%d)", EVGPU_C_R_T_UNIT_ID);
 }
@@ -44,6 +60,51 @@ void lv_evgpu_c_r_t_end_frame(lv_draw_evgpu_c_r_t_unit_t * u)
 {
     lv_evgpu_c_r_t_gl_flush(&u->gl);
     glFlush();
+
+    /* One-shot framebuffer dump: LVGL_GL_DUMP=/tmp/out.ppm (after a few frames).
+     * Static UIs may only redraw a handful of times — keep countdown small. */
+    static int dump_countdown = -1;
+    if(dump_countdown < 0) {
+        const char * path = getenv("LVGL_GL_DUMP");
+        dump_countdown = path ? 3 : 0;
+    }
+    if(dump_countdown > 0) {
+        dump_countdown--;
+        if(dump_countdown == 0) {
+            const char * path = getenv("LVGL_GL_DUMP");
+            int w = u->gl.view_w;
+            int h = u->gl.view_h;
+            if(path && w > 0 && h > 0) {
+                size_t nbytes = (size_t)w * (size_t)h * 4u;
+                uint8_t * rgba = (uint8_t *)malloc(nbytes);
+                if(rgba) {
+                    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+                    FILE * f = fopen(path, "wb");
+                    if(f) {
+                        fprintf(f, "P6\n%d %d\n255\n", w, h);
+                        for(int y = h - 1; y >= 0; y--) {
+                            const uint8_t * row = rgba + (size_t)y * (size_t)w * 4u;
+                            for(int x = 0; x < w; x++) {
+                                fputc(row[x * 4 + 0], f);
+                                fputc(row[x * 4 + 1], f);
+                                fputc(row[x * 4 + 2], f);
+                            }
+                        }
+                        fclose(f);
+                        LV_LOG_USER("LVGL_GL_DUMP wrote %s (%dx%d) px(100,100)=#%02x%02x%02x",
+                                    path, w, h,
+                                    rgba[((size_t)(h - 1 - 100) * (size_t)w + 100) * 4u + 0],
+                                    rgba[((size_t)(h - 1 - 100) * (size_t)w + 100) * 4u + 1],
+                                    rgba[((size_t)(h - 1 - 100) * (size_t)w + 100) * 4u + 2]);
+                    }
+                    free(rgba);
+                }
+            }
+        }
+    }
+
+    u->is_started = false;
 }
 
 void lv_evgpu_c_r_t_clean_up(lv_draw_evgpu_c_r_t_unit_t * u)
@@ -58,7 +119,7 @@ static void draw_execute(lv_draw_evgpu_c_r_t_unit_t * u, lv_draw_task_t * t)
 
     lv_layer_t * layer = t->target_layer;
 
-    lv_evgpu_c_r_t_gl_set_scissor(t->clip_area.x1, t->clip_area.y1,
+    lv_evgpu_c_r_t_gl_set_scissor(&u->gl, t->clip_area.x1, t->clip_area.y1,
                                    lv_area_get_width(&t->clip_area),
                                    lv_area_get_height(&t->clip_area));
 
@@ -129,29 +190,29 @@ static void draw_execute(lv_draw_evgpu_c_r_t_unit_t * u, lv_draw_task_t * t)
 
 #if LV_USE_3DTEXTURE
         case LV_DRAW_TASK_TYPE_3D:
-            lv_draw_evgpu_3d(t, t->draw_dsc, &t->area);
+            lv_draw_evgpu_c_r_t_3d(t, t->draw_dsc, &t->area);
             break;
 #endif
 
 #if LV_USE_3D_DRAW_TASKS
         case LV_DRAW_TASK_TYPE_3D_VIEWPORT:
-            lv_draw_evgpu_3d_viewport(t, t->draw_dsc, &t->area);
+            lv_draw_evgpu_c_r_t_3d_viewport(t, t->draw_dsc, &t->area);
             break;
         case LV_DRAW_TASK_TYPE_3D_CLEAR:
-            lv_draw_evgpu_3d_clear(t, t->draw_dsc);
+            lv_draw_evgpu_c_r_t_3d_clear(t, t->draw_dsc);
             break;
         case LV_DRAW_TASK_TYPE_3D_LINE:
-            lv_draw_evgpu_3d_line(t, t->draw_dsc);
+            lv_draw_evgpu_c_r_t_3d_line(t, t->draw_dsc);
             break;
         case LV_DRAW_TASK_TYPE_3D_CALLBACK:
-            lv_draw_evgpu_3d_cb(t, t->draw_dsc);
+            lv_draw_evgpu_c_r_t_3d_cb(t, t->draw_dsc);
             break;
         case LV_DRAW_TASK_TYPE_3D_MESH:
-            lv_draw_evgpu_3d_mesh(t, t->draw_dsc);
+            lv_draw_evgpu_c_r_t_3d_mesh(t, t->draw_dsc);
             break;
 #if LV_USE_GLTF
         case LV_DRAW_TASK_TYPE_3D_SCENE:
-            lv_draw_evgpu_3d_scene(t, t->draw_dsc);
+            lv_draw_evgpu_c_r_t_3d_scene(t, t->draw_dsc);
             break;
 #endif
 #endif
@@ -165,6 +226,15 @@ static void draw_execute(lv_draw_evgpu_c_r_t_unit_t * u, lv_draw_task_t * t)
 static void on_layer_changed(lv_layer_t * new_layer)
 {
     LV_PROFILER_DRAW_BEGIN;
+
+#if LV_USE_3D_DRAW_TASKS
+    if(lv_evgpu_3d_pass_layer_is(new_layer)) {
+        /* 3D pass tasks bind their own FBO. */
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        LV_PROFILER_DRAW_END;
+        return;
+    }
+#endif
 
     if(!new_layer->user_data) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -280,6 +350,15 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
 
         lv_evgpu_c_r_t_gl_set_projection(&u->gl, buf_w, buf_h);
         glViewport(0, 0, buf_w, buf_h);
+        /* Must clear each frame: low-opa greens + GL_ONE blend otherwise
+         * accumulate across swaps until the whole buffer is solid #45FF8A. */
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDisable(GL_SCISSOR_TEST);
+        /* Must clear each frame: low-opa greens + GL_ONE blend otherwise
+         * accumulate across swaps until the whole buffer is solid #45FF8A.
+         * Use opaque black so alpha=0 doesn't reveal the compositor. */
+        glClearColor(0.f, 0.f, 0.f, 1.f);
+        glClear(GL_COLOR_BUFFER_BIT);
         u->is_started = true;
     }
 
@@ -296,6 +375,8 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
 
 static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
 {
+    LV_UNUSED(draw_unit);
+
     switch(task->type) {
         case LV_DRAW_TASK_TYPE_FILL:
         case LV_DRAW_TASK_TYPE_BORDER:
@@ -309,10 +390,6 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
         case LV_DRAW_TASK_TYPE_TRIANGLE:
         case LV_DRAW_TASK_TYPE_MASK_RECTANGLE:
         case LV_DRAW_TASK_TYPE_BLUR:
-            task->preference_score = 90;
-            task->preferred_draw_unit_id = EVGPU_C_R_T_UNIT_ID;
-            return 1;
-
 #if LV_USE_3DTEXTURE
         case LV_DRAW_TASK_TYPE_3D:
 #endif
@@ -326,10 +403,16 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
         case LV_DRAW_TASK_TYPE_3D_SCENE:
 #endif
 #endif
+            if(task->preference_score > 70) {
+                task->preference_score = 70;
+                task->preferred_draw_unit_id = EVGPU_C_R_T_UNIT_ID;
+            }
+            return 1;
+
 #if LV_USE_VECTOR_GRAPHIC
         case LV_DRAW_TASK_TYPE_VECTOR:
-#endif
             return 0;
+#endif
 
         default:
             return 0;
@@ -339,6 +422,15 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
 static int32_t draw_delete(lv_draw_unit_t * draw_unit)
 {
     lv_draw_evgpu_c_r_t_unit_t * unit = (lv_draw_evgpu_c_r_t_unit_t *)draw_unit;
+
+#if LV_USE_3D_DRAW_TASKS
+    lv_draw_evgpu_c_r_t_3d_line_deinit();
+    lv_draw_evgpu_c_r_t_3d_mesh_deinit();
+#if LV_USE_GLTF
+    lv_draw_evgpu_c_r_t_3d_scene_deinit();
+#endif
+#endif
+
     lv_evgpu_c_r_t_gl_deinit(&unit->gl);
     return 0;
 }
@@ -362,6 +454,13 @@ static void draw_event_cb(lv_event_t * e)
             break;
 
         case LV_EVENT_CHILD_DELETED: {
+#if LV_USE_3D_DRAW_TASKS
+                if(lv_evgpu_3d_pass_layer_is(layer)) {
+                    /* Destroyed via lv_draw_3d_pass_layer_destroy(). */
+                    if(u->current_layer == layer) u->current_layer = NULL;
+                    break;
+                }
+#endif
                 lv_evgpu_c_r_t_fbo_t * fbo = (lv_evgpu_c_r_t_fbo_t *)layer->user_data;
                 if(fbo) {
                     lv_evgpu_c_r_t_fbo_destroy(fbo);

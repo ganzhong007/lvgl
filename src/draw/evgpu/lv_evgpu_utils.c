@@ -21,6 +21,8 @@
 #endif
 #include <float.h>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /*********************
 *      DEFINES
@@ -302,6 +304,49 @@ void lv_evgpu_end_frame(struct _lv_draw_evgpu_unit_t * u)
     evgrEndFrame(u->evgr);
     LV_PROFILER_DRAW_END_TAG("evgrEndFrame");
     LV_PORT_LAYER_TRACE("L3-EVGR", "evgrEndFrame -> glevgr__renderFlush (GPU draw)");
+
+    /* One-shot FB dump: LVGL_GL_DUMP=/tmp/out.ppm (after a few end_frame calls).
+     * Keep the countdown small — static UIs may only redraw once. */
+    static int dump_countdown = -1;
+    if(dump_countdown < 0) {
+        dump_countdown = getenv("LVGL_GL_DUMP") ? 3 : 0;
+    }
+    if(dump_countdown > 0) {
+        dump_countdown--;
+        if(dump_countdown == 0) {
+            const char * path = getenv("LVGL_GL_DUMP");
+            GLint vp[4] = {0, 0, 0, 0};
+            glGetIntegerv(GL_VIEWPORT, vp);
+            int w = vp[2];
+            int h = vp[3];
+            if(path && w > 0 && h > 0) {
+                size_t nbytes = (size_t)w * (size_t)h * 4u;
+                uint8_t * rgba = (uint8_t *)malloc(nbytes);
+                if(rgba) {
+                    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                    /* Read the currently bound draw FBO (do not force FBO 0 —
+                     * EVGR/native content often lives on a layer FBO). */
+                    glFinish();
+                    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+                    FILE * f = fopen(path, "wb");
+                    if(f) {
+                        fprintf(f, "P6\n%d %d\n255\n", w, h);
+                        for(int y = h - 1; y >= 0; y--) {
+                            const uint8_t * row = rgba + (size_t)y * (size_t)w * 4u;
+                            for(int x = 0; x < w; x++) {
+                                fputc(row[x * 4 + 0], f);
+                                fputc(row[x * 4 + 1], f);
+                                fputc(row[x * 4 + 2], f);
+                            }
+                        }
+                        fclose(f);
+                        LV_LOG_USER("LVGL_GL_DUMP (EVGPU) wrote %s (%dx%d)", path, w, h);
+                    }
+                    free(rgba);
+                }
+            }
+        }
+    }
 
     lv_evgpu_clean_up(u);
 
