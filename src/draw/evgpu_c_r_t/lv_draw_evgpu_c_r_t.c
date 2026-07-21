@@ -390,6 +390,9 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
         case LV_DRAW_TASK_TYPE_TRIANGLE:
         case LV_DRAW_TASK_TYPE_MASK_RECTANGLE:
         case LV_DRAW_TASK_TYPE_BLUR:
+#if LV_USE_VECTOR_GRAPHIC
+        case LV_DRAW_TASK_TYPE_VECTOR:
+#endif
 #if LV_USE_3DTEXTURE
         case LV_DRAW_TASK_TYPE_3D:
 #endif
@@ -408,11 +411,6 @@ static int32_t draw_evaluate(lv_draw_unit_t * draw_unit, lv_draw_task_t * task)
                 task->preferred_draw_unit_id = EVGPU_C_R_T_UNIT_ID;
             }
             return 1;
-
-#if LV_USE_VECTOR_GRAPHIC
-        case LV_DRAW_TASK_TYPE_VECTOR:
-            return 0;
-#endif
 
         default:
             return 0;

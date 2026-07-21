@@ -479,6 +479,7 @@
 /** DrawUnit EVGPU_C_R_T — GLES2 DrawUnit (Cairo/Rive/ThorVG-style patterns).
  *  Features: client-memory VBO, state caching, solid batching, gradient texture caching.
  *  Owns 2D and 3D draw tasks independently of EVGPU (no EVGR).
+ *  VECTOR: P0 path flatten + ear-clip/stroke strip (enable LV_USE_VECTOR_GRAPHIC).
  *  Requires LV_USE_OPENGLES 1. Can run with LV_USE_DRAW_EVGPU 0.
  */
 #define LV_USE_DRAW_EVGPU_C_R_T 0
