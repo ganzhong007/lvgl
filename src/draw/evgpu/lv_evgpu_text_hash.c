@@ -6,8 +6,7 @@
 
 #if LV_USE_DRAW_EVGPU
 
-#include "../../stdlib/lv_string.h"
-#include "../../misc/lv_text_private.h"
+#include "lvgl_private.h"
 
 static uint32_t lv_evgpu_text_len_resolve(const char * text, uint32_t text_length)
 {

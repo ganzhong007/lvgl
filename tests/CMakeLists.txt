@@ -69,6 +69,14 @@ set(LVGL_TEST_OPTIONS_VG_LITE
     -Wno-dangling-pointer # workaround for thorvg dangling-pointer warning
 )
 
+set(LVGL_TEST_OPTIONS_EVGPU
+    -DLV_TEST_OPTION=8
+)
+
+set(LVGL_TEST_OPTIONS_EVGPU_C_R_T
+    -DLV_TEST_OPTION=9
+)
+
 set(LVGL_TEST_OPTIONS_RISCV_V
     -DLV_TEST_OPTION=5
     -DLVGL_CI_USING_SYS_HEAP
@@ -155,6 +163,19 @@ elseif (OPTIONS_TEST_VG_LITE)
         # Set a tolerance value for the VG-Lite tests.
         add_definitions(-DREF_IMG_TOLERANCE=9)
     endif()
+elseif (OPTIONS_TEST_EVGPU)
+    # First-pass: same SW gold images; fail/MAE report, not all-green.
+    set (BUILD_OPTIONS ${LVGL_TEST_OPTIONS_EVGPU} -DLVGL_CI_USING_SYS_HEAP)
+    set (CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "disable examples" FORCE)
+    set (ENABLE_TESTS ON)
+    add_definitions(-DREF_IMGS_PATH="ref_imgs/")
+    set (LVGL_TEST_NEED_GLES ON)
+elseif (OPTIONS_TEST_EVGPU_C_R_T)
+    set (BUILD_OPTIONS ${LVGL_TEST_OPTIONS_EVGPU_C_R_T} -DLVGL_CI_USING_SYS_HEAP)
+    set (CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "disable examples" FORCE)
+    set (ENABLE_TESTS ON)
+    add_definitions(-DREF_IMGS_PATH="ref_imgs/")
+    set (LVGL_TEST_NEED_GLES ON)
 elseif (OPTIONS_TEST_RISCV_V)
     set (BUILD_OPTIONS ${LVGL_TEST_OPTIONS_RISCV_V} ${SANITIZE_AND_COVERAGE_OPTIONS})
     filter_compiler_options (C TEST_LIBS ${SANITIZE_AND_COVERAGE_OPTIONS})
@@ -242,6 +263,12 @@ endif()
 
 filter_compiler_options(C LVGL_C_COMPILE_OPTIONS ${COMPILE_OPTIONS})
 
+if(LVGL_TEST_NEED_GLES)
+    # Private headers under src/ emit deprecation #warning; keep Werror elsewhere.
+    list(APPEND LVGL_C_COMPILE_OPTIONS -Wno-cpp -Wno-pedantic)
+    list(REMOVE_ITEM LVGL_C_COMPILE_OPTIONS -pedantic-errors -Wpedantic)
+endif()
+
 if(NOT (CMAKE_C_COMPILER_ID STREQUAL "MSVC"))
     # Options test cases are compiled with.
     filter_compiler_options(C LVGL_TESTFILE_COMPILE_OPTIONS ${LVGL_C_COMPILE_OPTIONS} -Wno-missing-prototypes)
@@ -312,6 +339,7 @@ file(GLOB_RECURSE TEST_IMAGES_SRC
 add_library(test_common
     STATIC
         src/lv_test_init.c
+        src/lv_test_gl_context.c
         src/test_assets/test_animimg001.c
         src/test_assets/test_animimg002.c
         src/test_assets/test_animimg003.c
@@ -356,15 +384,23 @@ target_compile_definitions(test_common PRIVATE LV_BUILD_TEST ${LVGL_COMPILER_DEF
 # Generate one test executable for each source file pair.
 # The sources in ${CMAKE_CURRENT_BINARY_DIR} is auto-generated, the
 # sources in src/test_cases is the actual test case.
-find_package(Ruby REQUIRED)
+# Unity runner generation only needs the Ruby interpreter (not libruby).
+find_program(RUBY_EXECUTABLE NAMES ruby REQUIRED)
+message(STATUS "Ruby for Unity runners: ${RUBY_EXECUTABLE}")
 set(generate_test_runner_rb
     ${CMAKE_CURRENT_SOURCE_DIR}/unity/generate_test_runner.rb)
 set(generate_test_runner_config ${CMAKE_CURRENT_SOURCE_DIR}/config.yml)
 
 if(NOT WIN32)
     # libjpeg is required for the jpeg test case
-    find_package(JPEG REQUIRED)
-    include_directories(${JPEG_INCLUDE_DIR})
+    find_package(JPEG)
+    if(JPEG_FOUND)
+        include_directories(${JPEG_INCLUDE_DIR})
+    else()
+        message(WARNING "JPEG not found, defaulting LV_USE_LIBJPEG_TURBO=0")
+        add_definitions(-DLV_USE_LIBJPEG_TURBO=0)
+        set(JPEG_LIBRARIES "")
+    endif()
 
     find_package(PkgConfig)
     pkg_check_modules(WebP libwebp)
@@ -392,9 +428,15 @@ if(NOT WIN32)
     endif()
 endif()
 
-# libpng is required for the png test case
-find_package(PNG REQUIRED)
-include_directories(${PNG_INCLUDE_DIR})
+# libpng is required for the png test case (screenshot compare uses bundled lodepng)
+find_package(PNG)
+if(PNG_FOUND)
+    include_directories(${PNG_INCLUDE_DIR})
+else()
+    message(WARNING "PNG not found, defaulting LV_USE_LIBPNG=0")
+    add_definitions(-DLV_USE_LIBPNG=0)
+    set(PNG_LIBRARIES "")
+endif()
 
 if(NOT WIN32)
     # FFmpeg is optional for the image and video test cases
@@ -418,8 +460,14 @@ else()
 endif()
 
 # libfreetype is required for the font test case
-find_package(Freetype REQUIRED)
-include_directories(${FREETYPE_INCLUDE_DIRS})
+find_package(Freetype)
+if(FREETYPE_FOUND)
+    include_directories(${FREETYPE_INCLUDE_DIRS})
+else()
+    message(WARNING "Freetype not found, defaulting LV_USE_FREETYPE=0")
+    add_definitions(-DLV_USE_FREETYPE=0)
+    set(FREETYPE_LIBRARIES "")
+endif()
 
 if(OPTIONS_SDL)
     find_package(SDL2 REQUIRED)
@@ -432,22 +480,30 @@ if ($ENV{NON_AMD64_BUILD})
     include_directories(${LIBINPUT_INCLUDE_DIRS})
 endif()
 
-# OpenGL ES is required for its driver
+# OpenGL ES is required for its driver / EVGPU / C_R_T Unity OPTIONS
 if ($ENV{NON_AMD64_BUILD})
     message("Disable OpenGL, glfw3 for non-amd64 build")
     add_definitions(-DLV_USE_OPENGLES=0)
 else()
-    find_package(OpenGL)
-    find_package(glfw3)
-
-    if(OpenGL_FOUND AND glfw3_FOUND)
-        # Include directories
-        include_directories(${OPENGL_INCLUDE_DIR})
-        include_directories(${GLFW_INCLUDE_DIRS})
-        message("Enable LV_USE_OPENGLES")
+    if(LVGL_TEST_NEED_GLES)
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(EGL REQUIRED egl)
+        pkg_check_modules(GLESV2 REQUIRED glesv2)
+        include_directories(${EGL_INCLUDE_DIRS} ${GLESV2_INCLUDE_DIRS})
+        message(STATUS "Unity GPU tests: EGL=${EGL_LIBRARIES} GLESv2=${GLESV2_LIBRARIES}")
+        # Do not force LV_USE_OPENGLES=0 — conf enables OPENGLES+EGL.
     else()
-        message("OpenGL, glfw3 not found, defaulting to 0")
-        add_definitions(-DLV_USE_OPENGLES=0)
+        find_package(OpenGL)
+        find_package(glfw3)
+
+        if(OpenGL_FOUND AND glfw3_FOUND)
+            include_directories(${OPENGL_INCLUDE_DIR})
+            include_directories(${GLFW_INCLUDE_DIRS})
+            message("Enable LV_USE_OPENGLES")
+        else()
+            message("OpenGL, glfw3 not found, defaulting to 0")
+            add_definitions(-DLV_USE_OPENGLES=0)
+        endif()
     endif()
 endif()
 
@@ -533,25 +589,41 @@ foreach( test_case_fname ${TEST_CASE_FILES} )
             lvgl_demos
             lvgl
             lvgl_thorvg
-            ${PNG_LIBRARIES}
-            ${FREETYPE_LIBRARIES}
-            ${LIBDRM_LIBRARIES}
-            ${LIBINPUT_LIBRARIES}
-            ${JPEG_LIBRARIES}
-            ${WebP_LINK_LIBRARIES}
-            PkgConfig::FFMPEG
             m
             pthread
             ${TEST_LIBS})
+    if(PNG_FOUND)
+        target_link_libraries(${test_name} PRIVATE ${PNG_LIBRARIES})
+    endif()
+    if(FREETYPE_FOUND)
+        target_link_libraries(${test_name} PRIVATE ${FREETYPE_LIBRARIES})
+    endif()
+    if(JPEG_FOUND)
+        target_link_libraries(${test_name} PRIVATE ${JPEG_LIBRARIES})
+    endif()
+    if(LIBDRM_FOUND OR Libdrm_FOUND)
+        target_link_libraries(${test_name} PRIVATE ${LIBDRM_LIBRARIES})
+    endif()
+    if(LIBINPUT_FOUND)
+        target_link_libraries(${test_name} PRIVATE ${LIBINPUT_LIBRARIES})
+    endif()
+    if(WebP_FOUND)
+        target_link_libraries(${test_name} PRIVATE ${WebP_LINK_LIBRARIES})
+    endif()
+    if(FFMPEG_FOUND)
+        target_link_libraries(${test_name} PRIVATE PkgConfig::FFMPEG)
+    endif()
 
     if(OPTIONS_SDL)
         target_link_libraries(${test_name} PRIVATE ${SDL_LIBRARY})
     endif()
 
-	if (NOT $ENV{NON_AMD64_BUILD})
-	    target_link_libraries(${test_name} PRIVATE
-    	        ${OPENGL_LIBRARIES} glfw)
-	endif()
+    if(LVGL_TEST_NEED_GLES)
+        target_link_libraries(${test_name} PRIVATE ${EGL_LIBRARIES} ${GLESV2_LIBRARIES} dl)
+    elseif(NOT $ENV{NON_AMD64_BUILD})
+        target_link_libraries(${test_name} PRIVATE
+                ${OPENGL_LIBRARIES} glfw)
+    endif()
 
     target_include_directories(${test_name} PUBLIC ${TEST_INCLUDE_DIRS})
     target_compile_options(${test_name} PUBLIC ${LVGL_TESTFILE_COMPILE_OPTIONS})

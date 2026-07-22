@@ -1,7 +1,6 @@
 #include "lv_draw_evgpu_c_r_t.h"
 #if LV_USE_DRAW_EVGPU_C_R_T
 #include "lv_draw_evgpu_c_r_t_private.h"
-#include "../../misc/lv_math.h"
 
 static int32_t clamp_radius(int32_t radius, int32_t w, int32_t h)
 {

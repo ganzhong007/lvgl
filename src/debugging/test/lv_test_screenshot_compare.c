@@ -74,12 +74,21 @@ static void create_folders_if_needed(const char * path) ;
  *   GLOBAL FUNCTIONS
  **********************/
 
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
+/* Provided by lvgl/tests/src/lv_test_gl_context.c when building Unity GPU OPTIONS. */
+void lv_test_gl_prepare_screenshot(void);
+#endif
+
 lv_test_screenshot_result_t lv_test_screenshot_compare(const char * fn_ref)
 {
-
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
+    /* GPU draws to layer FBO; prepare refreshes and readbacks into the CPU buf. */
+    lv_test_gl_prepare_screenshot();
+#else
     lv_obj_t * scr = lv_screen_active();
     lv_obj_invalidate(scr);
     lv_refr_now(NULL);
+#endif
 
     lv_test_screenshot_result_t res;
     res = lv_test_screenshot_compare_core(fn_ref);
@@ -133,6 +142,10 @@ lv_test_screenshot_result_t lv_test_screenshot_compare_core(const char * fn_ref)
 
     unsigned x, y;
     bool err = false;
+    uint64_t mae_sum = 0;
+    uint64_t exact_count = 0;
+    const uint64_t px_count = (uint64_t)ref_img_width * (uint64_t)ref_img_height;
+
     for(y = 0; y < ref_img_height; y++) {
         uint8_t * screen_buf_tmp = screen_buf_xrgb8888 + draw_buf->header.w * 4 * y;
         uint8_t * ref_row = (uint8_t *)ref_draw_buf->data + y * ref_draw_buf->header.stride;
@@ -140,24 +153,57 @@ lv_test_screenshot_result_t lv_test_screenshot_compare_core(const char * fn_ref)
             uint8_t * ptr_ref = &(ref_row[x * 4]);
             uint8_t * ptr_act = &screen_buf_tmp[x * 4];
 
-            if(LV_ABS((int32_t) ptr_act[0] - (int32_t) ptr_ref[0]) > REF_IMG_TOLERANCE ||
-               LV_ABS((int32_t) ptr_act[1] - (int32_t) ptr_ref[1]) > REF_IMG_TOLERANCE ||
-               LV_ABS((int32_t) ptr_act[2] - (int32_t) ptr_ref[2]) > REF_IMG_TOLERANCE) {
-                uint32_t act_px = (ptr_act[2] << 16) + (ptr_act[1] << 8) + (ptr_act[0] << 0);
-                uint32_t ref_px = 0;
-                memcpy(&ref_px, ptr_ref, 3);
-                LV_LOG("\nScreenshot compare error\n"
-                       "  - File: %s\n"
-                       "  - At x:%d, y:%d.\n"
-                       "  - Expected: %X\n"
-                       "  - Actual:   %X\n"
-                       "  - Tolerance: %d\n",
-                       fn_ref_full,  x, y, ref_px, act_px, REF_IMG_TOLERANCE);
+            const int32_t dr = LV_ABS((int32_t)ptr_act[0] - (int32_t)ptr_ref[0]);
+            const int32_t dg = LV_ABS((int32_t)ptr_act[1] - (int32_t)ptr_ref[1]);
+            const int32_t db = LV_ABS((int32_t)ptr_act[2] - (int32_t)ptr_ref[2]);
+            mae_sum += (uint64_t)((dr + dg + db) / 3);
+            if(dr == 0 && dg == 0 && db == 0) exact_count++;
+
+            if(dr > REF_IMG_TOLERANCE || dg > REF_IMG_TOLERANCE || db > REF_IMG_TOLERANCE) {
+                if(!err) {
+                    uint32_t act_px = (ptr_act[2] << 16) + (ptr_act[1] << 8) + (ptr_act[0] << 0);
+                    uint32_t ref_px = 0;
+                    memcpy(&ref_px, ptr_ref, 3);
+                    LV_LOG("\nScreenshot compare error\n"
+                           "  - File: %s\n"
+                           "  - At x:%d, y:%d.\n"
+                           "  - Expected: %X\n"
+                           "  - Actual:   %X\n"
+                           "  - Tolerance: %d\n",
+                           fn_ref_full,  x, y, ref_px, act_px, REF_IMG_TOLERANCE);
+                }
                 err = true;
-                break;
+                /* Continue scanning so MAE/exact% cover the full frame. */
             }
         }
-        if(err) break;
+    }
+
+    const double mae = px_count ? (double)mae_sum / (double)px_count : 0.0;
+    const double exact_pct = px_count ? (100.0 * (double)exact_count / (double)px_count) : 0.0;
+
+    {
+        const char * mae_csv = getenv("LV_TEST_MAE_CSV");
+        if(mae_csv && mae_csv[0]) {
+            FILE * f = fopen(mae_csv, "a");
+            if(f) {
+                fprintf(f, "%s,%s,%.6f,%.4f\n",
+                        fn_ref,
+                        err ? "fail" : "pass",
+                        mae,
+                        exact_pct);
+                fclose(f);
+            }
+        }
+    }
+
+    {
+        const char * actual_dir = getenv("LV_TEST_ACTUAL_DIR");
+        if(actual_dir && actual_dir[0]) {
+            char fn_act[512];
+            lv_snprintf(fn_act, sizeof(fn_act), "%s/%s", actual_dir, fn_ref);
+            create_folders_if_needed(fn_act);
+            write_png_file(screen_buf_xrgb8888, draw_buf->header.w, draw_buf->header.h, fn_act);
+        }
     }
 
     if(err) {
@@ -318,6 +364,12 @@ static void create_folders_if_needed(const char * path)
 
     char * token = strtok_r(path_copy, "/", &ptr);
     char current_path[1024] = {'\0'}; /* Adjust the size as needed */
+
+    /* Absolute paths must keep the leading '/'; strtok skips it. */
+    if(path[0] == '/') {
+        current_path[0] = '/';
+        current_path[1] = '\0';
+    }
 
     while(token && ptr && *ptr != '\0') {
         lv_strcat(current_path, token);

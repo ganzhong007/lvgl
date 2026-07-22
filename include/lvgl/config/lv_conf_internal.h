@@ -45,11 +45,11 @@
 #define LV_NANOVG_BACKEND_GLES2     3
 #define LV_NANOVG_BACKEND_GLES3     4
 
-/** EVGPU EVGR backend enum (same numeric values as LV_NANOVG_BACKEND_*). */
-#define LV_EVGR_BACKEND_GL2       LV_NANOVG_BACKEND_GL2
-#define LV_EVGR_BACKEND_GL3       LV_NANOVG_BACKEND_GL3
-#define LV_EVGR_BACKEND_GLES2     LV_NANOVG_BACKEND_GLES2
-#define LV_EVGR_BACKEND_GLES3     LV_NANOVG_BACKEND_GLES3
+/* DrawUnitEVGPU reuses the same backend enum values as NanoVG. */
+#define LV_EVGR_BACKEND_GL2         LV_NANOVG_BACKEND_GL2
+#define LV_EVGR_BACKEND_GL3         LV_NANOVG_BACKEND_GL3
+#define LV_EVGR_BACKEND_GLES2       LV_NANOVG_BACKEND_GLES2
+#define LV_EVGR_BACKEND_GLES3       LV_NANOVG_BACKEND_GLES3
 
 #define LV_CHECK_ARG_LOG_MODE_NONE    0
 #define LV_CHECK_ARG_LOG_MODE_MINIMAL 1
@@ -1279,6 +1279,11 @@
     #endif
 #endif
 
+/** DrawUnitEVGPU — GLES2-only hardware GPU (EVGPU) draw unit.
+ * - Mutually exclusive with LV_USE_DRAW_NANOVG and LV_USE_DRAW_OPENGLES.
+ * - 2D vector runtime: libs/evgpu/evgpu_evgr* (EVGR GLES2 backend only).
+ * - Desktop GL / GLES3 backends are not supported for this draw unit.
+ */
 #ifndef LV_USE_DRAW_EVGPU
     #ifdef CONFIG_LV_USE_DRAW_EVGPU
         #define LV_USE_DRAW_EVGPU CONFIG_LV_USE_DRAW_EVGPU
@@ -1287,13 +1292,12 @@
     #endif
 #endif
 #if LV_USE_DRAW_EVGPU
-    /* DrawUnitEVGPU is GLES2-only (Mali-400 / lima target). */
-    #ifdef LV_EVGR_BACKEND
-        #if LV_EVGR_BACKEND != LV_EVGR_BACKEND_GLES2
-            #error "LV_USE_DRAW_EVGPU requires LV_EVGR_BACKEND_GLES2"
+    #ifndef LV_EVGR_BACKEND
+        #ifdef CONFIG_LV_EVGR_BACKEND
+            #define LV_EVGR_BACKEND CONFIG_LV_EVGR_BACKEND
+        #else
+            #define LV_EVGR_BACKEND   LV_EVGR_BACKEND_GLES2
         #endif
-    #else
-        #define LV_EVGR_BACKEND LV_EVGR_BACKEND_GLES2
     #endif
     #ifndef LV_EVGR_IMAGE_CACHE_CNT
         #ifdef CONFIG_LV_EVGR_IMAGE_CACHE_CNT
@@ -1309,6 +1313,7 @@
             #define LV_EVGR_LETTER_CACHE_CNT 512
         #endif
     #endif
+    /** Optional: GLES2 runtime in libs/evgpu (path B); draw/evgpu remains LVGL adapter */
     #ifndef LV_USE_EVGPU_LIB
         #ifdef CONFIG_LV_USE_EVGPU_LIB
             #define LV_USE_EVGPU_LIB CONFIG_LV_USE_EVGPU_LIB
@@ -1318,6 +1323,11 @@
     #endif
 #endif
 
+/** DrawUnit EVGPUGANESH — Ganesh-style direct GL rendering for 2D tasks.
+ *  - Alternative to EVGPU's evgr backend for 2D primitives.
+ *  - Requires LV_USE_DRAW_EVGPU 1 (3D tasks pass through to EVGPU).
+ *  - Requires LV_USE_OPENGLES 1.
+ */
 #ifndef LV_USE_DRAW_EVGPUGANESH
     #ifdef CONFIG_LV_USE_DRAW_EVGPUGANESH
         #define LV_USE_DRAW_EVGPUGANESH CONFIG_LV_USE_DRAW_EVGPUGANESH
@@ -1326,11 +1336,21 @@
     #endif
 #endif
 #if LV_USE_DRAW_EVGPUGANESH
-    #ifndef LV_USE_DRAW_EVGPU
-        #error "LV_USE_DRAW_EVGPUGANESH requires LV_USE_DRAW_EVGPU"
+    #ifndef LV_EVGPUGANESH_LOG_LEVEL
+        #ifdef CONFIG_LV_EVGPUGANESH_LOG_LEVEL
+            #define LV_EVGPUGANESH_LOG_LEVEL CONFIG_LV_EVGPUGANESH_LOG_LEVEL
+        #else
+            #define LV_EVGPUGANESH_LOG_LEVEL LV_LOG_LEVEL_WARN
+        #endif
     #endif
 #endif
 
+/** DrawUnit EVGPU_C_R_T — GLES2 DrawUnit (Cairo/Rive/ThorVG-style patterns).
+ *  Features: client-memory VBO, state caching, solid batching, gradient texture caching.
+ *  Owns 2D and 3D draw tasks independently of EVGPU (no EVGR).
+ *  VECTOR: P0 path flatten + ear-clip/stroke strip (enable LV_USE_VECTOR_GRAPHIC).
+ *  Requires LV_USE_OPENGLES 1. Can run with LV_USE_DRAW_EVGPU 0.
+ */
 #ifndef LV_USE_DRAW_EVGPU_C_R_T
     #ifdef CONFIG_LV_USE_DRAW_EVGPU_C_R_T
         #define LV_USE_DRAW_EVGPU_C_R_T CONFIG_LV_USE_DRAW_EVGPU_C_R_T
@@ -1339,8 +1359,12 @@
     #endif
 #endif
 #if LV_USE_DRAW_EVGPU_C_R_T
-    #ifndef LV_USE_OPENGLES
-        #error "LV_USE_DRAW_EVGPU_C_R_T requires LV_USE_OPENGLES"
+    #ifndef LV_EVGPU_C_R_T_LOG_LEVEL
+        #ifdef CONFIG_LV_EVGPU_C_R_T_LOG_LEVEL
+            #define LV_EVGPU_C_R_T_LOG_LEVEL CONFIG_LV_EVGPU_C_R_T_LOG_LEVEL
+        #else
+            #define LV_EVGPU_C_R_T_LOG_LEVEL LV_LOG_LEVEL_WARN
+        #endif
     #endif
 #endif
 
@@ -2900,6 +2924,42 @@
         #define LV_USE_3DTEXTURE CONFIG_LV_USE_3DTEXTURE
     #else
         #define LV_USE_3DTEXTURE  0
+    #endif
+#endif
+
+/** EVGPU 3D draw task family (VIEWPORT / CLEAR / MESH / …) */
+#ifndef LV_USE_3D_DRAW_TASKS
+    #ifdef CONFIG_LV_USE_3D_DRAW_TASKS
+        #define LV_USE_3D_DRAW_TASKS CONFIG_LV_USE_3D_DRAW_TASKS
+    #else
+        #define LV_USE_3D_DRAW_TASKS 0
+    #endif
+#endif
+
+/** Requires `LV_USE_3D_DRAW_TASKS = 1` */
+#ifndef LV_USE_3DVIEWPORT
+    #ifdef CONFIG_LV_USE_3DVIEWPORT
+        #define LV_USE_3DVIEWPORT CONFIG_LV_USE_3DVIEWPORT
+    #else
+        #define LV_USE_3DVIEWPORT 0
+    #endif
+#endif
+
+/** Requires `LV_USE_3D_DRAW_TASKS = 1` */
+#ifndef LV_USE_3DMESH
+    #ifdef CONFIG_LV_USE_3DMESH
+        #define LV_USE_3DMESH CONFIG_LV_USE_3DMESH
+    #else
+        #define LV_USE_3DMESH 0
+    #endif
+#endif
+
+/** Requires `LV_USE_3D_DRAW_TASKS = 1` */
+#ifndef LV_USE_3DLIGHT
+    #ifdef CONFIG_LV_USE_3DLIGHT
+        #define LV_USE_3DLIGHT CONFIG_LV_USE_3DLIGHT
+    #else
+        #define LV_USE_3DLIGHT 0
     #endif
 #endif
 
@@ -4974,6 +5034,33 @@
             #define LV_USE_DEMO_GLTF CONFIG_LV_USE_DEMO_GLTF
         #else
             #define LV_USE_DEMO_GLTF            0
+        #endif
+    #endif
+
+    /** 3D viewport demo (G8.0) */
+    #ifndef LV_USE_DEMO_3DVIEWPORT
+        #ifdef CONFIG_LV_USE_DEMO_3DVIEWPORT
+            #define LV_USE_DEMO_3DVIEWPORT CONFIG_LV_USE_DEMO_3DVIEWPORT
+        #else
+            #define LV_USE_DEMO_3DVIEWPORT      0
+        #endif
+    #endif
+
+    /** 3D mesh scene demo (G8.2) */
+    #ifndef LV_USE_DEMO_3DSCENE
+        #ifdef CONFIG_LV_USE_DEMO_3DSCENE
+            #define LV_USE_DEMO_3DSCENE CONFIG_LV_USE_DEMO_3DSCENE
+        #else
+            #define LV_USE_DEMO_3DSCENE         0
+        #endif
+    #endif
+
+    /** 3D phong lights demo (G8.4) */
+    #ifndef LV_USE_DEMO_3DVIEW
+        #ifdef CONFIG_LV_USE_DEMO_3DVIEW
+            #define LV_USE_DEMO_3DVIEW CONFIG_LV_USE_DEMO_3DVIEW
+        #else
+            #define LV_USE_DEMO_3DVIEW          0
         #endif
     #endif
 

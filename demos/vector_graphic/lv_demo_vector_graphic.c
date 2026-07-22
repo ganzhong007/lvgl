@@ -216,6 +216,40 @@ static void draw_arc(lv_draw_vector_dsc_t * ctx, lv_vector_path_t * path)
     lv_draw_vector_dsc_add_path(ctx, path); // draw a path
 }
 
+/** Stroke with linear gradient — ROI roughly (480,360)-(760,450) for MAE. */
+static void draw_stroke_gradient(lv_draw_vector_dsc_t * ctx, lv_vector_path_t * path)
+{
+    lv_vector_path_clear(path);
+    lv_draw_vector_dsc_identity(ctx);
+
+    lv_fpoint_t pts[] = {{500, 380}, {620, 420}, {700, 370}, {760, 430}};
+    lv_vector_path_move_to(path, &pts[0]);
+    lv_vector_path_cubic_to(path, &pts[1], &pts[2], &pts[3]);
+
+    lv_draw_vector_dsc_set_fill_opa(ctx, LV_OPA_TRANSP);
+    lv_draw_vector_dsc_set_stroke_opa(ctx, LV_OPA_COVER);
+    lv_draw_vector_dsc_set_stroke_width(ctx, 14.0f);
+    lv_draw_vector_dsc_set_stroke_dash(ctx, NULL, 0);
+    lv_draw_vector_dsc_set_stroke_cap(ctx, LV_VECTOR_STROKE_CAP_ROUND);
+
+    lv_grad_stop_t stops[2];
+    lv_memzero(stops, sizeof(stops));
+    stops[0].color = lv_color_hex(0xff0000);
+    stops[0].opa = LV_OPA_COVER;
+    stops[0].frac = 0;
+    stops[1].color = lv_color_hex(0x0080ff);
+    stops[1].opa = LV_OPA_COVER;
+    stops[1].frac = 255;
+
+    lv_draw_vector_dsc_set_stroke_linear_gradient(ctx, 500, 380, 760, 430);
+    lv_draw_vector_dsc_set_stroke_gradient_color_stops(ctx, stops, 2);
+    lv_draw_vector_dsc_set_stroke_gradient_spread(ctx, LV_VECTOR_GRADIENT_SPREAD_PAD);
+    lv_draw_vector_dsc_add_path(ctx, path);
+
+    lv_draw_vector_dsc_set_stroke_opa(ctx, LV_OPA_TRANSP);
+    lv_draw_vector_dsc_set_fill_opa(ctx, LV_OPA_COVER);
+}
+
 static void draw_vector(lv_layer_t * layer)
 {
     lv_draw_vector_dsc_t * ctx = lv_draw_vector_dsc_create(layer);
@@ -233,6 +267,7 @@ static void draw_vector(lv_layer_t * layer)
     draw_gradient(ctx, path);
     draw_blend(ctx, path);
     draw_arc(ctx, path);
+    draw_stroke_gradient(ctx, path);
     lv_draw_vector(ctx); // submit draw
     lv_vector_path_delete(path);
     lv_draw_vector_dsc_delete(ctx);

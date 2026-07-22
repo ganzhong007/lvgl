@@ -14,7 +14,6 @@
 #include "lv_evgpu_context.h"
 #include "lv_evgpu_shader.h"
 #include "lv_evgpu_utils.h"
-#include "../../misc/lv_math.h"
 
 #if LV_USE_OPENGLES && LV_USE_EGL
     #include "../../drivers/opengles/lv_opengles_private.h"
@@ -234,6 +233,7 @@ static void pack_geometry(const lv_grad_dsc_t * grad_dsc, const lv_area_t * coor
                           int32_t * dir, int32_t * extend, float * linear, float * radial0, float * radial1,
                           float * conical_center, float * conical_angles, float * rect)
 {
+    LV_UNUSED(radius);
     const int32_t w = lv_area_get_width(coords);
     const int32_t h = lv_area_get_height(coords);
 

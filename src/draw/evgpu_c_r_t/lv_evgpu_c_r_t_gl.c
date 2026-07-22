@@ -785,6 +785,114 @@ void lv_evgpu_c_r_t_gl_draw_triangles_solid(lv_evgpu_c_r_t_gl_t * gl,
     gl->state.prog = 0;
 }
 
+GLuint lv_evgpu_c_r_t_gl_create_grad_tex_stops(const lv_grad_stop_t * stops, uint16_t stops_count,
+                                               lv_opa_t opa_mul)
+{
+    if(stops == NULL || stops_count == 0) return 0;
+
+    const int w = 256;
+    uint32_t * pixels = lv_malloc_zeroed((size_t)w * 4u);
+    if(pixels == NULL) return 0;
+
+    for(int i = 0; i < w; i++) {
+        float t = (w == 1) ? 0.f : (float)i / (float)(w - 1);
+        float frac = t * 255.f;
+
+        uint16_t i0 = 0;
+        uint16_t i1 = 0;
+        if(frac <= stops[0].frac) {
+            i0 = i1 = 0;
+        }
+        else if(frac >= stops[stops_count - 1].frac) {
+            i0 = i1 = (uint16_t)(stops_count - 1);
+        }
+        else {
+            for(uint16_t s = 0; s + 1 < stops_count; s++) {
+                if(frac >= stops[s].frac && frac <= stops[s + 1].frac) {
+                    i0 = s;
+                    i1 = (uint16_t)(s + 1);
+                    break;
+                }
+            }
+        }
+
+        float local_t = 0.f;
+        if(i0 != i1 && stops[i1].frac != stops[i0].frac) {
+            local_t = (frac - (float)stops[i0].frac) / (float)(stops[i1].frac - stops[i0].frac);
+        }
+
+        float r = stops[i0].color.red + (stops[i1].color.red - stops[i0].color.red) * local_t;
+        float g = stops[i0].color.green + (stops[i1].color.green - stops[i0].color.green) * local_t;
+        float b = stops[i0].color.blue + (stops[i1].color.blue - stops[i0].color.blue) * local_t;
+        float a = stops[i0].opa + (stops[i1].opa - stops[i0].opa) * local_t;
+        a = a * (float)opa_mul / 255.f;
+
+        uint8_t ru = (uint8_t)(r < 0.f ? 0.f : (r > 255.f ? 255.f : r));
+        uint8_t gu = (uint8_t)(g < 0.f ? 0.f : (g > 255.f ? 255.f : g));
+        uint8_t bu = (uint8_t)(b < 0.f ? 0.f : (b > 255.f ? 255.f : b));
+        uint8_t au = (uint8_t)(a < 0.f ? 0.f : (a > 255.f ? 255.f : a));
+        /* GL_RGBA byte order */
+        pixels[i] = ((uint32_t)au << 24) | ((uint32_t)bu << 16) | ((uint32_t)gu << 8) | (uint32_t)ru;
+    }
+
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    lv_free(pixels);
+    return tex;
+}
+
+void lv_evgpu_c_r_t_gl_draw_triangles_tex(lv_evgpu_c_r_t_gl_t * gl,
+                                          const float * xyuv, int count,
+                                          GLuint texture, uint32_t recolor,
+                                          uint8_t recolor_opa, uint8_t alpha,
+                                          bool use_grad_sampler)
+{
+    if(xyuv == NULL || count < 3 || texture == 0) return;
+    batch_flush(gl);
+
+    if(use_grad_sampler) {
+        use_program(gl, gl->grad_tex_prog);
+        set_proj_uniform(gl, gl->grad_tex_u_proj);
+        glUniform1i(gl->grad_tex_u_dir, 0);
+        bind_texture(gl, texture);
+        glActiveTexture(GL_TEXTURE0);
+        glUniform1i(gl->grad_tex_u_tex, 0);
+    }
+    else {
+        use_program(gl, gl->tex_prog);
+        float rr = ((recolor >> 16) & 0xFF) / 255.0f;
+        float rg = ((recolor >> 8) & 0xFF) / 255.0f;
+        float rb = ((recolor >> 0) & 0xFF) / 255.0f;
+        glUniform4f(gl->tex_u_recolor, rr, rg, rb, 1.0f);
+        glUniform1f(gl->tex_u_recolor_opa, recolor_opa / 255.0f);
+        glUniform1f(gl->tex_u_alpha, alpha / 255.0f);
+        set_proj_uniform(gl, gl->tex_u_proj);
+        bind_texture(gl, texture);
+        glActiveTexture(GL_TEXTURE0);
+        glUniform1i(gl->tex_u_texture, 0);
+    }
+
+    glEnable(GL_BLEND);
+    glBlendFunc(gl->state.blend_src, gl->state.blend_dst);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), xyuv);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), xyuv + 2);
+    glDrawArrays(GL_TRIANGLES, 0, count);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(0);
+
+    gl->state.prog = 0;
+}
+
 void lv_evgpu_c_r_t_gl_draw_triangle_strip_solid(lv_evgpu_c_r_t_gl_t * gl,
                                                   const float * verts, int count,
                                                   uint32_t color, uint8_t alpha) {

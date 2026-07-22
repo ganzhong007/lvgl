@@ -10,6 +10,7 @@ extern "C" {
 #if LV_USE_DRAW_EVGPU_C_R_T
 
 #include "../lv_draw_private.h"
+#include "../../misc/lv_area_private.h"
 #include "lv_evgpu_c_r_t_gl.h"
 
 typedef struct _lv_draw_evgpu_c_r_t_unit_t {

@@ -149,6 +149,17 @@ void lv_evgpu_c_r_t_gl_draw_triangle_strip_solid(lv_evgpu_c_r_t_gl_t * gl,
                                                   const float * verts, int count,
                                                   uint32_t color, uint8_t alpha);
 
+/** Interleaved xyuv triangles (count = vertex count). use_grad_sampler: 1D ramp via grad_tex_prog. */
+void lv_evgpu_c_r_t_gl_draw_triangles_tex(lv_evgpu_c_r_t_gl_t * gl,
+                                          const float * xyuv, int count,
+                                          GLuint texture, uint32_t recolor,
+                                          uint8_t recolor_opa, uint8_t alpha,
+                                          bool use_grad_sampler);
+
+/** Build a 256×1 RGBA ramp from LVGL gradient stops (caller glDeleteTextures). */
+GLuint lv_evgpu_c_r_t_gl_create_grad_tex_stops(const lv_grad_stop_t * stops, uint16_t stops_count,
+                                               lv_opa_t opa_mul);
+
 void lv_evgpu_c_r_t_gl_blur_quad(lv_evgpu_c_r_t_gl_t * gl,
                                   float x1, float y1, float x2, float y2,
                                   float u1, float v1, float u2, float v2,

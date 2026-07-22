@@ -1,5 +1,6 @@
 #if LV_BUILD_TEST || LV_BUILD_TEST_PERF
 #include "lv_test_init.h"
+#include "lv_test_gl_context.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -16,6 +17,14 @@ void lv_test_init(void)
 #if LV_USE_PROFILER && LV_USE_PROFILER_BUILTIN
     /* Disable profiler, to reduce redundant profiler log printing  */
     lv_profiler_builtin_set_enable(false);
+#endif
+
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
+    /* GLES2 context must exist before draw units register via lv_opengles_init(). */
+    if(!lv_test_gl_context_init()) {
+        fprintf(stderr, "lv_test_init: headless GLES2 context failed\n");
+        abort();
+    }
 #endif
 
     lv_test_display_create(LV_TEST_DISPLAY_HOR_RES, LV_TEST_DISPLAY_VER_RES);
@@ -42,6 +51,9 @@ void lv_test_deinit(void)
     lv_test_indev_gesture_delete();
 #endif
     lv_test_indev_delete_all();
+#if LV_USE_DRAW_EVGPU || LV_USE_DRAW_EVGPU_C_R_T
+    lv_test_gl_context_deinit();
+#endif
     lv_deinit();
 }
 

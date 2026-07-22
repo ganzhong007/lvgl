@@ -5,9 +5,10 @@
 extern "C" {
 #endif
 
+#include "../../lvgl_public.h"
+
 #if LV_USE_DRAW_EVGPU_C_R_T
 
-#include "../../lvgl_public.h"
 #include <stdint.h>
 
 void lv_evgpu_c_r_t_kawase_init(void);

@@ -17,7 +17,12 @@ wayland_dir = os.path.join(lvgl_test_dir, "wayland_protocols")
 wayland_protocols_dir = os.path.realpath("/usr/share/wayland-protocols")
 
 from perf import perf_test_options
-from LVGLImage import LVGLImage, ColorFormat, CompressMethod
+try:
+    from LVGLImage import LVGLImage, ColorFormat, CompressMethod
+except ImportError:
+    LVGLImage = None
+    ColorFormat = None
+    CompressMethod = None
 
 # Key values must match variable names in CMakeLists.txt.
 build_only_options = {
@@ -34,6 +39,8 @@ test_options = {
     'OPTIONS_TEST_SYSHEAP': 'Test config, system heap, 32 bit color depth',
     'OPTIONS_TEST_DEFHEAP': 'Test config, LVGL heap, 32 bit color depth',
     'OPTIONS_TEST_VG_LITE': 'VG-Lite simulator with full config, 32 bit color depth',
+    'OPTIONS_TEST_EVGPU': 'EVGPU DrawUnit (headless GLES2) vs SW ref_imgs/',
+    'OPTIONS_TEST_EVGPU_C_R_T': 'EVGPU_C_R_T DrawUnit (headless GLES2) vs SW ref_imgs/',
     'OPTIONS_TEST_RISCV_V': 'RISC-V Vector emulation with full config, 32 bit color depth',
 }
 
@@ -133,7 +140,8 @@ def build_tests(options_name, build_type, clean):
         created_build_dir = True
     os.chdir(build_dir)
     if created_build_dir:
-        subprocess.check_call(['cmake', '-GNinja', '-DCMAKE_BUILD_TYPE=%s' % build_type,
+        generator = 'Ninja' if shutil.which('ninja') else 'Unix Makefiles'
+        subprocess.check_call(['cmake', '-G', generator, '-DCMAKE_BUILD_TYPE=%s' % build_type,
                                '-D%s=1' % options_name, '..'])
     subprocess.check_call(['cmake', '--build', build_dir,
                            '--parallel', str(os.cpu_count())])
@@ -258,6 +266,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.update_image:
+        if LVGLImage is None:
+            print('Need pypng package for --update-image (pip3 install pypng)', file=sys.stderr)
+            sys.exit(1)
         generate_test_images()
 
     if args.build_options:

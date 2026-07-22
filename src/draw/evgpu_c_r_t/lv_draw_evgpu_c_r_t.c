@@ -223,6 +223,31 @@ static void draw_execute(lv_draw_evgpu_c_r_t_unit_t * u, lv_draw_task_t * t)
     }
 }
 
+static void seed_fbo_from_draw_buf(lv_layer_t * layer, lv_evgpu_c_r_t_fbo_t * fbo)
+{
+    lv_draw_buf_t * db = layer->draw_buf;
+    if(!db || !db->data || !fbo) return;
+    if(fbo->w <= 0 || fbo->h <= 0) return;
+    if(db->header.w != (uint32_t)fbo->w || db->header.h != (uint32_t)fbo->h) return;
+
+    /* Preserve CPU-side content (e.g. lv_canvas_fill_bg) before GPU draws. */
+    glBindTexture(GL_TEXTURE_2D, fbo->tex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    switch(db->header.cf) {
+        case LV_COLOR_FORMAT_ARGB8888:
+        case LV_COLOR_FORMAT_XRGB8888:
+        case LV_COLOR_FORMAT_ARGB8888_PREMULTIPLIED:
+            for(int32_t y = 0; y < fbo->h; y++) {
+                const void * row = lv_draw_buf_goto_xy(db, 0, fbo->h - 1 - y);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, fbo->w, 1, GL_BGRA, GL_UNSIGNED_BYTE, row);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
 static void on_layer_changed(lv_layer_t * new_layer)
 {
     LV_PROFILER_DRAW_BEGIN;
@@ -247,6 +272,7 @@ static void on_layer_changed(lv_layer_t * new_layer)
 
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    seed_fbo_from_draw_buf(new_layer, fbo);
 
     LV_PROFILER_DRAW_END;
 }
@@ -350,15 +376,15 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
 
         lv_evgpu_c_r_t_gl_set_projection(&u->gl, buf_w, buf_h);
         glViewport(0, 0, buf_w, buf_h);
-        /* Must clear each frame: low-opa greens + GL_ONE blend otherwise
-         * accumulate across swaps until the whole buffer is solid #45FF8A. */
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDisable(GL_SCISSOR_TEST);
-        /* Must clear each frame: low-opa greens + GL_ONE blend otherwise
-         * accumulate across swaps until the whole buffer is solid #45FF8A.
-         * Use opaque black so alpha=0 doesn't reveal the compositor. */
-        glClearColor(0.f, 0.f, 0.f, 1.f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        /* Default-FB path (no layer FBO): clear the window/pbuffer once.
+         * Layer-FBO path: on_layer_changed already bound+cleared(+seeded) the FBO —
+         * do not rebind FB 0 or later draws miss the FBO and readback stays black. */
+        if(!layer->user_data) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glDisable(GL_SCISSOR_TEST);
+            glClearColor(0.f, 0.f, 0.f, 1.f);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
         u->is_started = true;
     }
 

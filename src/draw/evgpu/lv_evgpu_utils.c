@@ -15,6 +15,7 @@
 #include "lv_draw_evgpu_private.h"
 #include "../../misc/lv_port_layer_trace.h"
 #include "lv_evgpu_math.h"
+#include "lv_evgpu_fbo_cache.h"
 #include "../../libs/evgpu/evgpu_evgr_gl_utils.h"
 #if LV_USE_OPENGLES && LV_USE_EGL
     #include "../../drivers/opengles/lv_opengles_private.h"
@@ -115,10 +116,17 @@ void lv_evgpu_evgr_flush_pending(struct _lv_draw_evgpu_unit_t * u)
 void lv_evgpu_native_gl_prepare(struct _lv_draw_evgpu_unit_t * u, int32_t viewport_w, int32_t viewport_h)
 {
     LV_ASSERT_NULL(u);
-    LV_UNUSED(u);
 
 #if LV_USE_OPENGLES && LV_USE_EGL
-    evgrluBindFramebuffer(NULL);
+    /* Keep drawing on the layer FBO when present. Binding the default FB (0)
+     * was written for window/pbuffer compositing and makes Unity readback of
+     * layer_head see a cleared FBO while content landed on the pbuffer. */
+    if(u->current_layer && u->current_layer->user_data) {
+        evgrluBindFramebuffer(lv_evgpu_fbo_cache_entry_to_fb(u->current_layer->user_data));
+    }
+    else {
+        evgrluBindFramebuffer(NULL);
+    }
     glViewport(0, 0, viewport_w, viewport_h);
     glDisable(GL_STENCIL_TEST);
     glDisable(GL_DEPTH_TEST);
