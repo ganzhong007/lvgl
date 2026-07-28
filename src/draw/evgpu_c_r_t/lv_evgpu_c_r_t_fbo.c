@@ -11,6 +11,7 @@ lv_evgpu_c_r_t_fbo_t * lv_evgpu_c_r_t_fbo_create(int w, int h)
 
     fbo->w = w;
     fbo->h = h;
+    fbo->needs_clear = true;
 
     glGenFramebuffers(1, &fbo->fbo);
     glGenTextures(1, &fbo->tex);

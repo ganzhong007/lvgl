@@ -144,6 +144,41 @@ static const char * tex_fs =
     "  gl_FragColor = vec4(recolored.rgb, recolored.a * u_alpha);\n"
     "}";
 
+/* Color + bitmap mask (A8/L8 as GL_ALPHA). Outside mask UV → alpha 0. */
+static const char * tex_mask_vs =
+    "uniform mat4 u_proj;\n"
+    "attribute vec2 a_pos;\n"
+    "attribute vec2 a_tex;\n"
+    "attribute vec2 a_mask;\n"
+    "varying vec2 v_tex;\n"
+    "varying vec2 v_mask;\n"
+    "void main() {\n"
+    "  v_tex = a_tex;\n"
+    "  v_mask = a_mask;\n"
+    "  gl_Position = u_proj * vec4(a_pos, 0.0, 1.0);\n"
+    "}";
+
+static const char * tex_mask_fs =
+    "precision mediump float;\n"
+    "uniform sampler2D u_texture;\n"
+    "uniform sampler2D u_mask;\n"
+    "uniform vec4 u_recolor;\n"
+    "uniform float u_recolor_opa;\n"
+    "uniform float u_alpha;\n"
+    "varying vec2 v_tex;\n"
+    "varying vec2 v_mask;\n"
+    "void main() {\n"
+    "  float m = 0.0;\n"
+    "  if(v_mask.x >= 0.0 && v_mask.x <= 1.0 && v_mask.y >= 0.0 && v_mask.y <= 1.0) {\n"
+    "    m = texture2D(u_mask, v_mask).a;\n"
+    "  }\n"
+    "  vec4 texel = texture2D(u_texture, v_tex);\n"
+    "  vec4 recolored = mix(texel, vec4(u_recolor.rgb, texel.a), u_recolor_opa);\n"
+    "  float a = recolored.a * m * u_alpha;\n"
+    "  if(a < 0.004) discard;\n"
+    "  gl_FragColor = vec4(recolored.rgb, a);\n"
+    "}";
+
 static const char * blur_vs =
     "uniform mat4 u_proj;\n"
     "attribute vec2 a_pos;\n"
@@ -240,6 +275,7 @@ static GLuint link_program(GLuint vs, GLuint fs) {
     glAttachShader(prog, fs);
     glBindAttribLocation(prog, 0, "a_pos");
     glBindAttribLocation(prog, 1, "a_tex");
+    glBindAttribLocation(prog, 2, "a_mask");
     glLinkProgram(prog);
     GLint ok;
     glGetProgramiv(prog, GL_LINK_STATUS, &ok);
@@ -460,6 +496,18 @@ void lv_evgpu_c_r_t_gl_init(lv_evgpu_c_r_t_gl_t * gl) {
     gl->tex_u_alpha = glGetUniformLocation(gl->tex_prog, "u_alpha");
     gl->tex_u_proj = glGetUniformLocation(gl->tex_prog, "u_proj");
 
+    vs = compile_shader(GL_VERTEX_SHADER, tex_mask_vs);
+    fs = compile_shader(GL_FRAGMENT_SHADER, tex_mask_fs);
+    gl->tex_mask_prog = link_program(vs, fs);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    gl->tex_mask_u_texture = glGetUniformLocation(gl->tex_mask_prog, "u_texture");
+    gl->tex_mask_u_mask = glGetUniformLocation(gl->tex_mask_prog, "u_mask");
+    gl->tex_mask_u_recolor = glGetUniformLocation(gl->tex_mask_prog, "u_recolor");
+    gl->tex_mask_u_recolor_opa = glGetUniformLocation(gl->tex_mask_prog, "u_recolor_opa");
+    gl->tex_mask_u_alpha = glGetUniformLocation(gl->tex_mask_prog, "u_alpha");
+    gl->tex_mask_u_proj = glGetUniformLocation(gl->tex_mask_prog, "u_proj");
+
     vs = compile_shader(GL_VERTEX_SHADER, blur_vs);
     fs = compile_shader(GL_FRAGMENT_SHADER, blur_fs);
     gl->blur_prog = link_program(vs, fs);
@@ -517,6 +565,7 @@ void lv_evgpu_c_r_t_gl_deinit(lv_evgpu_c_r_t_gl_t * gl) {
     if(gl->round_prog) glDeleteProgram(gl->round_prog);
     if(gl->radial_prog) glDeleteProgram(gl->radial_prog);
     if(gl->tex_prog) glDeleteProgram(gl->tex_prog);
+    if(gl->tex_mask_prog) glDeleteProgram(gl->tex_mask_prog);
     if(gl->blur_prog) glDeleteProgram(gl->blur_prog);
     if(gl->grad_prog) glDeleteProgram(gl->grad_prog);
     if(gl->grad_tex_prog) glDeleteProgram(gl->grad_tex_prog);
@@ -542,16 +591,22 @@ void lv_evgpu_c_r_t_gl_flush(lv_evgpu_c_r_t_gl_t * gl) {
     gl->state.prog = 0;
 }
 
-void lv_evgpu_c_r_t_gl_set_projection(lv_evgpu_c_r_t_gl_t * gl, int32_t w, int32_t h) {
+void lv_evgpu_c_r_t_gl_set_projection(lv_evgpu_c_r_t_gl_t * gl,
+                                      int32_t ox, int32_t oy, int32_t w, int32_t h) {
     gl->view_w = w;
     gl->view_h = h;
+    gl->origin_x = ox;
+    gl->origin_y = oy;
     /* Column-major ortho (GLES2 requires transpose=GL_FALSE):
-     *   x_ndc =  2x/w - 1
-     *   y_ndc = -2y/h + 1   (LVGL top-left → GL NDC) */
+     *   x_ndc =  2(x-ox)/w - 1
+     *   y_ndc = -2(y-oy)/h + 1   (LVGL top-left → GL NDC) */
     gl->proj[0]  =  2.0f / (float)w; gl->proj[1]  = 0;               gl->proj[2]  = 0; gl->proj[3]  = 0;
     gl->proj[4]  =  0;               gl->proj[5]  = -2.0f / (float)h; gl->proj[6]  = 0; gl->proj[7]  = 0;
     gl->proj[8]  =  0;               gl->proj[9]  = 0;               gl->proj[10] = 1; gl->proj[11] = 0;
-    gl->proj[12] = -1.0f;            gl->proj[13] = 1.0f;            gl->proj[14] = 0; gl->proj[15] = 1;
+    gl->proj[12] = -2.0f * (float)ox / (float)w - 1.0f;
+    gl->proj[13] =  2.0f * (float)oy / (float)h + 1.0f;
+    gl->proj[14] = 0;
+    gl->proj[15] = 1;
 }
 
 void lv_evgpu_c_r_t_gl_draw_quad_solid(lv_evgpu_c_r_t_gl_t * gl,
@@ -651,18 +706,13 @@ void lv_evgpu_c_r_t_gl_draw_radial_grad(lv_evgpu_c_r_t_gl_t * gl,
     gl->state.prog = 0;
 }
 
-void lv_evgpu_c_r_t_gl_draw_quad_tex(lv_evgpu_c_r_t_gl_t * gl,
-                                     float x1, float y1, float x2, float y2,
-                                     float u1, float v1, float u2, float v2,
-                                     GLuint texture, uint32_t recolor, uint8_t recolor_opa, uint8_t alpha) {
+void lv_evgpu_c_r_t_gl_draw_quad_tex_strip(lv_evgpu_c_r_t_gl_t * gl,
+                                           const float * xyuv16,
+                                           GLuint texture, uint32_t recolor,
+                                           uint8_t recolor_opa, uint8_t alpha)
+{
+    if(xyuv16 == NULL || texture == 0) return;
     batch_flush(gl);
-
-    float verts[] = {
-        x1, y1, u1, v1,
-        x2, y1, u2, v1,
-        x1, y2, u1, v2,
-        x2, y2, u2, v2
-    };
 
     use_program(gl, gl->tex_prog);
     float rr = ((recolor >> 16) & 0xFF) / 255.0f;
@@ -682,14 +732,105 @@ void lv_evgpu_c_r_t_gl_draw_quad_tex(lv_evgpu_c_r_t_gl_t * gl,
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), verts);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), xyuv16);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), verts + 2);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), xyuv16 + 2);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(0);
 
     gl->state.prog = 0;
+}
+
+void lv_evgpu_c_r_t_gl_draw_quad_tex(lv_evgpu_c_r_t_gl_t * gl,
+                                     float x1, float y1, float x2, float y2,
+                                     float u1, float v1, float u2, float v2,
+                                     GLuint texture, uint32_t recolor, uint8_t recolor_opa, uint8_t alpha) {
+    float verts[] = {
+        x1, y1, u1, v1,
+        x2, y1, u2, v1,
+        x1, y2, u1, v2,
+        x2, y2, u2, v2
+    };
+    lv_evgpu_c_r_t_gl_draw_quad_tex_strip(gl, verts, texture, recolor, recolor_opa, alpha);
+}
+
+void lv_evgpu_c_r_t_gl_draw_quad_tex_mask_strip(lv_evgpu_c_r_t_gl_t * gl,
+                                                const float * xyuvmuv24,
+                                                GLuint texture, GLuint mask_tex,
+                                                uint32_t recolor, uint8_t recolor_opa,
+                                                uint8_t alpha)
+{
+    if(xyuvmuv24 == NULL || texture == 0) return;
+    if(mask_tex == 0 || gl->tex_mask_prog == 0) {
+        /* Drop mask channels → reuse color-only strip (x y u v from each vert). */
+        float xyuv[16];
+        for(int i = 0; i < 4; i++) {
+            xyuv[i * 4 + 0] = xyuvmuv24[i * 6 + 0];
+            xyuv[i * 4 + 1] = xyuvmuv24[i * 6 + 1];
+            xyuv[i * 4 + 2] = xyuvmuv24[i * 6 + 2];
+            xyuv[i * 4 + 3] = xyuvmuv24[i * 6 + 3];
+        }
+        lv_evgpu_c_r_t_gl_draw_quad_tex_strip(gl, xyuv, texture, recolor, recolor_opa, alpha);
+        return;
+    }
+
+    batch_flush(gl);
+
+    use_program(gl, gl->tex_mask_prog);
+    float rr = ((recolor >> 16) & 0xFF) / 255.0f;
+    float rg = ((recolor >> 8) & 0xFF) / 255.0f;
+    float rb = ((recolor >> 0) & 0xFF) / 255.0f;
+    glUniform4f(gl->tex_mask_u_recolor, rr, rg, rb, 1.0f);
+    glUniform1f(gl->tex_mask_u_recolor_opa, recolor_opa / 255.0f);
+    glUniform1f(gl->tex_mask_u_alpha, alpha / 255.0f);
+    set_proj_uniform(gl, gl->tex_mask_u_proj);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(gl->state.blend_src, gl->state.blend_dst);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glUniform1i(gl->tex_mask_u_texture, 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, mask_tex);
+    glUniform1i(gl->tex_mask_u_mask, 1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), xyuvmuv24);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), xyuvmuv24 + 2);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), xyuvmuv24 + 4);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisableVertexAttribArray(2);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+    gl->state.tex = texture;
+    gl->state.prog = 0;
+}
+
+void lv_evgpu_c_r_t_gl_draw_quad_tex_mask(lv_evgpu_c_r_t_gl_t * gl,
+                                          float x1, float y1, float x2, float y2,
+                                          float u1, float v1, float u2, float v2,
+                                          float mu1, float mv1, float mu2, float mv2,
+                                          GLuint texture, GLuint mask_tex,
+                                          uint32_t recolor, uint8_t recolor_opa, uint8_t alpha)
+{
+    float verts[] = {
+        x1, y1, u1, v1, mu1, mv1,
+        x2, y1, u2, v1, mu2, mv1,
+        x1, y2, u1, v2, mu1, mv2,
+        x2, y2, u2, v2, mu2, mv2
+    };
+    lv_evgpu_c_r_t_gl_draw_quad_tex_mask_strip(gl, verts, texture, mask_tex,
+                                               recolor, recolor_opa, alpha);
 }
 
 void lv_evgpu_c_r_t_gl_blur_quad(lv_evgpu_c_r_t_gl_t * gl,
@@ -918,15 +1059,24 @@ void lv_evgpu_c_r_t_gl_draw_triangle_strip_solid(lv_evgpu_c_r_t_gl_t * gl,
 
 void lv_evgpu_c_r_t_gl_set_scissor(lv_evgpu_c_r_t_gl_t * gl, int32_t x, int32_t y, int32_t w, int32_t h) {
     glEnable(GL_SCISSOR_TEST);
-    /* Projection flips Y (LVGL top-left → GL bottom-left). Scissor must match. */
+    /* Absolute LVGL coords → FBO-local, then flip Y for GL scissor. */
+    if(gl) {
+        x -= gl->origin_x;
+        y -= gl->origin_y;
+    }
     int32_t gy = y;
     if(gl && gl->view_h > 0) {
         gy = gl->view_h - y - h;
+    }
+    if(x < 0) {
+        w += x;
+        x = 0;
     }
     if(gy < 0) {
         h += gy;
         gy = 0;
     }
+    if(w < 0) w = 0;
     if(h < 0) h = 0;
     glScissor(x, gy, w, h);
 }

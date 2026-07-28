@@ -102,11 +102,36 @@ static void draw_core_cb(lv_draw_task_t * t, const lv_draw_image_dsc_t * draw_ds
     uint32_t recolor = lv_evgpu_c_r_t_color_to_gl_alpha(draw_dsc->recolor, draw_dsc->recolor_opa);
     uint8_t recolor_opa = draw_dsc->recolor_opa;
 
-    lv_evgpu_c_r_t_gl_draw_quad_tex(&u->gl,
-                                     (float)img_coords->x1, (float)img_coords->y1,
-                                     (float)(img_coords->x2 + 1), (float)(img_coords->y2 + 1),
-                                     0.0f, 0.0f, 1.0f, 1.0f,
-                                     texture, recolor, recolor_opa, draw_dsc->opa);
+    float mu1 = 0, mv1 = 0, mu2 = 1, mv2 = 1;
+    bool visible = true;
+    GLuint mask_tex = 0;
+    if(draw_dsc->bitmap_mask_src) {
+        const lv_area_t * align = &draw_dsc->image_area;
+        mask_tex = lv_evgpu_c_r_t_upload_bitmap_mask(draw_dsc->bitmap_mask_src, img_coords, align,
+                                                     &mu1, &mv1, &mu2, &mv2, &visible);
+        if(!visible) {
+            glDeleteTextures(1, &texture);
+            lv_evgpu_c_r_t_gl_disable_scissor();
+            return;
+        }
+    }
+
+    if(mask_tex) {
+        lv_evgpu_c_r_t_gl_draw_quad_tex_mask(&u->gl,
+                                             (float)img_coords->x1, (float)img_coords->y1,
+                                             (float)(img_coords->x2 + 1), (float)(img_coords->y2 + 1),
+                                             0.0f, 0.0f, 1.0f, 1.0f,
+                                             mu1, mv1, mu2, mv2,
+                                             texture, mask_tex, recolor, recolor_opa, draw_dsc->opa);
+        glDeleteTextures(1, &mask_tex);
+    }
+    else {
+        lv_evgpu_c_r_t_gl_draw_quad_tex(&u->gl,
+                                         (float)img_coords->x1, (float)img_coords->y1,
+                                         (float)(img_coords->x2 + 1), (float)(img_coords->y2 + 1),
+                                         0.0f, 0.0f, 1.0f, 1.0f,
+                                         texture, recolor, recolor_opa, draw_dsc->opa);
+    }
 
     glDeleteTextures(1, &texture);
 

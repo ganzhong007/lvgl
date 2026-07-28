@@ -270,9 +270,12 @@ static void on_layer_changed(lv_layer_t * new_layer)
     lv_evgpu_c_r_t_fbo_t * fbo = (lv_evgpu_c_r_t_fbo_t *)new_layer->user_data;
     glBindFramebuffer(GL_FRAMEBUFFER, fbo->fbo);
 
-    glClearColor(0, 0, 0, 0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-    seed_fbo_from_draw_buf(new_layer, fbo);
+    if(fbo->needs_clear) {
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        seed_fbo_from_draw_buf(new_layer, fbo);
+        fbo->needs_clear = false;
+    }
 
     LV_PROFILER_DRAW_END;
 }
@@ -349,6 +352,9 @@ static void on_layer_readback(lv_draw_evgpu_c_r_t_unit_t * u, lv_layer_t * layer
 
     lv_draw_buf_flush_cache(draw_buf, NULL);
 
+    /* Next refresh/test must clear this FBO; mid-frame re-binds must not. */
+    fbo->needs_clear = true;
+
     LV_PROFILER_DRAW_END;
 }
 
@@ -359,6 +365,9 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
     lv_draw_task_t * t = lv_draw_get_available_task(layer, NULL, EVGPU_C_R_T_UNIT_ID);
     if(!t || t->preferred_draw_unit_id != EVGPU_C_R_T_UNIT_ID) {
         lv_evgpu_c_r_t_end_frame(u);
+        /* Drop layer sticky-state so the next frame re-enters on_layer_changed
+         * and can honor fbo->needs_clear after screenshot readback. */
+        u->current_layer = NULL;
         return LV_DRAW_UNIT_IDLE;
     }
 
@@ -374,7 +383,9 @@ static int32_t draw_dispatch(lv_draw_unit_t * draw_unit, lv_layer_t * layer)
         u->buf_w = buf_w;
         u->buf_h = buf_h;
 
-        lv_evgpu_c_r_t_gl_set_projection(&u->gl, buf_w, buf_h);
+        lv_evgpu_c_r_t_gl_set_projection(&u->gl,
+                                           layer->buf_area.x1, layer->buf_area.y1,
+                                           buf_w, buf_h);
         glViewport(0, 0, buf_w, buf_h);
         /* Default-FB path (no layer FBO): clear the window/pbuffer once.
          * Layer-FBO path: on_layer_changed already bound+cleared(+seeded) the FBO —

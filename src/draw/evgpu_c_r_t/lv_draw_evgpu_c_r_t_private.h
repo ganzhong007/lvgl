@@ -78,6 +78,15 @@ void lv_draw_evgpu_c_r_t_3d_scene(lv_draw_task_t * t, const lv_draw_3d_scene_dsc
 void lv_evgpu_c_r_t_end_frame(lv_draw_evgpu_c_r_t_unit_t * u);
 void lv_evgpu_c_r_t_clean_up(lv_draw_evgpu_c_r_t_unit_t * u);
 
+/**
+ * Upload A8/L8 bitmap mask for GLES. Returns GL texture id, or 0 to draw unmasked.
+ * If mask makes the dest fully invisible, *out_visible = false and returns 0.
+ */
+GLuint lv_evgpu_c_r_t_upload_bitmap_mask(const void * mask_src, const lv_area_t * coords,
+                                         const lv_area_t * align_area,
+                                         float * mu1, float * mv1, float * mu2, float * mv2,
+                                         bool * out_visible);
+
 #endif
 
 #ifdef __cplusplus

@@ -16,6 +16,11 @@ typedef struct {
     GLuint tex;
     int w;
     int h;
+    /* Clear+seed only on first bind. Re-binding mid-frame (parent←child)
+     * must not wipe GPU content already drawn into this FBO — Unity attaches
+     * an FBO to the display layer, which made every LAYER composite land on
+     * a freshly cleared (black) parent. */
+    bool needs_clear;
 } lv_evgpu_c_r_t_fbo_t;
 
 lv_evgpu_c_r_t_fbo_t * lv_evgpu_c_r_t_fbo_create(int w, int h);

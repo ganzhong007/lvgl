@@ -77,6 +77,14 @@ typedef struct {
     GLint tex_u_alpha;
     GLint tex_u_proj;
 
+    GLuint tex_mask_prog;
+    GLint tex_mask_u_texture;
+    GLint tex_mask_u_mask;
+    GLint tex_mask_u_recolor;
+    GLint tex_mask_u_recolor_opa;
+    GLint tex_mask_u_alpha;
+    GLint tex_mask_u_proj;
+
     GLuint blur_prog;
     GLint blur_u_texture;
     GLint blur_u_dir;
@@ -104,13 +112,17 @@ typedef struct {
     int grad_cache_count;
     float proj[16];
     int32_t view_w, view_h;
+    /* Layer buf_area origin so absolute LVGL coords map into the FBO. */
+    int32_t origin_x, origin_y;
 } lv_evgpu_c_r_t_gl_t;
 
 void lv_evgpu_c_r_t_gl_init(lv_evgpu_c_r_t_gl_t * gl);
 void lv_evgpu_c_r_t_gl_deinit(lv_evgpu_c_r_t_gl_t * gl);
 void lv_evgpu_c_r_t_gl_flush(lv_evgpu_c_r_t_gl_t * gl);
 
-void lv_evgpu_c_r_t_gl_set_projection(lv_evgpu_c_r_t_gl_t * gl, int32_t w, int32_t h);
+/** Ortho for LVGL coords. ox/oy = layer->buf_area origin (0 for root). */
+void lv_evgpu_c_r_t_gl_set_projection(lv_evgpu_c_r_t_gl_t * gl,
+                                      int32_t ox, int32_t oy, int32_t w, int32_t h);
 
 void lv_evgpu_c_r_t_gl_draw_quad_solid(lv_evgpu_c_r_t_gl_t * gl,
                                        float x1, float y1, float x2, float y2,
@@ -136,6 +148,27 @@ void lv_evgpu_c_r_t_gl_draw_quad_tex(lv_evgpu_c_r_t_gl_t * gl,
                                      float x1, float y1, float x2, float y2,
                                      float u1, float v1, float u2, float v2,
                                      GLuint texture, uint32_t recolor, uint8_t recolor_opa, uint8_t alpha);
+
+/** TRIANGLE_STRIP of 4 verts: interleaved x,y,u,v (16 floats). */
+void lv_evgpu_c_r_t_gl_draw_quad_tex_strip(lv_evgpu_c_r_t_gl_t * gl,
+                                           const float * xyuv16,
+                                           GLuint texture, uint32_t recolor,
+                                           uint8_t recolor_opa, uint8_t alpha);
+
+/** Color tex + A8/L8 mask tex. Mask UVs may be outside [0,1]; outside → alpha 0. */
+void lv_evgpu_c_r_t_gl_draw_quad_tex_mask(lv_evgpu_c_r_t_gl_t * gl,
+                                          float x1, float y1, float x2, float y2,
+                                          float u1, float v1, float u2, float v2,
+                                          float mu1, float mv1, float mu2, float mv2,
+                                          GLuint texture, GLuint mask_tex,
+                                          uint32_t recolor, uint8_t recolor_opa, uint8_t alpha);
+
+/** TRIANGLE_STRIP of 4 verts: interleaved x,y,u,v,mu,mv (24 floats). */
+void lv_evgpu_c_r_t_gl_draw_quad_tex_mask_strip(lv_evgpu_c_r_t_gl_t * gl,
+                                                const float * xyuvmuv24,
+                                                GLuint texture, GLuint mask_tex,
+                                                uint32_t recolor, uint8_t recolor_opa,
+                                                uint8_t alpha);
 
 void lv_evgpu_c_r_t_gl_draw_quad_grad(lv_evgpu_c_r_t_gl_t * gl,
                                       float x1, float y1, float x2, float y2,
